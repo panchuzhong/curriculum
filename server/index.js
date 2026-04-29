@@ -9,6 +9,7 @@ import pricingTierRoutes from './routes/pricing-tiers.js';
 import studentRoutes from './routes/students.js';
 import scheduleRoutes from './routes/schedules.js';
 import semesterRoutes from './routes/semesters.js';
+import scheduleImageRoutes from './routes/schedule-image.js';
 
 const app = express();
 app.use(cors());
@@ -25,6 +26,7 @@ app.use('/api/pricing-tiers', pricingTierRoutes);
 app.use('/api/classes', studentRoutes);
 app.use('/api/schedules', scheduleRoutes);
 app.use('/api/semesters', semesterRoutes);
+app.use('/api/schedule-image', scheduleImageRoutes);
 
 // Health check
 app.get('/api/health', (req, res) => res.json({ status: 'ok' }));
