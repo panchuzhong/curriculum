@@ -7,6 +7,8 @@ import agentHelpRoutes from './routes/agent-help.js';
 import classRoutes from './routes/classes.js';
 import pricingTierRoutes from './routes/pricing-tiers.js';
 import studentRoutes from './routes/students.js';
+import scheduleRoutes from './routes/schedules.js';
+import semesterRoutes from './routes/semesters.js';
 
 const app = express();
 app.use(cors());
@@ -21,6 +23,8 @@ app.use('/api/auth', authRoutes);
 app.use('/api/classes', classRoutes);
 app.use('/api/pricing-tiers', pricingTierRoutes);
 app.use('/api/classes', studentRoutes);
+app.use('/api/schedules', scheduleRoutes);
+app.use('/api/semesters', semesterRoutes);
 
 // Health check
 app.get('/api/health', (req, res) => res.json({ status: 'ok' }));
