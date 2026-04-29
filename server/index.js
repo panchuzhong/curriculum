@@ -4,6 +4,9 @@ import { existsSync } from 'fs';
 import { initDb } from './db/index.js';
 import authRoutes from './routes/auth.js';
 import agentHelpRoutes from './routes/agent-help.js';
+import classRoutes from './routes/classes.js';
+import pricingTierRoutes from './routes/pricing-tiers.js';
+import studentRoutes from './routes/students.js';
 
 const app = express();
 app.use(cors());
@@ -15,6 +18,9 @@ initDb();
 // Public routes
 app.use('/api', agentHelpRoutes);
 app.use('/api/auth', authRoutes);
+app.use('/api/classes', classRoutes);
+app.use('/api/pricing-tiers', pricingTierRoutes);
+app.use('/api/classes', studentRoutes);
 
 // Health check
 app.get('/api/health', (req, res) => res.json({ status: 'ok' }));
