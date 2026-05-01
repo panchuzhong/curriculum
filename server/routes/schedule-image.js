@@ -9,7 +9,7 @@ const router = Router();
 router.use(authMiddleware);
 
 router.get('/', async (req, res) => {
-  const { start, end } = req.query;
+  const { start, end, theme, rowH } = req.query;
   if (!start || !end) return res.status(400).json({ error: 'start and end required' });
 
   const teacherClasses = drizzleDb.select().from(classes)
@@ -26,9 +26,14 @@ router.get('/', async (req, res) => {
     .filter(s => classIds.includes(s.classId))
     .map(s => ({ ...s, class: classMap[s.classId] }));
 
-  const buffer = await generateScheduleImage(scheds, start, end);
-  res.setHeader('Content-Type', 'image/png');
-  res.send(buffer);
+  try {
+    const buffer = await generateScheduleImage(scheds, start, end, { theme, rowH });
+    res.setHeader('Content-Type', 'image/png');
+    res.send(buffer);
+  } catch (err) {
+    console.error('Image generation failed:', err);
+    res.status(500).json({ error: 'Image generation failed', detail: err.message });
+  }
 });
 
 export default router;

@@ -6,6 +6,11 @@ export function getClassColor(cls) {
   return `hsl(${hue.h}, ${hue.s}%, ${lightness}%)`;
 }
 
+export function getTextColor(cls) {
+  const lightness = GRADE_LIGHTNESS[cls.grade] ?? 50;
+  return lightness < 55 ? '#ffffff' : '#1a1a1a';
+}
+
 export function getSubjectColor(subject) {
   const hue = SUBJECT_HUES[subject] || { h: 0, s: 0 };
   return `hsl(${hue.h}, ${hue.s}%, 50%)`;

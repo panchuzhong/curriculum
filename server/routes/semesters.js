@@ -33,4 +33,13 @@ router.put('/:id', (req, res) => {
   res.json({ ok: true });
 });
 
+router.delete('/:id', (req, res) => {
+  const { id } = req.params;
+  const existing = drizzleDb.select().from(semesters)
+    .where(and(eq(semesters.id, +id), eq(semesters.teacherId, req.teacherId))).get();
+  if (!existing) return res.status(404).json({ error: 'Not found' });
+  drizzleDb.delete(semesters).where(eq(semesters.id, +id)).run();
+  res.json({ ok: true });
+});
+
 export default router;
