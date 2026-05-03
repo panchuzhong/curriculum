@@ -1,0 +1,86 @@
+import { getClassColor, getTextColor } from '../utils/colors';
+
+export default function ScheduleBlock({ item, hasConflict, totalCols, rowHeight, topGapHeight, firstLabelMin, totalHeight, onScheduleClick, schedLpRef, _isTouchDev }) {
+  const topPx = topGapHeight + (toMin(item.startTime) - firstLabelMin) / 60 * rowHeight;
+  const dur = duration(item.startTime, item.endTime);
+  const heightPx = dur / 60 * rowHeight - 2;
+  const widthPct = 100 / totalCols;
+  const leftPct = item._col * widthPct;
+  const h = Math.max(heightPx, rowHeight - 2);
+  const isShort = h < rowHeight * 1.5;
+  const clippedTop = Math.max(0, topPx);
+  const clippedHeight = Math.min(h, totalHeight - clippedTop);
+
+  return (
+    <div
+      key={item.id}
+      onClick={() => !_isTouchDev && onScheduleClick?.(item)}
+      onTouchStart={e => {
+        e.stopPropagation();
+        if (e.touches.length !== 1) return;
+        const t = e.touches[0];
+        if (schedLpRef.current?.timer) clearTimeout(schedLpRef.current.timer);
+        const timer = setTimeout(() => {
+          navigator.vibrate?.(30);
+          onScheduleClick?.(item);
+          schedLpRef.current = null;
+        }, 450);
+        schedLpRef.current = { timer, startX: t.clientX, startY: t.clientY };
+      }}
+      onTouchMove={e => {
+        if (!schedLpRef.current) return;
+        const t = e.touches[0];
+        if (Math.abs(t.clientX - schedLpRef.current.startX) > 8 ||
+            Math.abs(t.clientY - schedLpRef.current.startY) > 8) {
+          clearTimeout(schedLpRef.current.timer);
+          schedLpRef.current = null;
+        }
+      }}
+      onTouchEnd={() => {
+        if (schedLpRef.current?.timer) {
+          clearTimeout(schedLpRef.current.timer);
+          schedLpRef.current = null;
+        }
+      }}
+      className={`absolute rounded-md cursor-pointer overflow-hidden z-10 transition-shadow hover:shadow-md ${
+        hasConflict ? 'ring-2 ring-red-500' : ''
+      }`}
+      style={{
+        top: `${clippedTop}px`,
+        height: `${clippedHeight}px`,
+        left: `${leftPct}%`,
+        width: `calc(${widthPct}% - 2px)`,
+        backgroundColor: hasConflict ? '#ef4444' : getClassColor(item.class),
+        color: hasConflict ? '#ffffff' : getTextColor(item.class),
+      }}
+    >
+      {isShort ? (
+        <div className="px-1.5 py-0.5 flex items-center gap-1 text-[11px] h-full leading-tight">
+          <span className="font-bold truncate">
+            {item.class?.isCompetition && <span className="text-amber-500">★ </span>}{item.class?.name}
+          </span>
+          <span style={{ opacity: 0.6 }} className="shrink-0 text-[10px]">{item.startTime}-{item.endTime}</span>
+        </div>
+      ) : (
+        <div className="p-1 text-xs leading-tight">
+          <div className="font-bold truncate">
+            {item.class?.isCompetition && <span className="text-amber-500">★ </span>}{item.class?.name}
+          </div>
+          <div style={{ opacity: 0.65 }}>{item.startTime}-{item.endTime}</div>
+          {item.locationName && <div style={{ opacity: 0.55 }} className="truncate text-[10px]">📍{item.locationName}</div>}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function toMin(t) {
+  const [h, m] = t.split(':').map(Number);
+  return h * 60 + m;
+}
+
+function duration(start, end) {
+  const s = toMin(start);
+  const e = toMin(end);
+  return e > s ? e - s : e + 24 * 60 - s;
+}

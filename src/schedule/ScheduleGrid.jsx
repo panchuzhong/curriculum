@@ -1,6 +1,10 @@
 import { useState, useEffect, useRef } from 'react';
-import { getClassColor, getTextColor } from '../utils/colors';
-import { isHoliday, getHolidayName, isWorkday } from '../utils/holidays';
+import { todayStr } from '../utils/date';
+import { isHoliday, isWorkday } from '../utils/holidays';
+import TimeColumn from './TimeColumn';
+import DayHeader from './DayHeader';
+import ScheduleBlock from './ScheduleBlock';
+import useGridTouch from './useGridTouch';
 
 const DEFAULT_START = 7;
 const DEFAULT_END = 23;
@@ -8,11 +12,10 @@ const MIN_ROW_HEIGHT = 24;
 const TOP_OFFSET_MIN = 15;
 const HEADER_HEIGHT = 52;
 
-const WEEKDAY_LABELS = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
-
-function todayStr() {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+// Set once on first touchstart — used to skip onClick on cell backgrounds for touch devices
+let _isTouchDev = false;
+if (typeof window !== 'undefined') {
+  window.addEventListener('touchstart', () => { _isTouchDev = true; }, { once: true, passive: true });
 }
 
 function toMin(t) {
@@ -88,13 +91,17 @@ function NowLine({ rowHeight, topGapHeight, firstLabelMin }) {
   );
 }
 
-export default function ScheduleGrid({ dates, schedules, onScheduleClick, onCellClick }) {
+export default function ScheduleGrid({ dates, schedules, visibleDays = 7, onScheduleClick, onCellClick }) {
   const today = todayStr();
   const timeBodyRef = useRef(null);
   const [rowHeight, setRowHeight] = useState(MIN_ROW_HEIGHT);
+  const gridStateRef = useRef({});
+  const schedLpRef = useRef(null);
+
+  const { handleDayTouchStart, handleDayTouchMove, handleDayTouchEnd, dayBodyEls } =
+    useGridTouch({ gridStateRef, onCellClick });
 
   const N = dates.length;
-  const VISIBLE = 7;
 
   const byDate = {};
   dates.forEach(d => byDate[d] = []);
@@ -134,17 +141,13 @@ export default function ScheduleGrid({ dates, schedules, onScheduleClick, onCell
 
   const topGapHeight = topGapFraction * rowHeight;
   const totalHeight = totalRowUnits * rowHeight;
+  const firstLabelMin = displayHours[0] * 60;
 
-  function timeToPx(timeStr) {
-    const mins = toMin(timeStr);
-    const firstLabelMin = displayHours[0] * 60;
-    return topGapHeight + (mins - firstLabelMin) / 60 * rowHeight;
-  }
+  gridStateRef.current = { rowHeight, topGapHeight, firstLabelMin, startHour };
 
-  // Single track — both headers and bodies slide together as one compositor layer
   const trackStyle = {
     display: 'flex',
-    width: `${N / VISIBLE * 100}%`,
+    width: `${N / visibleDays * 100}%`,
     height: '100%',
     transform: 'translateX(var(--day-offset, 0%))',
     transition: 'var(--day-transition, none)',
@@ -154,25 +157,7 @@ export default function ScheduleGrid({ dates, schedules, onScheduleClick, onCell
   return (
     <div className="h-full" style={{ display: 'grid', gridTemplateColumns: '64px 1fr', overflow: 'hidden' }}>
       {/* Left: static time column */}
-      <div className="flex flex-col border-r border-gray-200 dark:border-gray-700">
-        <div style={{ height: HEADER_HEIGHT, flexShrink: 0 }}
-          className="flex items-center justify-center border-b-2 border-gray-300 dark:border-gray-600 bg-gray-100 dark:bg-gray-800 text-sm font-medium text-gray-600 dark:text-gray-300">
-          时间
-        </div>
-        <div ref={timeBodyRef} className="flex-1 overflow-hidden relative bg-white dark:bg-gray-900">
-          <div style={{ height: topGapHeight }} className="border-b border-gray-200 dark:border-gray-800" />
-          {displayHours.map(hour => (
-            <div key={hour} className="relative" style={{ height: rowHeight }}>
-              <div className="absolute top-0 left-0 right-0 border-b border-gray-200 dark:border-gray-800" />
-              <span className="absolute text-[11px] text-gray-400 dark:text-gray-500 bg-white dark:bg-gray-900 px-1"
-                style={{ top: '-7px', left: '50%', transform: 'translateX(-50%)' }}>
-                {String(hour).padStart(2, '0')}:00
-              </span>
-            </div>
-          ))}
-          <div className="absolute bottom-0 left-0 right-0 border-b border-gray-200 dark:border-gray-800" />
-        </div>
-      </div>
+      <TimeColumn HEADER_HEIGHT={HEADER_HEIGHT} displayHours={displayHours} rowHeight={rowHeight} topGapHeight={topGapHeight} />
 
       {/* Right: single animated track containing all day columns */}
       <div className="overflow-hidden" style={{ height: '100%' }}>
@@ -181,42 +166,30 @@ export default function ScheduleGrid({ dates, schedules, onScheduleClick, onCell
             const isToday = date === today;
             const holiday = isHoliday(date);
             const workday = isWorkday(date);
-            const dayLabel = WEEKDAY_LABELS[new Date(date + 'T00:00:00').getDay()];
             const daySchedules = byDate[date] || [];
 
             return (
               <div key={date} style={{ width: `${100 / N}%`, flexShrink: 0 }} className="flex flex-col">
-                {/* Day header — same height as time header */}
-                <div style={{ height: HEADER_HEIGHT, flexShrink: 0 }}
-                  className={`flex flex-col items-center justify-center border-r border-b-2 border-gray-300 dark:border-gray-600 ${
-                    isToday ? 'bg-blue-50 dark:bg-blue-900/40' :
-                    workday ? 'bg-orange-50 dark:bg-orange-900/20' :
-                    holiday ? 'bg-red-50 dark:bg-red-900/20' :
-                    'bg-gray-50 dark:bg-gray-800'
-                  }`}>
-                  <div className="flex items-center gap-1">
-                    <span className={`font-medium text-sm ${isToday ? 'text-blue-700 dark:text-blue-300' : ''}`}>{dayLabel}</span>
-                    {isToday && <span className="text-[10px] bg-blue-500 text-white px-1.5 py-0.5 rounded-full font-medium">今天</span>}
-                    {holiday && <span className="text-[10px] bg-red-500 text-white px-1.5 py-0.5 rounded-full">{getHolidayName(date)}</span>}
-                    {workday && <span className="text-[10px] bg-orange-500 text-white px-1.5 py-0.5 rounded-full">调休</span>}
-                  </div>
-                  <span className="text-xs text-gray-400 dark:text-gray-500">{date.slice(5)}</span>
-                </div>
+                <DayHeader date={date} isToday={isToday} HEADER_HEIGHT={HEADER_HEIGHT} />
 
-                {/* Day body */}
-                <div className={`flex-1 relative border-r border-gray-200 dark:border-gray-700 ${
-                  isToday ? 'bg-blue-50/40 dark:bg-blue-900/10' : ''
-                } ${holiday ? 'bg-red-50/30 dark:bg-red-900/5' : ''} ${workday ? 'bg-orange-50/30 dark:bg-orange-900/5' : ''}`}>
+                {/* Day body — touch handlers for long-press-to-create on mobile */}
+                <div
+                  ref={el => { if (el) dayBodyEls.current[date] = el; else delete dayBodyEls.current[date]; }}
+                  onTouchStart={e => handleDayTouchStart(e, date)}
+                  onTouchMove={handleDayTouchMove}
+                  onTouchEnd={handleDayTouchEnd}
+                  className={`flex-1 relative border-r border-gray-200 dark:border-gray-700 ${
+                    isToday ? 'bg-blue-50/40 dark:bg-blue-900/10' : ''
+                  } ${holiday ? 'bg-red-50/30 dark:bg-red-900/5' : ''} ${workday ? 'bg-orange-50/30 dark:bg-orange-900/5' : ''}`}>
                   {/* Top gap */}
                   <div style={{ height: topGapHeight }}
-                    onClick={() => onCellClick?.(date, `${String(startHour).padStart(2, '0')}:45`)}
+                    onClick={() => { if (!_isTouchDev) onCellClick?.(date, `${String(startHour).padStart(2, '0')}:45`); }}
                     className="cursor-pointer hover:bg-gray-100/50 dark:hover:bg-gray-800/30 transition-colors" />
 
-                  {/* Hour cells — border-t so lines are at top of each div,
-                      matching the time body's absolute zero-height border-b at top-0 */}
+                  {/* Hour cells */}
                   {displayHours.map(hour => (
                     <div key={hour}
-                      onClick={() => onCellClick?.(date, `${String(hour).padStart(2, '0')}:00`)}
+                      onClick={() => { if (!_isTouchDev) onCellClick?.(date, `${String(hour).padStart(2, '0')}:00`); }}
                       className="border-t border-gray-100 dark:border-gray-800 cursor-pointer hover:bg-gray-100/50 dark:hover:bg-gray-800/30 transition-colors"
                       style={{ height: rowHeight }}
                     />
@@ -228,55 +201,24 @@ export default function ScheduleGrid({ dates, schedules, onScheduleClick, onCell
                     const items = assignColumns(group);
                     const totalCols = Math.max(...items.map(it => it._col)) + 1;
 
-                    return items.map(item => {
-                      const topPx = timeToPx(item.startTime);
-                      const dur = duration(item.startTime, item.endTime);
-                      const heightPx = dur / 60 * rowHeight - 2;
-                      const widthPct = 100 / totalCols;
-                      const leftPct = item._col * widthPct;
-                      const h = Math.max(heightPx, rowHeight - 2);
-                      const isShort = h < rowHeight * 1.5;
-                      const clippedTop = Math.max(0, topPx);
-                      const clippedHeight = Math.min(h, totalHeight - clippedTop);
-
-                      return (
-                        <div
-                          key={item.id}
-                          onClick={() => onScheduleClick?.(item)}
-                          className={`absolute rounded-md cursor-pointer overflow-hidden z-10 transition-shadow hover:shadow-md ${
-                            hasConflict ? 'ring-2 ring-red-500' : ''
-                          }`}
-                          style={{
-                            top: `${clippedTop}px`,
-                            height: `${clippedHeight}px`,
-                            left: `${leftPct}%`,
-                            width: `calc(${widthPct}% - 2px)`,
-                            backgroundColor: hasConflict ? '#ef4444' : getClassColor(item.class),
-                            color: hasConflict ? '#ffffff' : getTextColor(item.class),
-                          }}
-                        >
-                          {isShort ? (
-                            <div className="px-1.5 py-0.5 flex items-center gap-1 text-[11px] h-full leading-tight">
-                              <span className="font-bold truncate">
-                                {item.class?.isCompetition && <span className="text-amber-500">★ </span>}{item.class?.name}
-                              </span>
-                              <span style={{ opacity: 0.6 }} className="shrink-0 text-[10px]">{item.startTime}-{item.endTime}</span>
-                            </div>
-                          ) : (
-                            <div className="p-1 text-xs leading-tight">
-                              <div className="font-bold truncate">
-                                {item.class?.isCompetition && <span className="text-amber-500">★ </span>}{item.class?.name}
-                              </div>
-                              <div style={{ opacity: 0.65 }}>{item.startTime}-{item.endTime}</div>
-                              {item.locationName && <div style={{ opacity: 0.55 }} className="truncate text-[10px]">📍{item.locationName}</div>}
-                            </div>
-                          )}
-                        </div>
-                      );
-                    });
+                    return items.map(item => (
+                      <ScheduleBlock
+                        key={item.id}
+                        item={item}
+                        hasConflict={hasConflict}
+                        totalCols={totalCols}
+                        rowHeight={rowHeight}
+                        topGapHeight={topGapHeight}
+                        firstLabelMin={firstLabelMin}
+                        totalHeight={totalHeight}
+                        onScheduleClick={onScheduleClick}
+                        schedLpRef={schedLpRef}
+                        _isTouchDev={_isTouchDev}
+                      />
+                    ));
                   })}
 
-                  {isToday && <NowLine rowHeight={rowHeight} topGapHeight={topGapHeight} firstLabelMin={displayHours[0] * 60} />}
+                  {isToday && <NowLine rowHeight={rowHeight} topGapHeight={topGapHeight} firstLabelMin={firstLabelMin} />}
                 </div>
               </div>
             );
