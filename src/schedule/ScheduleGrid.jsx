@@ -1,6 +1,7 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useContext } from 'react';
 import { todayStr } from '../utils/date';
 import { isHoliday, isWorkday } from '../utils/holidays';
+import { DarkContext } from '../utils/colors';
 import TimeColumn from './TimeColumn';
 import DayHeader from './DayHeader';
 import ScheduleBlock from './ScheduleBlock';
@@ -93,6 +94,7 @@ function NowLine({ rowHeight, topGapHeight, firstLabelMin }) {
 
 export default function ScheduleGrid({ dates, schedules, visibleDays = 7, onScheduleClick, onCellClick }) {
   const today = todayStr();
+  useContext(DarkContext);
   const timeBodyRef = useRef(null);
   const [rowHeight, setRowHeight] = useState(MIN_ROW_HEIGHT);
   const gridStateRef = useRef({});
@@ -130,7 +132,7 @@ export default function ScheduleGrid({ dates, schedules, visibleDays = 7, onSche
   useEffect(() => {
     function calcHeight() {
       if (!timeBodyRef.current) return;
-      const available = timeBodyRef.current.clientHeight;
+      const available = timeBodyRef.current.clientHeight - HEADER_HEIGHT;
       const ideal = Math.max(MIN_ROW_HEIGHT, Math.floor(available / totalRowUnits) - 1);
       setRowHeight(ideal);
     }
@@ -155,7 +157,7 @@ export default function ScheduleGrid({ dates, schedules, visibleDays = 7, onSche
   };
 
   return (
-    <div className="h-full" style={{ display: 'grid', gridTemplateColumns: '64px 1fr', overflow: 'hidden' }}>
+    <div ref={timeBodyRef} className="h-full" style={{ display: 'grid', gridTemplateColumns: '64px 1fr', overflow: 'hidden' }}>
       {/* Left: static time column */}
       <TimeColumn HEADER_HEIGHT={HEADER_HEIGHT} displayHours={displayHours} rowHeight={rowHeight} topGapHeight={topGapHeight} />
 
@@ -179,7 +181,7 @@ export default function ScheduleGrid({ dates, schedules, visibleDays = 7, onSche
                   onTouchMove={handleDayTouchMove}
                   onTouchEnd={handleDayTouchEnd}
                   className={`flex-1 relative border-r border-gray-200 dark:border-gray-700 ${
-                    isToday ? 'bg-blue-50/40 dark:bg-blue-900/10' : ''
+                    isToday ? 'bg-blue-100/60 dark:bg-blue-800/25' : ''
                   } ${holiday ? 'bg-red-50/30 dark:bg-red-900/5' : ''} ${workday ? 'bg-orange-50/30 dark:bg-orange-900/5' : ''}`}>
                   {/* Top gap */}
                   <div style={{ height: topGapHeight }}

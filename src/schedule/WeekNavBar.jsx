@@ -22,7 +22,7 @@ export default function WeekNavBar({
     : `${weekStart} ~ ${weekEnd}`;
 
   return (
-    <div className={`flex items-center justify-between shrink-0 ${isMobile ? 'mb-2' : 'mb-4'}`}>
+    <div className={`flex items-center justify-between shrink-0 ${isMobile ? 'mb-2' : 'mb-3'}`}>
       <div className="flex items-center gap-1">
         {!isMobile && (
           <>

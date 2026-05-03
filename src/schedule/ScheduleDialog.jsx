@@ -26,14 +26,16 @@ export default function ScheduleDialog({ date, startTime, schedule, onClose, onS
     name: '', grade: '初三', subject: '', studentCount: 1,
     unitPrice: 800, isCompetition: false,
   });
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
 
   useEffect(() => {
-    api.getClasses().then(setClasses);
+    api.getClasses().then(setClasses).catch(() => {});
     api.getProfile().then(p => {
       const subs = p.subjects || [];
       setSubjects(subs);
       if (subs.length > 0) setNewClass(nc => ({ ...nc, subject: nc.subject || subs[0] }));
-    });
+    }).catch(() => {});
   }, []);
 
   useEffect(() => {
@@ -43,7 +45,7 @@ export default function ScheduleDialog({ date, startTime, schedule, onClose, onS
         date: schedule.date,
         startTime: schedule.startTime,
         endTime: schedule.endTime,
-        durationBilling: schedule.durationBilling || '',
+        durationBilling: schedule.durationBilling ?? '',
         locationName: schedule.locationName || '',
       });
     }
@@ -51,40 +53,64 @@ export default function ScheduleDialog({ date, startTime, schedule, onClose, onS
 
   async function handleSave() {
     if (!form.classId) return;
-    const data = {
-      classId: +form.classId,
-      date: form.date,
-      startTime: form.startTime,
-      endTime: form.endTime,
-      durationBilling: form.durationBilling ? +form.durationBilling : undefined,
-      locationName: form.locationName || undefined,
-    };
-    if (schedule) {
-      await api.updateSchedule(schedule.id, data);
-    } else {
-      await api.createSchedule(data);
+    setSaving(true);
+    setError('');
+    try {
+      const data = {
+        classId: +form.classId,
+        date: form.date,
+        startTime: form.startTime,
+        endTime: form.endTime,
+        durationBilling: form.durationBilling !== '' ? +form.durationBilling : undefined,
+        locationName: form.locationName || undefined,
+      };
+      if (schedule) {
+        await api.updateSchedule(schedule.id, data);
+      } else {
+        await api.createSchedule(data);
+      }
+      onSaved();
+    } catch (err) {
+      setError(err.message || '保存失败');
+    } finally {
+      setSaving(false);
     }
-    onSaved();
   }
 
   async function handleCreateClassAndSchedule() {
     if (!newClass.name) return;
-    const cls = await api.createClass(newClass);
-    await api.createSchedule({
-      classId: cls.id,
-      date: form.date,
-      startTime: form.startTime,
-      endTime: form.endTime,
-      durationBilling: form.durationBilling ? +form.durationBilling : undefined,
-      locationName: form.locationName || undefined,
-    });
-    onSaved();
+    setSaving(true);
+    setError('');
+    try {
+      const cls = await api.createClass(newClass);
+      await api.createSchedule({
+        classId: cls.id,
+        date: form.date,
+        startTime: form.startTime,
+        endTime: form.endTime,
+        durationBilling: form.durationBilling !== '' ? +form.durationBilling : undefined,
+        locationName: form.locationName || undefined,
+      });
+      onSaved();
+    } catch (err) {
+      setError(err.message || '创建失败');
+    } finally {
+      setSaving(false);
+    }
   }
 
   async function handleDelete() {
     if (!schedule || !confirm('确定删除此排课？')) return;
-    await api.deleteSchedule(schedule.id);
-    onSaved();
+    setSaving(true);
+    setError('');
+    try {
+      await api.deleteSchedule(schedule.id);
+      onSaved();
+    } catch (err) {
+      setError(err.message || '删除失败');
+    } finally {
+      setSaving(false);
+    }
   }
 
   function handleClassChange(e) {
@@ -97,8 +123,8 @@ export default function ScheduleDialog({ date, startTime, schedule, onClose, onS
   }
 
   return (
-    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50" onClick={onClose}>
-      <div className="modal-enter bg-white dark:bg-gray-800 rounded-2xl p-6 w-[480px] max-h-[90vh] overflow-auto thin-scroll shadow-xl" onClick={e => e.stopPropagation()}>
+    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-3" onClick={onClose}>
+      <div className="modal-enter bg-white dark:bg-gray-800 rounded-2xl p-4 sm:p-6 w-full max-w-[480px] max-h-[90vh] overflow-auto thin-scroll shadow-xl" onClick={e => e.stopPropagation()}>
         <div className="flex items-start justify-between mb-5">
           <div>
             <h3 className="text-lg font-semibold">
@@ -108,6 +134,12 @@ export default function ScheduleDialog({ date, startTime, schedule, onClose, onS
           </div>
           <button onClick={onClose} className="w-7 h-7 rounded-lg bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-600 flex items-center justify-center text-sm transition-colors leading-none shrink-0">✕</button>
         </div>
+
+        {error && (
+          <div className="mb-4 p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg text-sm text-red-600 dark:text-red-400">
+            {error}
+          </div>
+        )}
 
         {mode === 'existing' && (
           <div className="space-y-3">
@@ -157,14 +189,14 @@ export default function ScheduleDialog({ date, startTime, schedule, onClose, onS
                 placeholder="留空则使用班级默认地点" />
             </div>
             <div className="flex gap-2 mt-4">
-              <button onClick={handleSave}
-                className="flex-1 p-2 bg-blue-600 text-white rounded hover:bg-blue-700">保存</button>
+              <button onClick={handleSave} disabled={saving}
+                className="flex-1 p-2 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50">{saving ? '保存中...' : '保存'}</button>
               {schedule && (
-                <button onClick={handleDelete}
-                  className="p-2 bg-red-600 text-white rounded hover:bg-red-700">删除</button>
+                <button onClick={handleDelete} disabled={saving}
+                  className="p-2 bg-red-600 text-white rounded hover:bg-red-700 disabled:opacity-50">删除</button>
               )}
-              <button onClick={onClose}
-                className="p-2 bg-gray-300 dark:bg-gray-600 rounded">取消</button>
+              <button onClick={onClose} disabled={saving}
+                className="p-2 bg-gray-300 dark:bg-gray-600 rounded disabled:opacity-50">取消</button>
             </div>
           </div>
         )}
@@ -238,10 +270,10 @@ export default function ScheduleDialog({ date, startTime, schedule, onClose, onS
             </div>
             <div className="flex gap-2 mt-4">
               <button onClick={handleCreateClassAndSchedule}
-                className="flex-1 p-2 bg-blue-600 text-white rounded hover:bg-blue-700"
-                disabled={!newClass.name}>创建并排课</button>
-              <button onClick={() => setMode('existing')}
-                className="p-2 bg-gray-300 dark:bg-gray-600 rounded">返回</button>
+                className="flex-1 p-2 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50"
+                disabled={saving || !newClass.name}>{saving ? '创建中...' : '创建并排课'}</button>
+              <button onClick={() => setMode('existing')} disabled={saving}
+                className="p-2 bg-gray-300 dark:bg-gray-600 rounded disabled:opacity-50">返回</button>
             </div>
           </div>
         )}
