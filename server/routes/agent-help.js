@@ -4,7 +4,7 @@ const router = Router();
 router.get('/agent/help', (req, res) => {
   res.json({
     name: '课表管理系统 API',
-    version: '1.3.0',
+    version: '1.5.0',
     description: '面向私人教师的课表管理平台 API，供 AI Agent 访问',
     auth: {
       type: 'API Key 或 JWT Token',
@@ -35,13 +35,16 @@ router.get('/agent/help', (req, res) => {
         'POST /api/classes': '创建班级（unitPrice 留空时自动匹配阶梯定价）',
         'PUT /api/classes/:id': '更新班级信息',
         'DELETE /api/classes/:id': '删除班级（软删除，排课记录保留）',
+        'GET /api/classes/:classId/students': '获取指定班级的学生列表',
+        'POST /api/classes/:classId/students': '在指定班级下创建学生并自动关联到该班级',
+        'DELETE /api/classes/:classId/students/:studentId': '从指定班级移除学生（仅解除关联，不删除学生实体）',
       },
       students: {
         'GET /api/students': '获取所有学生（含 classIds 数组）',
         'GET /api/students/by-class/:classId': '获取指定班级的学生列表',
         'POST /api/students': '创建学生（可通过 classIds 数组同时关联多个班级）',
         'PUT /api/students/:id': '更新学生信息',
-        'DELETE /api/students/:id': '删除学生',
+        'DELETE /api/students/:id': '删除学生（同时清理所有班级关联）',
       },
       schedules: {
         'GET /api/schedules?start=YYYY-MM-DD&end=YYYY-MM-DD': '获取日期范围内的排课（含班级信息）',
@@ -82,7 +85,7 @@ router.get('/agent/help', (req, res) => {
       },
       images: {
         'GET /api/schedule-image?start=YYYY-MM-DD&end=YYYY-MM-DD': '生成课表 PNG 图片（返回 image/png），支持任意时间范围；失败时返回 JSON {error, detail}',
-        'GET /api/schedule-image?start=&end=&theme=light|dark|auto': 'theme=light 强制浅色，dark 强制深色，auto（默认）按小时自动切换（6:00-18:00 浅色，其余深色）',
+        'GET /api/schedule-image?start=&end=&theme=light|dark|auto': 'theme=light 强制浅色，dark 强制深色，auto（默认）按小时自动切换（7:00-19:00 浅色，其余深色）',
         'GET /api/schedule-image?start=&end=&rowH=N': '每小时行高像素（16-60，默认 30），增大后文字更清晰，图片更高',
       },
       backup: {
@@ -227,9 +230,47 @@ router.get('/agent/help', (req, res) => {
       'PUT /api/schedules/batch 只允许修改时间和地点字段，classId/date 等核心字段不可批量篡改',
       'GET /api/schedules/summary 和 GET /api/schedules/export 均支持 &format=csv，响应含 UTF-8 BOM，Excel 直接打开不乱码',
       'GET /api/backup 返回全量 JSON；POST /api/backup/restore 原子还原（事务），恢复过程中 teacherId 强制绑定当前账号',
-      '学生可属于多个班级，通过 classIds 数组关联',
+      '学生可属于多个班级，通过 classIds 数组关联；DELETE /api/students/:id 删除学生实体并清理所有关联，DELETE /api/classes/:classId/students/:studentId 仅从指定班级移除',
       '所有写操作（排课增删改、班级增删改、批量操作）均自动写入 audit_log，可通过 GET /api/audit-log 查询',
       '注册成功后系统自动将 ALLOW_REGISTRATION 设为 false，单用户设计',
+      '所有写接口均使用 express-validator 校验输入，校验失败返回 400 {error: "提示信息"}，详见下方 validationRules',
+    ],
+    validationRules: {
+      auth: {
+        register: { username: '3-20位字母数字', password: '至少6位', name: '必填' },
+        login: { username: '必填', password: '必填' },
+        changePassword: { oldPassword: '必填', newPassword: '至少6位' },
+        updateSubjects: { subjects: '字符串数组，每项1-20字符' },
+      },
+      classes: {
+        create: { name: '必填', grade: '枚举：初一/初二/初三/高一/高二/高三/大学', subject: '必填', studentCount: '≥1整数' },
+        update: { name: '可选', grade: '可选枚举', subject: '可选', studentCount: '可选≥1' },
+        addStudent: { name: '必填', phone: '11位手机号（可选）' },
+      },
+      students: {
+        create: { name: '必填', phone: '11位手机号（可选）', birthDate: 'YYYY-MM-DD（可选）', classIds: '整数数组（可选）' },
+        update: { name: '可选', phone: '可选11位', birthDate: '可选' },
+      },
+      schedules: {
+        create: { classId: '整数必填', date: 'YYYY-MM-DD 必填', startTime: 'HH:MM 必填', endTime: 'HH:MM 必填' },
+        batchCreate: { classId: '整数必填', startTime: 'HH:MM 必填', endTime: 'HH:MM 必填' },
+        batchUpdate: { classId: '整数必填', fromDate: 'YYYY-MM-DD 必填', weekday: '0-6 必填', updates: '对象必填' },
+        batchDelete: { ids: '整数数组，或 start+end 日期范围' },
+      },
+      semesters: {
+        create: { name: '必填', type: '枚举：spring/fall/winter/summer（对应 春季/秋季/暑假/寒假）', startDate: 'YYYY-MM-DD 必填', endDate: 'YYYY-MM-DD 必填' },
+        update: { name: '可选', type: '可选枚举', startDate: '可选', endDate: '可选' },
+      },
+      holidays: {
+        create: { date: 'YYYY-MM-DD 必填', type: '枚举：holiday/workday', name: '必填' },
+        update: { date: '可选', type: '可选枚举' },
+        batch: { items: '数组，每项含 date/type/name' },
+      },
+      pricingTiers: {
+        create: { minStudents: '≥1整数', maxStudents: '≥1整数', pricePerStudentPerHour: '>0 数字' },
+        update: { minStudents: '可选≥1', maxStudents: '可选≥1', pricePerStudentPerHour: '可选>0' },
+      },
+    },
     ],
     examples: {
       '登录获取 token': 'POST /api/auth/login {"username":"xxx","password":"xxx"}',
@@ -258,7 +299,10 @@ router.get('/agent/help', (req, res) => {
       '查询近期冲突（自定义范围）': 'GET /api/schedules/conflicts?start=2026-05-01&end=2026-05-31&limit=50',
       '查询操作日志（最近批量操作）': 'GET /api/audit-log?action=BATCH_UPDATE&limit=20',
       '查询操作日志（最近删除）': 'GET /api/audit-log?table=schedules&action=DELETE&limit=20',
-      '创建学生并关联班级': 'POST /api/students {"name":"张三","birthDate":"2010","classIds":[1,2]}',
+      '创建学生并关联多个班级': 'POST /api/students {"name":"张三","birthDate":"2010","classIds":[1,2]}',
+      '在指定班级下创建学生': 'POST /api/classes/1/students {"name":"张三","phone":"13800138000"}',
+      '从班级移除学生（不解绑其他班级）': 'DELETE /api/classes/1/students/5',
+      '删除学生（级联删除所有关联）': 'DELETE /api/students/5',
       '创建学期': 'POST /api/semesters {"name":"2026春季","type":"spring","startDate":"2026-02-23","endDate":"2026-07-05"}',
       '批量导入节假日': 'POST /api/holidays/batch {"items":[{"date":"2026-01-01","type":"holiday","name":"元旦"}]}',
       '备份全量数据': 'GET /api/backup',

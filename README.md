@@ -52,7 +52,8 @@
 - `POST /api/backup/restore`：事务原子还原，teacherId 自动绑定当前账号防止越权
 
 ### 主题
-- 深色/浅色模式切换，侧边栏宽度可拖拽
+- 深色/浅色模式切换，根据时间自动切换（19:00-7:00 暗色），侧边栏宽度可拖拽
+- 课程色块按学科（色相）+年级（亮度/饱和度）自动着色，日/夜间模式自适应
 
 ## 技术栈
 
@@ -153,6 +154,10 @@ sudo systemctl start curriculum-scheduler
 
 - **JWT Token**：`POST /api/auth/login` 返回，通过 `Authorization: Bearer <token>` 传递
 - **API Key**：在设置页面获取，通过 `X-API-Key: <key>` 传递，适合 AI Agent 长期使用
+
+### 输入校验
+
+所有写接口均使用 express-validator 校验输入，校验失败返回 `400 {error: "提示信息"}`。详细规则见 `GET /api/agent/help` 的 `validationRules` 字段。
 
 ### 端点一览
 
@@ -374,20 +379,33 @@ new_curriculum/
 │   │   ├── audit-log.js          # 操作日志查询
 │   │   ├── backup.js             # 全量备份与还原
 │   │   └── agent-help.js         # AI Agent 帮助文档
+│   ├── validations/              # express-validator 校验规则
+│   │   ├── handle.js             # 统一校验结果中间件
+│   │   ├── auth.js               # 认证校验
+│   │   ├── classes.js            # 班级校验
+│   │   ├── students.js           # 学生校验
+│   │   ├── schedules.js          # 排课校验
+│   │   ├── semesters.js          # 学期校验
+│   │   ├── holidays.js           # 节假日校验
+│   │   └── pricing-tiers.js      # 定价阶梯校验
+│   ├── __tests__/                # vitest 集成测试（supertest HTTP 测试 + 单元测试）
 │   └── services/
 │       ├── holidays.js           # 节假日数据与查询
 │       ├── image-gen.js          # Puppeteer PNG 渲染
+│       ├── schedule-helpers.js   # 排课业务逻辑（冲突检测、批量操作）
 │       └── audit.js              # 操作日志写入
 ├── src/                          # React 前端
-│   ├── App.jsx                   # 路由 + 侧边栏布局
+│   ├── App.jsx                   # 路由
 │   ├── api.js                    # 统一 fetch 封装（含 JWT 注入）
+│   ├── components/               # 通用组件（Layout 布局）
+│   ├── hooks/                    # 自定义 Hooks（useSwipeNavigation）
 │   ├── auth/                     # 登录 / 注册页
 │   ├── classes/                  # 班级管理、学生管理
-│   ├── schedule/                 # 周/月/年课表、排课弹窗、批量操作
+│   ├── schedule/                 # 周/月/年课表、排课弹窗、批量操作、导出
 │   ├── pricing/                  # 阶梯定价管理
 │   ├── reports/                  # 统计报表
 │   ├── settings/                 # 设置（节假日、学科、API Key）
-│   └── utils/                    # 颜色、常量、节假日工具
+│   └── utils/                    # 颜色、常量、日期、节假日工具
 ├── scripts/release.sh            # 构建打包脚本
 ├── .env.example                  # 环境变量模板
 └── README.md
