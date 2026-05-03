@@ -1,23 +1,5 @@
 import { useState } from 'react';
-
-function todayStr() {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-}
-
-function getMonday(dateStr) {
-  const d = new Date(dateStr + 'T00:00:00');
-  const day = d.getDay();
-  const diff = d.getDate() - day + (day === 0 ? -6 : 1);
-  d.setDate(diff);
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-}
-
-function addDays(dateStr, days) {
-  const d = new Date(dateStr + 'T00:00:00');
-  d.setDate(d.getDate() + days);
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-}
+import { todayStr, getMonday, addDays, parseDateStr } from '../utils/date';
 
 export default function ExportDialog({ defaultStart, defaultEnd, onClose, onExportPNG, onExportCSV }) {
   const today = todayStr();
@@ -25,8 +7,8 @@ export default function ExportDialog({ defaultStart, defaultEnd, onClose, onExpo
   const [end, setEnd] = useState(defaultEnd);
   const [exporting, setExporting] = useState(false);
 
-  const startD = new Date(start + 'T00:00:00');
-  const endD = new Date(end + 'T00:00:00');
+  const startD = parseDateStr(start);
+  const endD = parseDateStr(end);
   const days = Math.max(1, Math.round((endD - startD) / 86400000) + 1);
 
   async function handlePNG() {
@@ -36,8 +18,8 @@ export default function ExportDialog({ defaultStart, defaultEnd, onClose, onExpo
   }
 
   return (
-    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50" onClick={onClose}>
-      <div className="modal-enter bg-white dark:bg-gray-800 rounded-2xl p-6 w-[480px] shadow-xl" onClick={e => e.stopPropagation()}>
+    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-3" onClick={onClose}>
+      <div className="modal-enter bg-white dark:bg-gray-800 rounded-2xl p-4 sm:p-6 w-full max-w-[480px] max-h-[90vh] overflow-auto thin-scroll shadow-xl" onClick={e => e.stopPropagation()}>
         <div className="flex items-center justify-between mb-4">
           <h3 className="text-lg font-semibold">导出课表</h3>
           <button onClick={onClose} className="w-7 h-7 rounded-lg bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-600 flex items-center justify-center text-sm transition-colors leading-none">✕</button>

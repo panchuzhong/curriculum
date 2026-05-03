@@ -12,29 +12,37 @@ export function clearToken() {
   localStorage.removeItem('token');
 }
 
-async function request(method, path, body) {
+async function request(method, path, body, { noAuth = false } = {}) {
   const opts = {
     method,
     headers: {
       'Content-Type': 'application/json',
-      ...(getToken() ? { Authorization: `Bearer ${getToken()}` } : {}),
+      ...(!noAuth && getToken() ? { Authorization: `Bearer ${getToken()}` } : {}),
     },
   };
   if (body) opts.body = JSON.stringify(body);
   const res = await fetch(`${API_BASE}${path}`, opts);
-  if (res.status === 401) {
+  if (!noAuth && res.status === 401) {
     clearToken();
     window.location.href = '/login';
     return;
   }
-  if (!res.ok) throw new Error(await res.text());
-  return res.json();
+  const text = await res.text();
+  if (!res.ok) {
+    let message = text;
+    try {
+      const parsed = JSON.parse(text);
+      if (parsed.error) message = parsed.error;
+    } catch {}
+    throw new Error(message);
+  }
+  try { return JSON.parse(text); } catch { return text; }
 }
 
 export const api = {
   // Auth
-  login: (data) => request('POST', '/auth/login', data),
-  register: (data) => request('POST', '/auth/register', data),
+  login: (data) => request('POST', '/auth/login', data, { noAuth: true }),
+  register: (data) => request('POST', '/auth/register', data, { noAuth: true }),
   getProfile: () => request('GET', '/auth/profile'),
   regenerateApiKey: () => request('PUT', '/auth/api-key'),
   changePassword: (data) => request('PUT', '/auth/password', data),
@@ -52,9 +60,11 @@ export const api = {
   createStudent: (data) => request('POST', '/students', data),
   updateStudent: (id, data) => request('PUT', `/students/${id}`, data),
   deleteStudent: (id) => request('DELETE', `/students/${id}`),
-  // Legacy
+
+  // Class-student sub-resources (nested under /api/classes/:classId/students)
   getStudents: (classId) => request('GET', `/classes/${classId}/students`),
   addStudent: (classId, data) => request('POST', `/classes/${classId}/students`, data),
+  removeStudentFromClass: (classId, studentId) => request('DELETE', `/classes/${classId}/students/${studentId}`),
 
   // Pricing Tiers
   getPricingTiers: () => request('GET', '/pricing-tiers'),

@@ -2,47 +2,11 @@ import { useState, useEffect } from 'react';
 import { api } from '../api';
 import { getClassColor, getSubjectColor } from '../utils/colors';
 import { SUBJECTS } from '../utils/constants';
-
-function todayStr() {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-}
-
-function getMonday(dateStr) {
-  const d = new Date(dateStr + 'T00:00:00');
-  const day = d.getDay();
-  const diff = d.getDate() - day + (day === 0 ? -6 : 1);
-  d.setDate(diff);
-  return fmt(d);
-}
-
-function addDays(dateStr, days) {
-  const d = new Date(dateStr + 'T00:00:00');
-  d.setDate(d.getDate() + days);
-  return fmt(d);
-}
-
-function fmt(d) {
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-}
-
-function getMonthRange(year, month) {
-  const start = `${year}-${String(month + 1).padStart(2, '0')}-01`;
-  const last = new Date(year, month + 1, 0);
-  return { start, end: fmt(last) };
-}
-
-function getYearRange(year) {
-  return { start: `${year}-01-01`, end: `${year}-12-31` };
-}
+import { todayStr, getMonday, addDays, fmt, getMonthRange, getYearRange, toHoursAbs } from '../utils/date';
 
 function calcRevenue(cls, durationBilling) {
-  const hours = Math.abs(durationBilling) / 60;
+  const hours = toHoursAbs(durationBilling);
   return (cls.unitPrice * cls.studentCount - (cls.discountAmount || 0)) * hours;
-}
-
-function calcHours(durationBilling) {
-  return Math.abs(durationBilling) / 60;
 }
 
 function groupBy(arr, fn) {
@@ -59,15 +23,15 @@ function StatCard({ label, value, unit, accent, icon }) {
   return (
     <div className="flex-1 rounded-xl overflow-hidden bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 shadow-sm">
       <div className="h-1" style={{ background: accent }} />
-      <div className="p-4 flex items-start justify-between gap-2">
+      <div className="p-2 sm:p-4 flex items-start justify-between gap-1 sm:gap-2">
         <div className="min-w-0">
-          <div className="text-sm text-gray-500 dark:text-gray-400">{label}</div>
-          <div className="text-2xl font-bold mt-1 truncate" style={{ color: accent }}>
+          <div className="text-xs sm:text-sm text-gray-500 dark:text-gray-400">{label}</div>
+          <div className="text-base sm:text-2xl font-bold mt-0.5 sm:mt-1 truncate" style={{ color: accent }}>
             {typeof value === 'number' ? value.toLocaleString() : value}
-            {unit && <span className="text-sm font-normal ml-1 text-gray-500 dark:text-gray-400">{unit}</span>}
+            {unit && <span className="text-xs sm:text-sm font-normal ml-1 text-gray-500 dark:text-gray-400">{unit}</span>}
           </div>
         </div>
-        <div className="w-9 h-9 rounded-lg flex items-center justify-center text-lg shrink-0 mt-0.5"
+        <div className="w-7 h-7 sm:w-9 sm:h-9 rounded-lg flex items-center justify-center text-sm sm:text-lg shrink-0 mt-0.5"
           style={{ background: `${accent}22` }}>
           {icon}
         </div>
@@ -83,9 +47,9 @@ function BarChart({ data, maxVal }) {
     <div className="space-y-2">
       {data.map(item => (
         <div key={item.label} className="flex items-center gap-2">
-          <div className="w-20 text-sm text-right text-gray-600 dark:text-gray-400 truncate">{item.label}</div>
+          <div className="w-12 sm:w-20 text-xs sm:text-sm text-right text-gray-600 dark:text-gray-400 truncate">{item.label}</div>
           <div className="flex-1 bg-gray-200 dark:bg-gray-700 rounded h-6 overflow-hidden">
-            <div className="h-full rounded flex items-center pl-2 text-xs text-white font-medium"
+            <div className="h-full rounded flex items-center pl-2 text-[10px] sm:text-xs text-white font-medium whitespace-nowrap"
               style={{ width: `${Math.max((item.value / max) * 100, 2)}%`, backgroundColor: item.color || '#3b82f6' }}>
               {item.value > 0 && item.display}
             </div>
@@ -140,7 +104,7 @@ export default function Reports() {
 
   // Aggregate stats
   const totalClasses = enriched.length;
-  const totalHours = enriched.reduce((sum, s) => sum + calcHours(s.durationBilling), 0);
+  const totalHours = enriched.reduce((sum, s) => sum + toHoursAbs(s.durationBilling), 0);
   const totalRevenue = enriched.reduce((sum, s) => sum + calcRevenue(s.class, s.durationBilling), 0);
 
   // By subject
@@ -150,7 +114,7 @@ export default function Reports() {
     .map(sub => ({
       label: sub,
       value: bySubject[sub].length,
-      hours: bySubject[sub].reduce((sum, s) => sum + calcHours(s.durationBilling), 0),
+      hours: bySubject[sub].reduce((sum, s) => sum + toHoursAbs(s.durationBilling), 0),
       revenue: bySubject[sub].reduce((sum, s) => sum + calcRevenue(s.class, s.durationBilling), 0),
       color: getSubjectColor(sub),
     }))
@@ -164,7 +128,7 @@ export default function Reports() {
     .map(g => ({
       label: g,
       value: byGrade[g].length,
-      hours: byGrade[g].reduce((sum, s) => sum + calcHours(s.durationBilling), 0),
+      hours: byGrade[g].reduce((sum, s) => sum + toHoursAbs(s.durationBilling), 0),
       revenue: byGrade[g].reduce((sum, s) => sum + calcRevenue(s.class, s.durationBilling), 0),
       color: '#6366f1',
     }))
@@ -178,29 +142,31 @@ export default function Reports() {
       return {
         label: cls.name,
         value: scheds.length,
-        hours: scheds.reduce((sum, s) => sum + calcHours(s.durationBilling), 0),
+        hours: scheds.reduce((sum, s) => sum + toHoursAbs(s.durationBilling), 0),
         revenue: scheds.reduce((sum, s) => sum + calcRevenue(cls, s.durationBilling), 0),
         color: getClassColor(cls),
       };
     })
     .sort((a, b) => b.revenue - a.revenue);
 
-  // Week navigation
-  function prevWeek() { setPeriod(p => ({ start: addDays(p.start, -7), end: addDays(p.end, -7) })); }
-  function nextWeek() { setPeriod(p => ({ start: addDays(p.start, 7), end: addDays(p.end, 7) })); }
+  function loadWeek(monday) {
+    const end = addDays(monday, 6);
+    setPeriod({ start: monday, end });
+    api.getSchedules(monday, end).then(setSchedules);
+  }
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-4">
-        <h2 className="text-xl">统计报表</h2>
-        <div className="flex gap-1 bg-gray-200 dark:bg-gray-700 rounded p-1">
+      <div className="flex items-center justify-between mb-3 sm:mb-4 gap-2">
+        <h2 className="text-lg sm:text-xl font-medium">统计报表</h2>
+        <div className="flex gap-1 bg-gray-200 dark:bg-gray-700 rounded p-1 shrink-0">
           {[
             { key: 'week', label: '周报' },
             { key: 'month', label: '月报' },
             { key: 'year', label: '年报' },
           ].map(t => (
             <button key={t.key} onClick={() => setTab(t.key)}
-              className={`px-3 py-1 rounded text-sm ${tab === t.key ? 'bg-blue-600 text-white' : ''}`}>
+              className={`px-2 sm:px-3 py-1 rounded text-xs sm:text-sm ${tab === t.key ? 'bg-blue-600 text-white' : ''}`}>
               {t.label}
             </button>
           ))}
@@ -208,56 +174,41 @@ export default function Reports() {
       </div>
 
       {/* Period selector */}
-      <div className="flex items-center gap-4 mb-6">
+      <div className="flex items-center gap-2 sm:gap-4 mb-3 sm:mb-6 flex-wrap">
         {tab === 'week' && period && (
-          <div className="flex items-center gap-2">
-            <button onClick={() => {
-              const mon = addDays(period.start, -7);
-              const end = addDays(mon, 6);
-              setPeriod({ start: mon, end });
-              api.getSchedules(mon, end).then(setSchedules);
-            }} className="px-2 py-1 bg-gray-200 dark:bg-gray-700 rounded hover:bg-gray-300 dark:hover:bg-gray-600 active:scale-95 transition-transform text-sm">◀</button>
-            <span className="w-48 text-center">{period.start} ~ {period.end}</span>
-            <button onClick={() => {
-              const mon = addDays(period.start, 7);
-              const end = addDays(mon, 6);
-              setPeriod({ start: mon, end });
-              api.getSchedules(mon, end).then(setSchedules);
-            }} className="px-2 py-1 bg-gray-200 dark:bg-gray-700 rounded hover:bg-gray-300 dark:hover:bg-gray-600 active:scale-95 transition-transform text-sm">▶</button>
-            <button onClick={() => {
-              const mon = getMonday(todayStr());
-              const end = addDays(mon, 6);
-              setPeriod({ start: mon, end });
-              api.getSchedules(mon, end).then(setSchedules);
-            }} className="px-3 py-1 bg-gray-200 dark:bg-gray-700 rounded text-sm hover:bg-gray-300 dark:hover:bg-gray-600 active:scale-95 transition-transform">本周</button>
+          <div className="flex items-center gap-1 sm:gap-2">
+            <button onClick={() => loadWeek(addDays(period.start, -7))} className="px-2 py-1 bg-gray-200 dark:bg-gray-700 rounded hover:bg-gray-300 dark:hover:bg-gray-600 active:scale-95 transition-transform text-sm">◀</button>
+            <span className="text-xs sm:text-sm tabular-nums text-center min-w-[140px] sm:w-48">{period.start} ~ {period.end}</span>
+            <button onClick={() => loadWeek(addDays(period.start, 7))} className="px-2 py-1 bg-gray-200 dark:bg-gray-700 rounded hover:bg-gray-300 dark:hover:bg-gray-600 active:scale-95 transition-transform text-sm">▶</button>
+            <button onClick={() => loadWeek(getMonday(todayStr()))} className="px-2 sm:px-3 py-1 bg-gray-200 dark:bg-gray-700 rounded text-xs sm:text-sm hover:bg-gray-300 dark:hover:bg-gray-600 active:scale-95 transition-transform">本周</button>
           </div>
         )}
         {tab === 'month' && (
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1 sm:gap-2">
             <button onClick={() => { if (month === 0) { setYear(y => y - 1); setMonth(11); } else setMonth(m => m - 1); }}
               className="px-2 py-1 bg-gray-200 dark:bg-gray-700 rounded hover:bg-gray-300 dark:hover:bg-gray-600 active:scale-95 transition-transform">◀</button>
-            <span className="w-32 text-center">{year}年{month + 1}月</span>
+            <span className="text-xs sm:text-sm text-center min-w-[80px] sm:w-32">{year}年{month + 1}月</span>
             <button onClick={() => { if (month === 11) { setYear(y => y + 1); setMonth(0); } else setMonth(m => m + 1); }}
               className="px-2 py-1 bg-gray-200 dark:bg-gray-700 rounded hover:bg-gray-300 dark:hover:bg-gray-600 active:scale-95 transition-transform">▶</button>
             <button onClick={() => { const n = new Date(); setYear(n.getFullYear()); setMonth(n.getMonth()); }}
-              className="px-3 py-1 bg-gray-200 dark:bg-gray-700 rounded text-sm hover:bg-gray-300 dark:hover:bg-gray-600 active:scale-95 transition-transform">本月</button>
+              className="px-2 sm:px-3 py-1 bg-gray-200 dark:bg-gray-700 rounded text-xs sm:text-sm hover:bg-gray-300 dark:hover:bg-gray-600 active:scale-95 transition-transform">本月</button>
           </div>
         )}
         {tab === 'year' && (
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1 sm:gap-2">
             <button onClick={() => setYear(y => y - 1)}
               className="px-2 py-1 bg-gray-200 dark:bg-gray-700 rounded hover:bg-gray-300 dark:hover:bg-gray-600 active:scale-95 transition-transform">◀</button>
-            <span className="w-20 text-center">{year}年</span>
+            <span className="text-xs sm:text-sm text-center min-w-[60px] sm:w-20">{year}年</span>
             <button onClick={() => setYear(y => y + 1)}
               className="px-2 py-1 bg-gray-200 dark:bg-gray-700 rounded hover:bg-gray-300 dark:hover:bg-gray-600 active:scale-95 transition-transform">▶</button>
             <button onClick={() => setYear(new Date().getFullYear())}
-              className="px-3 py-1 bg-gray-200 dark:bg-gray-700 rounded text-sm hover:bg-gray-300 dark:hover:bg-gray-600 active:scale-95 transition-transform">今年</button>
+              className="px-2 sm:px-3 py-1 bg-gray-200 dark:bg-gray-700 rounded text-xs sm:text-sm hover:bg-gray-300 dark:hover:bg-gray-600 active:scale-95 transition-transform">今年</button>
           </div>
         )}
       </div>
 
       {/* Summary cards */}
-      <div className="grid grid-cols-3 gap-4 mb-6">
+      <div className="grid grid-cols-3 gap-2 sm:gap-4 mb-3 sm:mb-6">
         <StatCard label="排课次数" value={totalClasses} unit="次" accent="#3b82f6" icon="📅" />
         <StatCard label="教学时长" value={totalHours} unit="小时" accent="#8b5cf6" icon="⏱" />
         <StatCard label="预估收入" value={`¥${totalRevenue.toLocaleString()}`} accent="#22c55e" icon="💰" />

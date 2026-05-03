@@ -24,8 +24,8 @@ export default function ClassForm({ initial, onSubmit, onCancel }) {
   useEffect(() => { if (initial) setForm(initial); }, [initial]);
 
   return (
-    <form onSubmit={e => { e.preventDefault(); onSubmit(form); }} className="bg-gray-100 dark:bg-gray-800 p-6 rounded-lg">
-      <div className="grid grid-cols-2 gap-4">
+    <form onSubmit={e => { e.preventDefault(); onSubmit(form); }} className="bg-gray-100 dark:bg-gray-800 p-4 sm:p-6 rounded-lg">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
         <div>
           <label className="block text-sm text-gray-500 dark:text-gray-400 mb-1">班级名称</label>
           <input className="w-full p-2 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded" value={form.name}
@@ -69,7 +69,7 @@ export default function ClassForm({ initial, onSubmit, onCancel }) {
             value={form.discountAmount}
             onChange={e => setForm({...form, discountAmount: +e.target.value})} />
         </div>
-        <div className="col-span-2">
+        <div className="sm:col-span-2">
           <label className="block text-sm text-gray-500 dark:text-gray-400 mb-1">优惠原因</label>
           <input className="w-full p-2 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded" value={form.discountReason || ''}
             onChange={e => setForm({...form, discountReason: e.target.value})} />

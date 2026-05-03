@@ -17,11 +17,7 @@ export default function StudentManager({ classId }) {
   }
 
   async function removeStudent(sid) {
-    // Remove student from this class (legacy endpoint)
-    await fetch(`/api/classes/${classId}/students/${sid}`, {
-      method: 'DELETE',
-      headers: { Authorization: `Bearer ${localStorage.getItem('token')}` },
-    });
+    await api.removeStudentFromClass(classId, sid);
     setStudents(s => s.filter(x => x.id !== sid));
   }
 

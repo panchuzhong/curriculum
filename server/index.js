@@ -1,6 +1,5 @@
 import 'dotenv/config';
 import express from 'express';
-import cors from 'cors';
 import { existsSync } from 'fs';
 import { initDb } from './db/index.js';
 import authRoutes from './routes/auth.js';
@@ -16,8 +15,7 @@ import auditLogRoutes from './routes/audit-log.js';
 import backupRoutes from './routes/backup.js';
 
 const app = express();
-app.use(cors());
-app.use(express.json());
+app.use(express.json({ limit: '10mb' }));
 
 // Init DB
 initDb();
@@ -28,7 +26,6 @@ app.use('/api/auth', authRoutes);
 app.use('/api/classes', classRoutes);
 app.use('/api/pricing-tiers', pricingTierRoutes);
 app.use('/api/students', studentRoutes);
-app.use('/api/classes', studentRoutes);
 app.use('/api/schedules', scheduleRoutes);
 app.use('/api/semesters', semesterRoutes);
 app.use('/api/schedule-image', scheduleImageRoutes);
@@ -44,6 +41,12 @@ if (existsSync('./dist')) {
   app.use(express.static('./dist'));
   app.get('{*path}', (req, res) => res.sendFile('index.html', { root: './dist' }));
 }
+
+// Error handler
+app.use((err, req, res, next) => {
+  console.error(err.stack || err);
+  res.status(500).json({ error: 'Internal server error' });
+});
 
 const PORT = process.env.PORT || 8080;
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));

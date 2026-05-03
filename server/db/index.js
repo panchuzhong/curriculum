@@ -14,15 +14,74 @@ db.pragma('foreign_keys = ON');
 export const drizzleDb = drizzle(db, { schema });
 export { db };
 
+const migrations = [
+  {
+    version: 1,
+    name: 'add_teacher_subjects',
+    up(db) {
+      db.exec(`ALTER TABLE teachers ADD COLUMN subjects TEXT`);
+    },
+  },
+  {
+    version: 2,
+    name: 'migrate_students_to_junction',
+    up(db) {
+      const studentCols = db.prepare(`PRAGMA table_info(students)`).all();
+      const hasOldSchema = studentCols.some(c => c.name === 'class_id' && c.notnull === 1);
+
+      db.exec(`CREATE TABLE IF NOT EXISTS class_students (
+        class_id INTEGER NOT NULL REFERENCES classes(id),
+        student_id INTEGER NOT NULL REFERENCES students(id),
+        PRIMARY KEY (class_id, student_id)
+      )`);
+
+      if (hasOldSchema) {
+        db.exec(`CREATE TABLE IF NOT EXISTS students_new (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          teacher_id INTEGER NOT NULL,
+          name TEXT NOT NULL,
+          birth_date TEXT,
+          phone TEXT,
+          parent_name TEXT,
+          parent_phone TEXT,
+          note TEXT,
+          created_at TEXT DEFAULT CURRENT_TIMESTAMP
+        )`);
+        const getClassTeacher = db.prepare(`SELECT teacher_id FROM classes WHERE id = ?`);
+        const oldStudents = db.prepare(`SELECT * FROM students`).all();
+        const insertNew = db.prepare(`INSERT INTO students_new (id, teacher_id, name, phone, parent_phone, note, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)`);
+        const insertLink = db.prepare(`INSERT OR IGNORE INTO class_students (class_id, student_id) VALUES (?, ?)`);
+
+        for (const s of oldStudents) {
+          const cls = getClassTeacher.get(s.class_id);
+          const teacherId = cls ? cls.teacher_id : 1;
+          insertNew.run(s.id, teacherId, s.name, s.phone, s.parent_phone, s.note, s.created_at);
+          if (s.class_id) insertLink.run(s.class_id, s.id);
+        }
+        db.exec(`DROP TABLE students; ALTER TABLE students_new RENAME TO students;`);
+      } else {
+        for (const col of ['teacher_id', 'birth_date', 'parent_name']) {
+          try { db.exec(`ALTER TABLE students ADD COLUMN ${col === 'teacher_id' ? 'teacher_id INTEGER' : col === 'birth_date' ? 'birth_date TEXT' : 'parent_name TEXT'}`); } catch {}
+        }
+      }
+    },
+  },
+];
+
 export function initDb() {
+  // Create tables
   db.exec(`
+    CREATE TABLE IF NOT EXISTS _migrations (
+      version INTEGER PRIMARY KEY,
+      name TEXT NOT NULL,
+      applied_at TEXT DEFAULT CURRENT_TIMESTAMP
+    );
     CREATE TABLE IF NOT EXISTS teachers (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       username TEXT UNIQUE NOT NULL,
       password_hash TEXT NOT NULL,
       name TEXT NOT NULL,
       api_key TEXT UNIQUE,
-      subjects TEXT,
       created_at TEXT DEFAULT CURRENT_TIMESTAMP
     );
     CREATE TABLE IF NOT EXISTS classes (
@@ -106,70 +165,38 @@ export function initDb() {
     );
   `);
 
-  // Migrations for existing databases
-  try { db.exec(`ALTER TABLE teachers ADD COLUMN subjects TEXT`); } catch {}
+  // Run pending migrations
+  const applied = new Set(
+    db.prepare(`SELECT version FROM _migrations`).all().map(r => r.version)
+  );
 
-  // Check if students table needs migration (old schema has class_id NOT NULL)
-  const studentCols = db.prepare(`PRAGMA table_info(students)`).all();
-  const hasOldSchema = studentCols.some(c => c.name === 'class_id' && c.notnull === 1);
-
-  if (hasOldSchema) {
-    // Migrate: create new table, copy data, replace
-    db.exec(`
-      CREATE TABLE IF NOT EXISTS class_students (
-        class_id INTEGER NOT NULL REFERENCES classes(id),
-        student_id INTEGER NOT NULL REFERENCES students(id),
-        PRIMARY KEY (class_id, student_id)
-      );
-      CREATE TABLE IF NOT EXISTS students_new (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        teacher_id INTEGER NOT NULL,
-        name TEXT NOT NULL,
-        birth_date TEXT,
-        phone TEXT,
-        parent_name TEXT,
-        parent_phone TEXT,
-        note TEXT,
-        created_at TEXT DEFAULT CURRENT_TIMESTAMP
-      );
-    `);
-    // Copy data
-    const getClassTeacher = db.prepare(`SELECT teacher_id FROM classes WHERE id = ?`);
-    const oldStudents = db.prepare(`SELECT * FROM students`).all();
-    const insertNew = db.prepare(`INSERT INTO students_new (id, teacher_id, name, phone, parent_phone, note, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)`);
-    const insertLink = db.prepare(`INSERT OR IGNORE INTO class_students (class_id, student_id) VALUES (?, ?)`);
-
-    for (const s of oldStudents) {
-      const cls = getClassTeacher.get(s.class_id);
-      const teacherId = cls ? cls.teacher_id : 1;
-      insertNew.run(s.id, teacherId, s.name, s.phone, s.parent_phone, s.note, s.created_at);
-      if (s.class_id) insertLink.run(s.class_id, s.id);
+  // Existing database (migrations table empty but tables already exist):
+  // mark all current migrations as applied since the old code handled them
+  if (applied.size === 0) {
+    const hasTeachers = db.prepare(`SELECT name FROM sqlite_master WHERE type='table' AND name='teachers'`).get();
+    if (hasTeachers) {
+      for (const m of migrations) {
+        db.prepare(`INSERT INTO _migrations (version, name) VALUES (?, ?)`).run(m.version, m.name);
+        applied.add(m.version);
+      }
     }
-
-    db.exec(`DROP TABLE students; ALTER TABLE students_new RENAME TO students;`);
-  } else {
-    // New schema - just ensure class_students exists
-    try {
-      db.exec(`CREATE TABLE IF NOT EXISTS class_students (
-        class_id INTEGER NOT NULL REFERENCES classes(id),
-        student_id INTEGER NOT NULL REFERENCES students(id),
-        PRIMARY KEY (class_id, student_id)
-      )`);
-    } catch {}
-    // Add missing columns
-    try { db.exec(`ALTER TABLE students ADD COLUMN teacher_id INTEGER`); } catch {}
-    try { db.exec(`ALTER TABLE students ADD COLUMN birth_date TEXT`); } catch {}
-    try { db.exec(`ALTER TABLE students ADD COLUMN parent_name TEXT`); } catch {}
   }
 
-  // Ensure holidays table exists
-  try {
-    db.exec(`CREATE TABLE IF NOT EXISTS holidays (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      teacher_id INTEGER NOT NULL,
-      date TEXT NOT NULL,
-      type TEXT NOT NULL,
-      name TEXT
-    )`);
-  } catch {}
+  for (const m of migrations) {
+    if (!applied.has(m.version)) {
+      m.up(db);
+      db.prepare(`INSERT INTO _migrations (version, name) VALUES (?, ?)`).run(m.version, m.name);
+    }
+  }
+
+  // Indexes
+  db.exec(`
+    CREATE INDEX IF NOT EXISTS idx_schedules_date ON schedules(date);
+    CREATE INDEX IF NOT EXISTS idx_schedules_classId ON schedules(class_id);
+    CREATE INDEX IF NOT EXISTS idx_classes_teacherId_deleted ON classes(teacher_id, deleted);
+    CREATE INDEX IF NOT EXISTS idx_students_teacherId ON students(teacher_id);
+    CREATE INDEX IF NOT EXISTS idx_holidays_teacherId_date ON holidays(teacher_id, date);
+    CREATE INDEX IF NOT EXISTS idx_semesters_teacherId ON semesters(teacher_id);
+    CREATE INDEX IF NOT EXISTS idx_class_students_classId ON class_students(class_id);
+  `);
 }

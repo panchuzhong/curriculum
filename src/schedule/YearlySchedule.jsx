@@ -2,10 +2,7 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../api';
 import { getSubjectColor } from '../utils/colors';
-
-function toHours(durationBilling) {
-  return durationBilling / 60;
-}
+import { toHoursAbs } from '../utils/date';
 
 export default function YearlySchedule() {
   const navigate = useNavigate();
@@ -32,32 +29,33 @@ export default function YearlySchedule() {
     byMonth[m].schedules.push({ ...s, class: cls });
   });
 
+  const navBtn = "px-2 sm:px-4 py-1.5 sm:py-2 text-xs sm:text-base bg-gray-200 dark:bg-gray-700 rounded hover:bg-gray-300 dark:hover:bg-gray-600 active:scale-95 transition-transform select-none";
+
   return (
     <div>
-      <div className="flex items-center justify-between mb-4">
-        <button onClick={() => setYear(y => y - 1)} className="px-4 py-2 bg-gray-200 dark:bg-gray-700 rounded hover:bg-gray-300 dark:hover:bg-gray-600 active:scale-95 transition-transform">上一年</button>
-        <h2 className="text-xl">{year}年</h2>
-        <div className="flex gap-2">
-          <button onClick={() => setYear(new Date().getFullYear())}
-            className="px-4 py-2 bg-gray-200 dark:bg-gray-700 rounded hover:bg-gray-300 dark:hover:bg-gray-600 active:scale-95 transition-transform">今年</button>
-          <button onClick={() => setYear(y => y + 1)} className="px-4 py-2 bg-gray-200 dark:bg-gray-700 rounded hover:bg-gray-300 dark:hover:bg-gray-600 active:scale-95 transition-transform">下一年</button>
+      <div className="flex items-center justify-between mb-2 sm:mb-4">
+        <button onClick={() => setYear(y => y - 1)} className={navBtn}><span className="sm:hidden">‹</span><span className="hidden sm:inline">上一年</span></button>
+        <h2 className="text-base sm:text-xl font-medium">{year}年</h2>
+        <div className="flex gap-1 sm:gap-2">
+          <button onClick={() => setYear(new Date().getFullYear())} className={navBtn}><span className="sm:hidden">今</span><span className="hidden sm:inline">今年</span></button>
+          <button onClick={() => setYear(y => y + 1)} className={navBtn}><span className="sm:hidden">›</span><span className="hidden sm:inline">下一年</span></button>
         </div>
       </div>
-      <div className="grid grid-cols-3 gap-4">
+      <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 sm:gap-4">
         {Array.from({ length: 12 }, (_, m) => {
           const data = byMonth[m];
-          const totalHours = data.schedules.reduce((sum, s) => sum + toHours(s.durationBilling), 0);
+          const totalHours = data.schedules.reduce((sum, s) => sum + toHoursAbs(s.durationBilling), 0);
 
           // By subject
           const bySubject = {};
           data.schedules.forEach(s => {
             const sub = s.class?.subject || '未知';
             if (!bySubject[sub]) bySubject[sub] = 0;
-            bySubject[sub] += toHours(s.durationBilling);
+            bySubject[sub] += toHoursAbs(s.durationBilling);
           });
 
           // Competition vs regular
-          const compHours = data.schedules.filter(s => s.class?.isCompetition).reduce((sum, s) => sum + toHours(s.durationBilling), 0);
+          const compHours = data.schedules.filter(s => s.class?.isCompetition).reduce((sum, s) => sum + toHoursAbs(s.durationBilling), 0);
           const regularHours = totalHours - compHours;
 
           // Sort subjects by hours
@@ -65,21 +63,21 @@ export default function YearlySchedule() {
 
           return (
             <div key={m} onClick={() => navigate(`/monthly?year=${year}&month=${m}`)}
-              className="p-4 bg-gray-100 dark:bg-gray-800 rounded cursor-pointer hover:bg-gray-200 dark:hover:bg-gray-700">
-              <div className="flex items-center justify-between mb-2">
-                <h3 className="text-lg font-bold">{m + 1}月</h3>
+              className="p-2 sm:p-4 bg-gray-100 dark:bg-gray-800 rounded cursor-pointer hover:bg-gray-200 dark:hover:bg-gray-700">
+              <div className="flex items-center justify-between mb-1 sm:mb-2">
+                <h3 className="text-base sm:text-lg font-bold">{m + 1}月</h3>
                 {totalHours > 0 && (
-                  <span className="text-sm font-medium text-blue-600 dark:text-blue-400">{totalHours.toFixed(1)}h</span>
+                  <span className="text-xs sm:text-sm font-medium text-blue-600 dark:text-blue-400">{totalHours.toFixed(1)}h</span>
                 )}
               </div>
               {totalHours === 0 ? (
-                <div className="text-sm text-gray-400">无排课</div>
+                <div className="text-xs sm:text-sm text-gray-400">无排课</div>
               ) : (
                 <div className="space-y-1">
                   {/* Subject breakdown */}
-                  <div className="flex flex-wrap gap-1.5">
+                  <div className="flex flex-wrap gap-1 sm:gap-1.5">
                     {subjectEntries.map(([sub, h]) => (
-                      <span key={sub} className="inline-flex items-center gap-1 text-[11px] px-1.5 py-0.5 rounded"
+                      <span key={sub} className="inline-flex items-center gap-0.5 sm:gap-1 text-[10px] sm:text-[11px] px-1 sm:px-1.5 py-0.5 rounded"
                         style={{ backgroundColor: getSubjectColor(sub), color: '#fff' }}>
                         {sub} {h.toFixed(1)}h
                       </span>
@@ -87,7 +85,7 @@ export default function YearlySchedule() {
                   </div>
                   {/* Competition vs regular */}
                   {(compHours > 0 || regularHours > 0) && (
-                    <div className="flex gap-2 text-[11px] text-gray-500 dark:text-gray-400">
+                    <div className="flex flex-wrap gap-1 sm:gap-2 text-[10px] sm:text-[11px] text-gray-500 dark:text-gray-400">
                       {compHours > 0 && <span>★ 竞赛 {compHours.toFixed(1)}h</span>}
                       {regularHours > 0 && <span>课内 {regularHours.toFixed(1)}h</span>}
                     </div>

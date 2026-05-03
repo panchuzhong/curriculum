@@ -3,7 +3,11 @@ import { drizzleDb } from '../db/index.js';
 import { teachers } from '../db/schema.js';
 import { eq } from 'drizzle-orm';
 
-const JWT_SECRET = process.env.JWT_SECRET || 'dev-secret';
+const JWT_SECRET = process.env.JWT_SECRET;
+if (!JWT_SECRET) {
+  console.error('FATAL: JWT_SECRET environment variable is not set');
+  process.exit(1);
+}
 
 export function authMiddleware(req, res, next) {
   // Try API key first

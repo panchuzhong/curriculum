@@ -49,8 +49,8 @@ function StudentDialog({ student, classes, onClose, onSaved }) {
   }
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={onClose}>
-      <div className="bg-white dark:bg-gray-800 rounded-lg p-6 w-[480px] max-h-[90vh] overflow-auto shadow-xl" onClick={e => e.stopPropagation()}>
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-3" onClick={onClose}>
+      <div className="bg-white dark:bg-gray-800 rounded-lg p-4 sm:p-6 w-full max-w-[480px] max-h-[90vh] overflow-auto shadow-xl" onClick={e => e.stopPropagation()}>
         <h3 className="text-lg mb-4">{student ? '编辑学生' : '新建学生'}</h3>
         <form onSubmit={handleSubmit} className="space-y-3">
           <div>
@@ -146,19 +146,19 @@ export default function StudentList() {
 
   return (
     <div>
-      <div className="flex justify-between items-center mb-4">
-        <h2 className="text-xl">学生管理</h2>
-        <div className="flex gap-2 items-center">
-          <select className="p-2 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded text-sm"
+      <div className="flex justify-between items-center mb-3 sm:mb-4 gap-2">
+        <h2 className="text-lg sm:text-xl font-medium">学生管理</h2>
+        <div className="flex gap-1 sm:gap-2 items-center">
+          <select className="p-1.5 sm:p-2 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded text-xs sm:text-sm max-w-[140px] sm:max-w-none truncate"
             value={filterClass} onChange={e => setFilterClass(e.target.value)}>
-            <option value="all">全部班级 ({students.length}人)</option>
+            <option value="all">全部 ({students.length}人)</option>
             {classes.map(cls => {
               const count = students.filter(s => s.classIds?.includes(cls.id)).length;
               return <option key={cls.id} value={cls.id}>{cls.name} ({count}人)</option>;
             })}
           </select>
           <button onClick={() => setDialog('new')}
-            className="px-4 py-2 bg-blue-600 text-white rounded">新建学生</button>
+            className="px-2 sm:px-4 py-1.5 sm:py-2 bg-blue-600 text-white rounded text-xs sm:text-sm whitespace-nowrap">新建</button>
         </div>
       </div>
 
@@ -168,35 +168,37 @@ export default function StudentList() {
         </p>
       ) : (
         <div className="bg-gray-100 dark:bg-gray-800 rounded-lg overflow-hidden">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="bg-gray-200 dark:bg-gray-700">
-                <th className="text-left p-3">姓名</th>
-                <th className="text-left p-3">出生日期</th>
-                <th className="text-left p-3">电话</th>
-                <th className="text-left p-3">父母</th>
-                <th className="text-left p-3">联系方式</th>
-                <th className="text-left p-3">所在班级</th>
-                <th className="text-right p-3">操作</th>
-              </tr>
-            </thead>
-            <tbody>
-              {filtered.map(s => (
-                <tr key={s.id} className="border-t border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700/50">
-                  <td className="p-3 font-medium">{s.name}</td>
-                  <td className="p-3 text-gray-500 dark:text-gray-400">{s.birthDate || '-'}</td>
-                  <td className="p-3 text-gray-500 dark:text-gray-400">{s.phone || '-'}</td>
-                  <td className="p-3 text-gray-500 dark:text-gray-400">{s.parentName || '-'}</td>
-                  <td className="p-3 text-gray-500 dark:text-gray-400">{s.parentPhone || '-'}</td>
-                  <td className="p-3 text-gray-500 dark:text-gray-400 text-xs">{getClassNames(s.classIds)}</td>
-                  <td className="p-3 text-right">
-                    <button onClick={() => setDialog(s)}
-                      className="px-2 py-1 bg-gray-300 dark:bg-gray-600 rounded text-xs">编辑</button>
-                  </td>
+          <div className="overflow-x-auto thin-scroll">
+            <table className="w-full text-sm whitespace-nowrap">
+              <thead>
+                <tr className="bg-gray-200 dark:bg-gray-700">
+                  <th className="text-left p-3">姓名</th>
+                  <th className="text-left p-3">出生日期</th>
+                  <th className="text-left p-3">电话</th>
+                  <th className="text-left p-3">父母</th>
+                  <th className="text-left p-3">联系方式</th>
+                  <th className="text-left p-3">所在班级</th>
+                  <th className="text-right p-3">操作</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {filtered.map(s => (
+                  <tr key={s.id} className="border-t border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700/50">
+                    <td className="p-3 font-medium">{s.name}</td>
+                    <td className="p-3 text-gray-500 dark:text-gray-400">{s.birthDate || '-'}</td>
+                    <td className="p-3 text-gray-500 dark:text-gray-400">{s.phone || '-'}</td>
+                    <td className="p-3 text-gray-500 dark:text-gray-400">{s.parentName || '-'}</td>
+                    <td className="p-3 text-gray-500 dark:text-gray-400">{s.parentPhone || '-'}</td>
+                    <td className="p-3 text-gray-500 dark:text-gray-400 text-xs">{getClassNames(s.classIds)}</td>
+                    <td className="p-3 text-right">
+                      <button onClick={() => setDialog(s)}
+                        className="px-2 py-1 bg-gray-300 dark:bg-gray-600 rounded text-xs">编辑</button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
 
