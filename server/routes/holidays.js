@@ -3,6 +3,8 @@ import { drizzleDb } from '../db/index.js';
 import { holidays } from '../db/schema.js';
 import { eq, and } from 'drizzle-orm';
 import { authMiddleware } from '../middleware/auth.js';
+import handle from '../validations/handle.js';
+import { validateCreateHoliday, validateUpdateHoliday, validateBatchHolidays } from '../validations/holidays.js';
 
 const router = Router();
 router.use(authMiddleware);
@@ -24,9 +26,8 @@ router.get('/:year', (req, res) => {
 });
 
 // Create a holiday
-router.post('/', (req, res) => {
+router.post('/', validateCreateHoliday, handle, (req, res) => {
   const { date, type, name } = req.body;
-  if (!date || !type) return res.status(400).json({ error: 'date and type required' });
 
   // Check for duplicate
   const existing = drizzleDb.select().from(holidays)
@@ -40,13 +41,16 @@ router.post('/', (req, res) => {
 });
 
 // Update a holiday
-router.put('/:id', (req, res) => {
+router.put('/:id', validateUpdateHoliday, handle, (req, res) => {
   const { id } = req.params;
   const existing = drizzleDb.select().from(holidays)
     .where(and(eq(holidays.id, +id), eq(holidays.teacherId, req.teacherId))).get();
   if (!existing) return res.status(404).json({ error: 'Not found' });
 
-  drizzleDb.update(holidays).set(req.body).where(eq(holidays.id, +id)).run();
+  const allowed = ['date', 'type', 'name'];
+  const safeUpdates = Object.fromEntries(Object.entries(req.body).filter(([k]) => allowed.includes(k)));
+  if (Object.keys(safeUpdates).length === 0) return res.status(400).json({ error: 'No valid fields' });
+  drizzleDb.update(holidays).set(safeUpdates).where(eq(holidays.id, +id)).run();
   res.json({ ok: true });
 });
 
@@ -62,9 +66,8 @@ router.delete('/:id', (req, res) => {
 });
 
 // Batch import holidays
-router.post('/batch', (req, res) => {
+router.post('/batch', validateBatchHolidays, handle, (req, res) => {
   const { items } = req.body; // [{date, type, name}]
-  if (!Array.isArray(items)) return res.status(400).json({ error: 'items array required' });
 
   let count = 0;
   for (const item of items) {

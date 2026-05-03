@@ -1,10 +1,12 @@
 import { Router } from 'express';
 import { drizzleDb } from '../db/index.js';
-import { classes } from '../db/schema.js';
+import { classes, students, classStudents } from '../db/schema.js';
 import { eq, and } from 'drizzle-orm';
 import { authMiddleware } from '../middleware/auth.js';
 import { getDefaultPrice } from '../db/seed.js';
 import { logAudit } from '../services/audit.js';
+import handle from '../validations/handle.js';
+import { validateCreateClass, validateUpdateClass, validateClassStudent } from '../validations/classes.js';
 
 const router = Router();
 router.use(authMiddleware);
@@ -16,12 +18,9 @@ router.get('/', (req, res) => {
   res.json(result);
 });
 
-router.post('/', (req, res) => {
+router.post('/', validateCreateClass, handle, (req, res) => {
   const { name, grade, subject, studentCount, unitPrice, discountAmount, discountReason,
           isCompetition, defaultLocationName, defaultLocationLat, defaultLocationLng } = req.body;
-  if (!name || !grade || !subject || studentCount == null) {
-    return res.status(400).json({ error: 'Missing required fields' });
-  }
   const price = unitPrice ?? getDefaultPrice(req.teacherId, studentCount);
   const result = drizzleDb.insert(classes).values({
     teacherId: req.teacherId, name, grade, subject, studentCount,
@@ -35,13 +34,16 @@ router.post('/', (req, res) => {
   res.json({ id: newId });
 });
 
-router.put('/:id', (req, res) => {
+router.put('/:id', validateUpdateClass, handle, (req, res) => {
   const { id } = req.params;
   const existing = drizzleDb.select().from(classes)
     .where(and(eq(classes.id, +id), eq(classes.teacherId, req.teacherId))).get();
   if (!existing) return res.status(404).json({ error: 'Not found' });
-  drizzleDb.update(classes).set(req.body).where(eq(classes.id, +id)).run();
-  logAudit({ teacherId: req.teacherId, action: 'UPDATE', tableName: 'classes', recordId: +id, before: existing, after: req.body });
+  const allowed = ['name', 'grade', 'subject', 'studentCount', 'unitPrice', 'discountAmount', 'discountReason', 'isCompetition', 'defaultLocationName', 'defaultLocationLat', 'defaultLocationLng'];
+  const safeUpdates = Object.fromEntries(Object.entries(req.body).filter(([k]) => allowed.includes(k)));
+  if (Object.keys(safeUpdates).length === 0) return res.status(400).json({ error: 'No valid fields' });
+  drizzleDb.update(classes).set(safeUpdates).where(eq(classes.id, +id)).run();
+  logAudit({ teacherId: req.teacherId, action: 'UPDATE', tableName: 'classes', recordId: +id, before: existing, after: safeUpdates });
   res.json({ ok: true });
 });
 
@@ -54,5 +56,54 @@ router.delete('/:id', (req, res) => {
   logAudit({ teacherId: req.teacherId, action: 'DELETE', tableName: 'classes', recordId: +id, before: existing });
   res.json({ ok: true });
 });
+
+// ── Sub-resource: students under a class ──
+const classStudentRouter = Router({ mergeParams: true });
+
+classStudentRouter.get('/', (req, res) => {
+  const classId = +req.params.classId;
+  const cls = drizzleDb.select().from(classes)
+    .where(and(eq(classes.id, classId), eq(classes.teacherId, req.teacherId), eq(classes.deleted, false))).get();
+  if (!cls) return res.status(404).json({ error: 'Class not found' });
+
+  const links = drizzleDb.select().from(classStudents)
+    .where(eq(classStudents.classId, classId)).all();
+  const studentIds = links.map(l => l.studentId);
+  if (studentIds.length === 0) return res.json([]);
+
+  const allStudents = drizzleDb.select().from(students)
+    .where(eq(students.teacherId, req.teacherId)).all();
+  res.json(allStudents.filter(s => studentIds.includes(s.id)));
+});
+
+classStudentRouter.post('/', validateClassStudent, handle, (req, res) => {
+  const classId = +req.params.classId;
+  const cls = drizzleDb.select().from(classes)
+    .where(and(eq(classes.id, classId), eq(classes.teacherId, req.teacherId), eq(classes.deleted, false))).get();
+  if (!cls) return res.status(404).json({ error: 'Class not found' });
+
+  const { name, phone, parentPhone, note } = req.body;
+
+  const result = drizzleDb.insert(students).values({
+    teacherId: req.teacherId, name, phone, parentPhone, note,
+  }).run();
+  const studentId = result.lastInsertRowid;
+  drizzleDb.insert(classStudents).values({ classId, studentId }).run();
+  res.json({ id: studentId });
+});
+
+classStudentRouter.delete('/:studentId', (req, res) => {
+  const { classId, studentId } = req.params;
+  const existing = drizzleDb.select().from(students)
+    .where(and(eq(students.id, +studentId), eq(students.teacherId, req.teacherId))).get();
+  if (!existing) return res.status(404).json({ error: 'Not found' });
+
+  drizzleDb.delete(classStudents)
+    .where(and(eq(classStudents.classId, +classId), eq(classStudents.studentId, +studentId)))
+    .run();
+  res.json({ ok: true });
+});
+
+router.use('/:classId/students', classStudentRouter);
 
 export default router;
