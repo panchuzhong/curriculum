@@ -12,6 +12,28 @@ import { toLocalDateStr, toMin, resolveRange, toCSV, detectConflictGroups, getSc
 const router = Router();
 router.use(authMiddleware);
 
+function getConflictsForSchedule(scheduleId, teacherId) {
+  const s = drizzleDb.select().from(schedules).where(eq(schedules.id, scheduleId)).get();
+  if (!s) return [];
+  const teacherClassIds = drizzleDb.select({ id: classes.id }).from(classes)
+    .where(and(eq(classes.teacherId, teacherId), eq(classes.deleted, false))).all().map(c => c.id);
+  const daySchedules = drizzleDb.select().from(schedules)
+    .where(eq(schedules.date, s.date)).all()
+    .filter(x => x.id !== scheduleId && teacherClassIds.includes(x.classId));
+  const conflicts = [];
+  const sStart = toMin(s.startTime);
+  const sEnd = toMin(s.endTime) >= sStart ? toMin(s.endTime) : toMin(s.endTime) + 24 * 60;
+  for (const other of daySchedules) {
+    const oStart = toMin(other.startTime);
+    const oEnd = toMin(other.endTime) >= oStart ? toMin(other.endTime) : toMin(other.endTime) + 24 * 60;
+    if (sStart < oEnd && oStart < sEnd) {
+      const cls = drizzleDb.select().from(classes).where(eq(classes.id, other.classId)).get();
+      conflicts.push({ id: other.id, classId: other.classId, className: cls?.name, startTime: other.startTime, endTime: other.endTime });
+    }
+  }
+  return conflicts;
+}
+
 // ── CRUD ──
 
 router.get('/', (req, res) => {
@@ -52,7 +74,8 @@ router.post('/', validateCreateSchedule, handle, (req, res) => {
   }).run();
   const created = getScheduleWithClass(Number(result.lastInsertRowid));
   logAudit({ teacherId: req.teacherId, action: 'CREATE', tableName: 'schedules', recordId: created.id, after: created });
-  res.json(created);
+  const warnings = getConflictsForSchedule(created.id, req.teacherId);
+  res.json({ ...created, warnings: warnings.length > 0 ? warnings : undefined });
 });
 
 // ── Batch operations (must be before /:id routes) ──
@@ -212,7 +235,8 @@ router.put('/:id', (req, res) => {
   drizzleDb.update(schedules).set(updates).where(eq(schedules.id, +id)).run();
   const updated = getScheduleWithClass(+id);
   logAudit({ teacherId: req.teacherId, action: 'UPDATE', tableName: 'schedules', recordId: +id, before: existing, after: updated });
-  res.json(updated);
+  const warnings = getConflictsForSchedule(+id, req.teacherId);
+  res.json({ ...updated, warnings: warnings.length > 0 ? warnings : undefined });
 });
 
 router.delete('/:id', (req, res) => {
@@ -381,12 +405,22 @@ function getFreeSlotsForDate(dateStr, teacherId, dayStart = '08:00', dayEnd = '2
 }
 
 router.get('/free-slots', (req, res) => {
-  const { date, start, end, dayStart, dayEnd, after, before } = req.query;
+  const { date, start, end, dayStart, dayEnd, after, before, minDuration } = req.query;
   const dStart = after || dayStart || '08:00';
   const dEnd = before || dayEnd || '23:00';
+  const minDur = minDuration ? +minDuration : 0;
+
+  function filterSlots(slots) {
+    if (!minDur) return slots;
+    return slots.filter(s => {
+      const [sh, sm] = s.start.split(':').map(Number);
+      const [eh, em] = s.end.split(':').map(Number);
+      return (eh * 60 + em) - (sh * 60 + sm) >= minDur;
+    });
+  }
 
   if (date) {
-    return res.json({ date, slots: getFreeSlotsForDate(date, req.teacherId, dStart, dEnd) });
+    return res.json({ date, slots: filterSlots(getFreeSlotsForDate(date, req.teacherId, dStart, dEnd)) });
   }
   if (start && end) {
     const results = [];
@@ -394,7 +428,8 @@ router.get('/free-slots', (req, res) => {
     const endDate = new Date(end + 'T00:00:00');
     while (current <= endDate) {
       const dateStr = toLocalDateStr(current);
-      results.push({ date: dateStr, slots: getFreeSlotsForDate(dateStr, req.teacherId, dStart, dEnd) });
+      const slots = filterSlots(getFreeSlotsForDate(dateStr, req.teacherId, dStart, dEnd));
+      if (slots.length > 0) results.push({ date: dateStr, slots });
       current.setDate(current.getDate() + 1);
     }
     return res.json(results);

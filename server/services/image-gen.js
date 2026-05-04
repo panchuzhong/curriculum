@@ -95,7 +95,7 @@ function assignColumns(group) {
 }
 
 // ── Image generation ─────────────────────────────────────────────
-export async function generateScheduleImage(schedulesWithClasses, startDate, endDate, { theme = 'auto', rowH = 30 } = {}) {
+export async function generateScheduleImage(schedulesWithClasses, startDate, endDate, { theme = 'auto', rowH = 30, scale } = {}) {
   const dates = getDateRange(startDate, endDate);
   const numDays = dates.length;
   const todayStr = new Date().toISOString().slice(0, 10);
@@ -248,7 +248,8 @@ export async function generateScheduleImage(schedulesWithClasses, startDate, end
   });
   const page = await browser.newPage();
   await page.setContent(html, { waitUntil: 'networkidle0' });
-  await page.setViewport({ width: totalW + 32, height: totalH + HEADER_H + 100, deviceScaleFactor: 2 });
+  const scaleFactor = scale ? Math.max(0.25, Math.min(3, +scale)) : 2;
+  await page.setViewport({ width: totalW + 32, height: totalH + HEADER_H + 100, deviceScaleFactor: scaleFactor });
   const buffer = await page.screenshot({ type: 'png', fullPage: true });
   await browser.close();
   return buffer;

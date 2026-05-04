@@ -19,7 +19,7 @@ describe('GET /api/schedule-image', () => {
   it('rejects missing start/end', async () => {
     const res = await request(app).get('/api/schedule-image').set(auth(token));
     expect(res.status).toBe(400);
-    expect(res.body.error).toContain('start and end');
+    expect(res.body.error).toContain('start/end or range');
   });
 
   it('returns 404 when no classes exist', async () => {
@@ -37,6 +37,17 @@ describe('GET /api/schedule-image', () => {
     expect(res.status).toBe(200);
     expect(res.headers['content-type']).toBe('image/png');
     expect(res.body.length).toBeGreaterThan(0);
+  });
+
+  it('supports range=week parameter', async () => {
+    const { classes } = await import('../db/schema.js');
+    drizzleDb.insert(classes).values({
+      teacherId, name: '数学班', grade: '高三', subject: '数学', studentCount: 3, unitPrice: 800,
+    }).run();
+
+    const res = await request(app).get('/api/schedule-image?range=week').set(auth(token));
+    expect(res.status).toBe(200);
+    expect(res.headers['content-type']).toBe('image/png');
   });
 
   it('requires authentication', async () => {
