@@ -11,22 +11,28 @@ export default function ClassList() {
   useEffect(() => { api.getClasses().then(setClasses); }, []);
 
   async function handleCreate(form) {
-    await api.createClass(form);
-    setShowNew(false);
-    api.getClasses().then(setClasses);
+    try {
+      await api.createClass(form);
+      setShowNew(false);
+      api.getClasses().then(setClasses);
+    } catch (e) { alert(e.message || '创建失败'); }
   }
 
   async function handleUpdate(form) {
-    await api.updateClass(expandedId, form);
-    setExpandedId(null);
-    api.getClasses().then(setClasses);
+    try {
+      await api.updateClass(expandedId, form);
+      setExpandedId(null);
+      api.getClasses().then(setClasses);
+    } catch (e) { alert(e.message || '更新失败'); }
   }
 
   async function handleDelete(id, e) {
     e.stopPropagation();
     if (!confirm('确定删除？')) return;
-    await api.deleteClass(id);
-    api.getClasses().then(setClasses);
+    try {
+      await api.deleteClass(id);
+      api.getClasses().then(setClasses);
+    } catch (e) { alert(e.message || '删除失败'); }
   }
 
   return (

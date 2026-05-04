@@ -8,14 +8,22 @@ export default function PricingTierManager() {
   useEffect(() => { api.getPricingTiers().then(setTiers); }, []);
 
   async function addTier() {
-    await api.createPricingTier(form);
-    setForm({ minStudents: 1, maxStudents: 1, pricePerStudentPerHour: 800 });
-    api.getPricingTiers().then(setTiers);
+    try {
+      await api.createPricingTier({
+        minStudents: form.minStudents === '' ? 1 : +form.minStudents,
+        maxStudents: form.maxStudents === '' ? 1 : +form.maxStudents,
+        pricePerStudentPerHour: form.pricePerStudentPerHour === '' ? 0 : +form.pricePerStudentPerHour,
+      });
+      setForm({ minStudents: 1, maxStudents: 1, pricePerStudentPerHour: 800 });
+      api.getPricingTiers().then(setTiers);
+    } catch (e) { alert(e.message || '添加失败'); }
   }
 
   async function removeTier(id) {
-    await api.deletePricingTier(id);
-    setTiers(t => t.filter(x => x.id !== id));
+    try {
+      await api.deletePricingTier(id);
+      setTiers(t => t.filter(x => x.id !== id));
+    } catch (e) { alert(e.message || '删除失败'); }
   }
 
   return (
@@ -33,17 +41,17 @@ export default function PricingTierManager() {
         <div>
           <label className="block text-sm text-gray-500 dark:text-gray-400 mb-1">最少人数</label>
           <input type="number" min="1" className="w-24 p-2 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded"
-            value={form.minStudents} onChange={e => setForm({...form, minStudents: +e.target.value})} />
+            value={form.minStudents} onChange={e => setForm({...form, minStudents: e.target.value === '' ? '' : +e.target.value})} />
         </div>
         <div>
           <label className="block text-sm text-gray-500 dark:text-gray-400 mb-1">最多人数</label>
           <input type="number" min="1" className="w-24 p-2 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded"
-            value={form.maxStudents} onChange={e => setForm({...form, maxStudents: +e.target.value})} />
+            value={form.maxStudents} onChange={e => setForm({...form, maxStudents: e.target.value === '' ? '' : +e.target.value})} />
         </div>
         <div>
           <label className="block text-sm text-gray-500 dark:text-gray-400 mb-1">单价 (元/人/时)</label>
           <input type="number" step="0.01" className="w-32 p-2 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded"
-            value={form.pricePerStudentPerHour} onChange={e => setForm({...form, pricePerStudentPerHour: +e.target.value})} />
+            value={form.pricePerStudentPerHour} onChange={e => setForm({...form, pricePerStudentPerHour: e.target.value === '' ? '' : +e.target.value})} />
         </div>
         <button onClick={addTier} className="px-4 py-2 bg-green-600 rounded hover:bg-green-700">添加</button>
       </div>
