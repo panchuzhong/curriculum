@@ -31,7 +31,8 @@ router.get('/agent/help', (req, res) => {
         'PUT /api/auth/api-key': '重新生成 API Key',
       },
       classes: {
-        'GET /api/classes': '获取班级列表（不含已软删除）',
+        'GET /api/classes': '获取班级列表（不含已软删除）；返回 isDeleted 布尔字段',
+        'GET /api/classes?includeDeleted=true': '获取全部班级（含已软删除），isDeleted 字段区分',
         'POST /api/classes': '创建班级（unitPrice 留空时自动匹配阶梯定价）',
         'PUT /api/classes/:id': '更新班级信息',
         'DELETE /api/classes/:id': '删除班级（软删除，排课记录保留）',
@@ -90,6 +91,7 @@ router.get('/agent/help', (req, res) => {
         'GET /api/schedule-image?start=&end=&theme=light|dark|auto': 'theme=light 强制浅色，dark 强制深色，auto（默认）按小时自动切换（7:00-19:00 浅色，其余深色）',
         'GET /api/schedule-image?start=&end=&rowH=N': '每小时行高像素（16-60，默认 30），增大后文字更清晰，图片更高',
         'GET /api/schedule-image?start=&end=&scale=N': '整体缩放因子（0.25-3，默认 2），scale=1 适合手机查看，scale=0.5 更小体积',
+        'GET /api/schedule-image?start=&end=&highlight=YYYY-MM-DD': '高亮指定日期列（黄色边框），适合截给家长看某天课表',
       },
       backup: {
         'GET /api/backup': '导出教师全量数据为 JSON（classes, students, schedules, semesters, holidays, pricingTiers, classStudents），触发浏览器下载',
@@ -301,6 +303,8 @@ router.get('/agent/help', (req, res) => {
       '查询多日空闲时段（指定时段）': 'GET /api/schedules/free-slots?start=2026-05-06&end=2026-05-12&after=14:00&before=22:00',
       '生成本周课表图片（快捷）': 'GET /api/schedule-image?range=week',
       '生成课表图片（手机缩放）': 'GET /api/schedule-image?range=week&scale=1',
+      '生成课表图片（高亮某天）': 'GET /api/schedule-image?range=week&highlight=2026-05-06',
+      '获取全部班级（含已删除）': 'GET /api/classes?includeDeleted=true',
       '查询冲突排课': 'GET /api/schedules/conflicts',
       '查询近期冲突（自定义范围）': 'GET /api/schedules/conflicts?start=2026-05-01&end=2026-05-31&limit=50',
       '查询操作日志（最近批量操作）': 'GET /api/audit-log?action=BATCH_UPDATE&limit=20',

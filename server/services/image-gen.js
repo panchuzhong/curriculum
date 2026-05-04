@@ -95,7 +95,7 @@ function assignColumns(group) {
 }
 
 // ── Image generation ─────────────────────────────────────────────
-export async function generateScheduleImage(schedulesWithClasses, startDate, endDate, { theme = 'auto', rowH = 30, scale } = {}) {
+export async function generateScheduleImage(schedulesWithClasses, startDate, endDate, { theme = 'auto', rowH = 30, scale, highlight } = {}) {
   const dates = getDateRange(startDate, endDate);
   const numDays = dates.length;
   const todayStr = new Date().toISOString().slice(0, 10);
@@ -168,6 +168,13 @@ export async function generateScheduleImage(schedulesWithClasses, startDate, end
   if (todayIdx >= 0) {
     const left = timeColW + todayIdx * colW;
     gridHtml += `<div style="position:absolute;top:0;left:${left}px;width:${colW}px;height:${totalH}px;background:${c.todayBg};pointer-events:none"></div>`;
+  }
+
+  // ── Highlight column ─────────────────────────────────────────────
+  if (highlight && dates.includes(highlight)) {
+    const hlIdx = dates.indexOf(highlight);
+    const left = timeColW + hlIdx * colW;
+    gridHtml += `<div style="position:absolute;top:0;left:${left}px;width:${colW}px;height:${totalH}px;border:3px solid #f59e0b;box-shadow:inset 0 0 12px rgba(245,158,11,0.15);pointer-events:none;z-index:5;border-radius:2px"></div>`;
   }
 
   // ── Schedule blocks ────────────────────────────────────────────

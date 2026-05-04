@@ -12,10 +12,13 @@ const router = Router();
 router.use(authMiddleware);
 
 router.get('/', (req, res) => {
+  const includeDeleted = req.query.includeDeleted === 'true';
+  const conditions = [eq(classes.teacherId, req.teacherId)];
+  if (!includeDeleted) conditions.push(eq(classes.deleted, false));
   const result = drizzleDb.select().from(classes)
-    .where(and(eq(classes.teacherId, req.teacherId), eq(classes.deleted, false)))
+    .where(and(...conditions))
     .all();
-  res.json(result);
+  res.json(result.map(c => ({ ...c, isDeleted: !!c.deleted })));
 });
 
 router.post('/', validateCreateClass, handle, (req, res) => {

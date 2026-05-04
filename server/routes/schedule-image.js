@@ -11,7 +11,7 @@ router.use(authMiddleware);
 
 router.get('/', async (req, res) => {
   try {
-    const { theme, rowH, scale } = req.query;
+    const { theme, rowH, scale, highlight } = req.query;
     const { start, end } = resolveRange(req.query);
     if (!start || !end) return res.status(400).json({ error: 'start/end or range required' });
 
@@ -29,7 +29,7 @@ router.get('/', async (req, res) => {
       .filter(s => classIds.includes(s.classId))
       .map(s => ({ ...s, class: classMap[s.classId] }));
 
-    const buffer = await generateScheduleImage(scheds, start, end, { theme, rowH, scale });
+    const buffer = await generateScheduleImage(scheds, start, end, { theme, rowH, scale, highlight });
     res.setHeader('Content-Type', 'image/png');
     res.send(buffer);
   } catch (err) {
