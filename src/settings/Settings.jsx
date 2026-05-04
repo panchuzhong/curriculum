@@ -12,7 +12,7 @@ function SubjectSection() {
   const [saved, setSaved] = useState(false);
 
   useEffect(() => {
-    api.getProfile().then(p => setSubjects(p.subjects || []));
+    api.getProfile().then(p => setSubjects(p.subjects || [])).catch(() => {});
   }, []);
 
   function moveUp(i) {
@@ -123,13 +123,15 @@ function ApiKeySection() {
   const [copied, setCopied] = useState(false);
 
   useEffect(() => {
-    api.getProfile().then(setProfile);
+    api.getProfile().then(setProfile).catch(() => {});
   }, []);
 
   async function regenerate() {
     if (!confirm('重新生成 API Key 后，旧的 Key 将立即失效。确定继续？')) return;
-    const res = await api.regenerateApiKey();
-    setProfile(p => ({ ...p, apiKey: res.apiKey }));
+    try {
+      const res = await api.regenerateApiKey();
+      setProfile(p => ({ ...p, apiKey: res.apiKey }));
+    } catch (e) { alert(e.message || '重新生成失败'); }
   }
 
   function copyKey() {

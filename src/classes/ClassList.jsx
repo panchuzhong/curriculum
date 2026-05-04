@@ -8,7 +8,7 @@ export default function ClassList() {
   const [expandedId, setExpandedId] = useState(null);
   const [showNew, setShowNew] = useState(false);
 
-  useEffect(() => { api.getClasses().then(setClasses); }, []);
+  useEffect(() => { api.getClasses().then(setClasses).catch(() => {}); }, []);
 
   async function handleCreate(form) {
     try {

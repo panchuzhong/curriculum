@@ -11,8 +11,8 @@ export default function YearlySchedule() {
   const [classes, setClasses] = useState([]);
 
   useEffect(() => {
-    api.getSchedules(`${year}-01-01`, `${year}-12-31`).then(setSchedules);
-    api.getClasses().then(setClasses);
+    api.getSchedules(`${year}-01-01`, `${year}-12-31`).then(setSchedules).catch(() => {});
+    api.getClasses().then(setClasses).catch(() => {});
   }, [year]);
 
   // Build class map

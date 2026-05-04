@@ -50,26 +50,30 @@ export default function SemesterManager() {
     api.getSemesters().then(s => {
       setSemesters(s);
       setForm(getDefaultsFromSemesters(s));
-    });
+    }).catch(() => {});
   }, []);
 
   function reload() {
-    api.getSemesters().then(setSemesters);
+    api.getSemesters().then(setSemesters).catch(() => {});
   }
 
   async function handleCreate() {
     if (!form.name || !form.startDate || !form.endDate) return;
-    await api.createSemester(form);
-    setShowForm(false);
-    setForm(getDefaults());
-    reload();
+    try {
+      await api.createSemester(form);
+      setShowForm(false);
+      setForm(getDefaults());
+      reload();
+    } catch (e) { alert(e.message || '创建失败'); }
   }
 
   async function handleUpdate() {
     if (!form.name || !form.startDate || !form.endDate) return;
-    await api.updateSemester(editing.id, form);
-    setEditing(null);
-    reload();
+    try {
+      await api.updateSemester(editing.id, form);
+      setEditing(null);
+      reload();
+    } catch (e) { alert(e.message || '更新失败'); }
   }
 
   function startEdit(s) {
@@ -79,8 +83,10 @@ export default function SemesterManager() {
 
   async function handleDelete(id) {
     if (!confirm('确定删除此学期？')) return;
-    await api.deleteSemester(id);
-    reload();
+    try {
+      await api.deleteSemester(id);
+      reload();
+    } catch (e) { alert(e.message || '删除失败'); }
   }
 
   return (

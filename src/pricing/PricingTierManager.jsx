@@ -5,7 +5,7 @@ export default function PricingTierManager() {
   const [tiers, setTiers] = useState([]);
   const [form, setForm] = useState({ minStudents: 1, maxStudents: 1, pricePerStudentPerHour: 800 });
 
-  useEffect(() => { api.getPricingTiers().then(setTiers); }, []);
+  useEffect(() => { api.getPricingTiers().then(setTiers).catch(() => {}); }, []);
 
   async function addTier() {
     try {
@@ -15,7 +15,7 @@ export default function PricingTierManager() {
         pricePerStudentPerHour: form.pricePerStudentPerHour === '' ? 0 : +form.pricePerStudentPerHour,
       });
       setForm({ minStudents: 1, maxStudents: 1, pricePerStudentPerHour: 800 });
-      api.getPricingTiers().then(setTiers);
+      api.getPricingTiers().then(setTiers).catch(() => {});
     } catch (e) { alert(e.message || '添加失败'); }
   }
 

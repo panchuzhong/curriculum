@@ -32,7 +32,7 @@ export default function MonthlySchedule() {
   const endStr = formatDate(year, month, endDate.getDate());
 
   useEffect(() => {
-    api.getSchedules(startDate, endStr).then(setSchedules);
+    api.getSchedules(startDate, endStr).then(setSchedules).catch(() => {});
   }, [year, month]);
 
   const dates = getMonthDates(year, month);

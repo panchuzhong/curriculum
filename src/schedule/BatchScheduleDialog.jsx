@@ -28,8 +28,8 @@ export default function BatchScheduleDialog({ onClose, onSaved }) {
   });
 
   useEffect(() => {
-    api.getClasses().then(setClasses);
-    api.getSemesters().then(setSemesters);
+    api.getClasses().then(setClasses).catch(() => {});
+    api.getSemesters().then(setSemesters).catch(() => {});
   }, []);
 
   const selectedSemester = semesters.find(s => s.id === +form.semesterId);
@@ -37,41 +37,43 @@ export default function BatchScheduleDialog({ onClose, onSaved }) {
   async function handleSubmit() {
     if (!form.classId) return;
 
-    if (op === 'create') {
-      if (!form.startTime || !form.endTime) return;
-      const body = {
-        classId: +form.classId,
-        startTime: form.startTime,
-        endTime: form.endTime,
-        durationBilling: form.durationBilling ? +form.durationBilling : undefined,
-      };
-      if (mode === 'semester') {
-        if (!form.semesterId) return;
-        body.semesterId = +form.semesterId;
-        body.weekday = form.weekday;
+    try {
+      if (op === 'create') {
+        if (!form.startTime || !form.endTime) return;
+        const body = {
+          classId: +form.classId,
+          startTime: form.startTime,
+          endTime: form.endTime,
+          durationBilling: form.durationBilling ? +form.durationBilling : undefined,
+        };
+        if (mode === 'semester') {
+          if (!form.semesterId) return;
+          body.semesterId = +form.semesterId;
+          body.weekday = form.weekday;
+        } else {
+          const dates = form.dates.split(/[,，\s]+/).map(d => d.trim()).filter(Boolean);
+          if (dates.length === 0) return;
+          body.dates = dates;
+        }
+        const res = await api.batchSchedules(body);
+        setResult({ op: 'create', count: res.count });
       } else {
-        const dates = form.dates.split(/[,，\s]+/).map(d => d.trim()).filter(Boolean);
-        if (dates.length === 0) return;
-        body.dates = dates;
+        // delete mode
+        let start, end;
+        if (mode === 'semester') {
+          if (!form.semesterId || !selectedSemester) return;
+          start = selectedSemester.startDate;
+          end = selectedSemester.endDate;
+        } else {
+          const dates = form.dates.split(/[,，\s]+/).map(d => d.trim()).filter(Boolean);
+          if (dates.length < 2) return;
+          start = dates[0];
+          end = dates[dates.length - 1];
+        }
+        const res = await api.batchDeleteSchedules({ classId: +form.classId, start, end });
+        setResult({ op: 'delete', count: res.count });
       }
-      const res = await api.batchSchedules(body);
-      setResult({ op: 'create', count: res.count });
-    } else {
-      // delete mode
-      let start, end;
-      if (mode === 'semester') {
-        if (!form.semesterId || !selectedSemester) return;
-        start = selectedSemester.startDate;
-        end = selectedSemester.endDate;
-      } else {
-        const dates = form.dates.split(/[,，\s]+/).map(d => d.trim()).filter(Boolean);
-        if (dates.length < 2) return;
-        start = dates[0];
-        end = dates[dates.length - 1];
-      }
-      const res = await api.batchDeleteSchedules({ classId: +form.classId, start, end });
-      setResult({ op: 'delete', count: res.count });
-    }
+    } catch (e) { alert(e.message || '操作失败'); }
   }
 
   const sel = 'w-full p-2 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded';

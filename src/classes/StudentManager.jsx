@@ -6,19 +6,23 @@ export default function StudentManager({ classId }) {
   const [name, setName] = useState('');
 
   useEffect(() => {
-    if (classId) api.getStudents(classId).then(setStudents);
+    if (classId) api.getStudents(classId).then(setStudents).catch(() => {});
   }, [classId]);
 
   async function addStudent() {
     if (!name.trim()) return;
-    await api.addStudent(classId, { name: name.trim() });
-    setName('');
-    api.getStudents(classId).then(setStudents);
+    try {
+      await api.addStudent(classId, { name: name.trim() });
+      setName('');
+      api.getStudents(classId).then(setStudents).catch(() => {});
+    } catch (e) { alert(e.message || '添加失败'); }
   }
 
   async function removeStudent(sid) {
-    await api.removeStudentFromClass(classId, sid);
-    setStudents(s => s.filter(x => x.id !== sid));
+    try {
+      await api.removeStudentFromClass(classId, sid);
+      setStudents(s => s.filter(x => x.id !== sid));
+    } catch (e) { alert(e.message || '删除失败'); }
   }
 
   return (

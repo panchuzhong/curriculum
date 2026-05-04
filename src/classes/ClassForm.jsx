@@ -18,7 +18,7 @@ export default function ClassForm({ initial, onSubmit, onCancel }) {
       if (!initial && subs.length > 0 && !form.subject) {
         setForm(f => ({ ...f, subject: subs[0] }));
       }
-    });
+    }).catch(() => {});
   }, []);
 
   useEffect(() => { if (initial) setForm(initial); }, [initial]);

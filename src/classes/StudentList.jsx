@@ -33,19 +33,23 @@ function StudentDialog({ student, classes, onClose, onSaved }) {
   async function handleSubmit(e) {
     e.preventDefault();
     if (!form.name.trim()) return;
-    if (student) {
-      await api.updateStudent(student.id, form);
-    } else {
-      await api.createStudent(form);
-    }
-    onSaved();
+    try {
+      if (student) {
+        await api.updateStudent(student.id, form);
+      } else {
+        await api.createStudent(form);
+      }
+      onSaved();
+    } catch (e) { alert(e.message || '保存失败'); }
   }
 
   async function handleDelete() {
     if (!student) return;
     if (!confirm('确定删除此学生？')) return;
-    await api.deleteStudent(student.id);
-    onSaved();
+    try {
+      await api.deleteStudent(student.id);
+      onSaved();
+    } catch (e) { alert(e.message || '删除失败'); }
   }
 
   return (
@@ -125,8 +129,8 @@ export default function StudentList() {
   const [filterClass, setFilterClass] = useState('all');
 
   function reload() {
-    api.getClasses().then(setClasses);
-    api.getAllStudents().then(setStudents);
+    api.getClasses().then(setClasses).catch(() => {});
+    api.getAllStudents().then(setStudents).catch(() => {});
   }
 
   useEffect(() => { reload(); }, []);

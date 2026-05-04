@@ -68,7 +68,7 @@ export default function Reports() {
   const [year, setYear] = useState(new Date().getFullYear());
   const [month, setMonth] = useState(new Date().getMonth());
 
-  useEffect(() => { api.getClasses().then(setClasses); }, []);
+  useEffect(() => { api.getClasses().then(setClasses).catch(() => {}); }, []);
 
   useEffect(() => {
     let start, end;
@@ -88,7 +88,7 @@ export default function Reports() {
     }
 
     setPeriod({ start, end });
-    api.getSchedules(start, end).then(setSchedules);
+    api.getSchedules(start, end).then(setSchedules).catch(() => {});
   }, [tab, year, month]);
 
   if (!period) return null;
@@ -152,7 +152,7 @@ export default function Reports() {
   function loadWeek(monday) {
     const end = addDays(monday, 6);
     setPeriod({ start: monday, end });
-    api.getSchedules(monday, end).then(setSchedules);
+    api.getSchedules(monday, end).then(setSchedules).catch(() => {});
   }
 
   return (
