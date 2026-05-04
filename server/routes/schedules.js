@@ -250,15 +250,6 @@ router.delete('/:id', (req, res) => {
   res.json({ ok: true });
 });
 
-router.get('/:id', (req, res) => {
-  const s = getScheduleWithClass(+req.params.id);
-  if (!s) return res.status(404).json({ error: 'Not found' });
-  const cls = drizzleDb.select().from(classes)
-    .where(and(eq(classes.id, s.classId), eq(classes.teacherId, req.teacherId))).get();
-  if (!cls) return res.status(403).json({ error: 'Forbidden' });
-  res.json(s);
-});
-
 // ── Summary & Export ──
 
 router.get('/summary', (req, res) => {
@@ -474,6 +465,15 @@ router.get('/conflicts', (req, res) => {
     if (conflictGroups.length >= limit) break;
   }
   res.json({ total: conflictGroups.length, groups: conflictGroups });
+});
+
+router.get('/:id', (req, res) => {
+  const s = getScheduleWithClass(+req.params.id);
+  if (!s) return res.status(404).json({ error: 'Not found' });
+  const cls = drizzleDb.select().from(classes)
+    .where(and(eq(classes.id, s.classId), eq(classes.teacherId, req.teacherId))).get();
+  if (!cls) return res.status(403).json({ error: 'Forbidden' });
+  res.json(s);
 });
 
 export default router;
