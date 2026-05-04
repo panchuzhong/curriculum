@@ -271,7 +271,6 @@ router.get('/agent/help', (req, res) => {
         update: { minStudents: '可选≥1', maxStudents: '可选≥1', pricePerStudentPerHour: '可选>0' },
       },
     },
-    ],
     examples: {
       '登录获取 token': 'POST /api/auth/login {"username":"xxx","password":"xxx"}',
       '获取本周课表（快捷）': 'GET /api/schedules?range=week',

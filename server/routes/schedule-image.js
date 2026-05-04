@@ -9,24 +9,24 @@ const router = Router();
 router.use(authMiddleware);
 
 router.get('/', async (req, res) => {
-  const { start, end, theme, rowH } = req.query;
-  if (!start || !end) return res.status(400).json({ error: 'start and end required' });
-
-  const teacherClasses = drizzleDb.select().from(classes)
-    .where(and(eq(classes.teacherId, req.teacherId), eq(classes.deleted, false))).all();
-  const classIds = teacherClasses.map(c => c.id);
-  if (classIds.length === 0) return res.status(404).json({ error: 'No classes' });
-
-  const classMap = {};
-  teacherClasses.forEach(c => classMap[c.id] = c);
-
-  const scheds = drizzleDb.select().from(schedules)
-    .where(and(gte(schedules.date, start), lte(schedules.date, end)))
-    .all()
-    .filter(s => classIds.includes(s.classId))
-    .map(s => ({ ...s, class: classMap[s.classId] }));
-
   try {
+    const { start, end, theme, rowH } = req.query;
+    if (!start || !end) return res.status(400).json({ error: 'start and end required' });
+
+    const teacherClasses = drizzleDb.select().from(classes)
+      .where(and(eq(classes.teacherId, req.teacherId), eq(classes.deleted, false))).all();
+    const classIds = teacherClasses.map(c => c.id);
+    if (classIds.length === 0) return res.status(404).json({ error: 'No classes' });
+
+    const classMap = {};
+    teacherClasses.forEach(c => classMap[c.id] = c);
+
+    const scheds = drizzleDb.select().from(schedules)
+      .where(and(gte(schedules.date, start), lte(schedules.date, end)))
+      .all()
+      .filter(s => classIds.includes(s.classId))
+      .map(s => ({ ...s, class: classMap[s.classId] }));
+
     const buffer = await generateScheduleImage(scheds, start, end, { theme, rowH });
     res.setHeader('Content-Type', 'image/png');
     res.send(buffer);

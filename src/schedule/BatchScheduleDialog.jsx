@@ -176,12 +176,12 @@ export default function BatchScheduleDialog({ onClose, onSaved }) {
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block text-sm text-gray-500 dark:text-gray-400 mb-1">开始时间</label>
-                  <input type="time" className={sel} value={form.startTime}
+                  <input type="time" lang="zh-CN" className={sel} value={form.startTime}
                     onChange={e => setForm({...form, startTime: e.target.value})} />
                 </div>
                 <div>
                   <label className="block text-sm text-gray-500 dark:text-gray-400 mb-1">结束时间</label>
-                  <input type="time" className={sel} value={form.endTime}
+                  <input type="time" lang="zh-CN" className={sel} value={form.endTime}
                     onChange={e => setForm({...form, endTime: e.target.value})} />
                 </div>
               </div>

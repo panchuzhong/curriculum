@@ -30,7 +30,7 @@ mkdir -p "$RELEASE_DIR"
 # Copy files
 cp -r dist "$RELEASE_DIR/"
 cp -r server "$RELEASE_DIR/"
-rm -rf "$RELEASE_DIR/server/__tests__" "$RELEASE_DIR/server/services/schedule-helpers.js"
+rm -rf "$RELEASE_DIR/server/__tests__"
 cp -r scripts "$RELEASE_DIR/"
 cp package.json package-lock.json "$RELEASE_DIR/"
 cp .env.example "$RELEASE_DIR/.env" 2>/dev/null || cp .env "$RELEASE_DIR/.env"

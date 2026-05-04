@@ -82,7 +82,12 @@ export default function ScheduleDialog({ date, startTime, schedule, onClose, onS
     setSaving(true);
     setError('');
     try {
-      const cls = await api.createClass(newClass);
+      const cls = await api.createClass({
+        ...newClass,
+        studentCount: newClass.studentCount === '' ? 1 : +newClass.studentCount,
+        unitPrice: newClass.unitPrice === '' ? 0 : +newClass.unitPrice,
+        discountAmount: newClass.discountAmount === '' ? 0 : +newClass.discountAmount,
+      });
       await api.createSchedule({
         classId: cls.id,
         date: form.date,
@@ -164,7 +169,7 @@ export default function ScheduleDialog({ date, startTime, schedule, onClose, onS
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <label className="block text-sm text-gray-500 dark:text-gray-400 mb-1">开始时间</label>
-                <input type="time" className="w-full p-2 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded" value={form.startTime}
+                <input type="time" lang="zh-CN" className="w-full p-2 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded" value={form.startTime}
                   onChange={e => {
                     const v = e.target.value;
                     setForm({...form, startTime: v, endTime: form.endTime || getDefaultEndTime(v)});
@@ -172,7 +177,7 @@ export default function ScheduleDialog({ date, startTime, schedule, onClose, onS
               </div>
               <div>
                 <label className="block text-sm text-gray-500 dark:text-gray-400 mb-1">结束时间</label>
-                <input type="time" className="w-full p-2 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded" value={form.endTime}
+                <input type="time" lang="zh-CN" className="w-full p-2 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded" value={form.endTime}
                   onChange={e => setForm({...form, endTime: e.target.value})} />
               </div>
             </div>
@@ -230,21 +235,21 @@ export default function ScheduleDialog({ date, startTime, schedule, onClose, onS
                 <label className="block text-sm text-gray-500 dark:text-gray-400 mb-1">学生人数</label>
                 <input type="number" min="1" className="w-full p-2 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded"
                   value={newClass.studentCount}
-                  onChange={e => setNewClass({...newClass, studentCount: +e.target.value})} />
+                  onChange={e => setNewClass({...newClass, studentCount: e.target.value === '' ? '' : +e.target.value})} />
               </div>
               <div>
                 <label className="block text-sm text-gray-500 dark:text-gray-400 mb-1">单价 (元/人/时)</label>
                 <input type="number" className="w-full p-2 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded"
                   value={newClass.unitPrice}
-                  onChange={e => setNewClass({...newClass, unitPrice: +e.target.value})} />
+                  onChange={e => setNewClass({...newClass, unitPrice: e.target.value === '' ? '' : +e.target.value})} />
               </div>
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <label className="block text-sm text-gray-500 dark:text-gray-400 mb-1">优惠金额</label>
                 <input type="number" step="0.01" className="w-full p-2 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded"
-                  value={newClass.discountAmount || 0}
-                  onChange={e => setNewClass({...newClass, discountAmount: +e.target.value})} />
+                  value={newClass.discountAmount ?? 0}
+                  onChange={e => setNewClass({...newClass, discountAmount: e.target.value === '' ? '' : +e.target.value})} />
               </div>
               <div>
                 <label className="block text-sm text-gray-500 dark:text-gray-400 mb-1">优惠原因</label>
