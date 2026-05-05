@@ -31,6 +31,13 @@ describe('POST /api/students', () => {
     expect(res.status).toBe(400);
   });
 
+  it('allows empty optional fields', async () => {
+    const res = await request(app).post('/api/students').set(auth(token))
+      .send({ name: '张三', phone: '', parentPhone: '', birthDate: '' });
+    expect(res.status).toBe(200);
+    expect(res.body.id).toBeDefined();
+  });
+
   it('rejects invalid birthDate', async () => {
     const res = await request(app).post('/api/students').set(auth(token))
       .send({ name: '张三', birthDate: 'not-a-date' });

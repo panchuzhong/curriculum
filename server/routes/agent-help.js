@@ -4,7 +4,7 @@ const router = Router();
 router.get('/agent/help', (req, res) => {
   res.json({
     name: '课表管理系统 API',
-    version: '1.6.2',
+    version: '1.6.3',
     description: '面向私人教师的课表管理平台 API，供 AI Agent 访问',
     auth: {
       type: 'API Key 或 JWT Token',
@@ -244,6 +244,7 @@ router.get('/agent/help', (req, res) => {
       '所有写操作（排课增删改、班级增删改、批量操作）均自动写入 audit_log，可通过 GET /api/audit-log 查询；日志自动滚动删除，超过 10000 条时删除最旧记录',
       '注册成功后系统自动将 ALLOW_REGISTRATION 设为 false，单用户设计',
       '所有写接口均使用 express-validator 校验输入，校验失败返回 400 {error: "提示信息"}，详见下方 validationRules',
+      '学生创建/更新接口的可选字符串字段（phone、parentPhone、birthDate）接受空字符串 ""，等同于不传',
     ],
     validationRules: {
       auth: {
@@ -258,7 +259,7 @@ router.get('/agent/help', (req, res) => {
         addStudent: { name: '必填', phone: '11位手机号（可选）' },
       },
       students: {
-        create: { name: '必填', phone: '11位手机号（可选）', birthDate: 'YYYY-MM-DD（可选）', classIds: '整数数组（可选）' },
+        create: { name: '必填', phone: '11位手机号（可选，空字符串等同不填）', birthDate: 'YYYY-MM-DD（可选，空字符串等同不填）', classIds: '整数数组（可选）' },
         update: { name: '可选', phone: '可选11位', birthDate: '可选' },
       },
       schedules: {

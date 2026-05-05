@@ -21,6 +21,8 @@ export default function BatchScheduleDialog({ onClose, onSaved }) {
   const [rangeEnd, setRangeEnd] = useState('');
   const [rangeStep, setRangeStep] = useState(1);
   const [previewCount, setPreviewCount] = useState(null);
+  const [delStart, setDelStart] = useState('');
+  const [delEnd, setDelEnd] = useState('');
   const [form, setForm] = useState({
     classId: '',
     semesterId: '',
@@ -54,13 +56,13 @@ export default function BatchScheduleDialog({ onClose, onSaved }) {
     let start, end;
     if (mode === 'semester') {
       if (!form.semesterId || !selectedSemester) return null;
-      start = selectedSemester.startDate;
+      const today = new Date().toISOString().slice(0, 10);
+      start = today > selectedSemester.startDate ? today : selectedSemester.startDate;
       end = selectedSemester.endDate;
     } else {
-      const dates = form.dates.split(/[,，\s]+/).map(d => d.trim()).filter(Boolean);
-      if (dates.length < 2) return null;
-      start = dates[0];
-      end = dates[dates.length - 1];
+      if (!delStart || !delEnd) return null;
+      start = delStart;
+      end = delEnd;
     }
     return { start, end };
   }
@@ -182,7 +184,10 @@ export default function BatchScheduleDialog({ onClose, onSaved }) {
                 )}
                 {op === 'delete' && selectedSemester && (
                   <p className="text-xs text-gray-500 dark:text-gray-400">
-                    将删除 {selectedSemester.startDate} ~ {selectedSemester.endDate} 范围内该班级的所有排课
+                    将删除 {(() => {
+                      const today = new Date().toISOString().slice(0, 10);
+                      return today > selectedSemester.startDate ? today : selectedSemester.startDate;
+                    })()} ~ {selectedSemester.endDate} 范围内该班级的所有排课
                   </p>
                 )}
               </>
@@ -227,11 +232,15 @@ export default function BatchScheduleDialog({ onClose, onSaved }) {
             )}
 
             {mode === 'dates' && op === 'delete' && (
-              <div>
-                <label className="block text-sm text-gray-500 dark:text-gray-400 mb-1">开始日期 ~ 结束日期（两个日期，逗号分隔）</label>
-                <textarea className={`${sel} h-16`} value={form.dates}
-                  onChange={e => setForm({...form, dates: e.target.value})}
-                  placeholder="2026-05-01, 2026-05-31" />
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="block text-sm text-gray-500 dark:text-gray-400 mb-1">开始日期</label>
+                  <input type="date" className={sel} value={delStart} onChange={e => { setDelStart(e.target.value); setPreviewCount(null); }} />
+                </div>
+                <div>
+                  <label className="block text-sm text-gray-500 dark:text-gray-400 mb-1">结束日期</label>
+                  <input type="date" className={sel} value={delEnd} onChange={e => { setDelEnd(e.target.value); setPreviewCount(null); }} />
+                </div>
               </div>
             )}
 
