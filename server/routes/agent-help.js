@@ -4,7 +4,7 @@ const router = Router();
 router.get('/agent/help', (req, res) => {
   res.json({
     name: '课表管理系统 API',
-    version: '1.6.3',
+    version: '1.6.4',
     description: '面向私人教师的课表管理平台 API，供 AI Agent 访问',
     auth: {
       type: 'API Key 或 JWT Token',
@@ -259,7 +259,7 @@ router.get('/agent/help', (req, res) => {
         addStudent: { name: '必填', phone: '11位手机号（可选）' },
       },
       students: {
-        create: { name: '必填', phone: '11位手机号（可选，空字符串等同不填）', birthDate: 'YYYY-MM-DD（可选，空字符串等同不填）', classIds: '整数数组（可选）' },
+        create: { name: '必填', phone: '11位手机号（可选，空字符串等同不填）', birthDate: 'YYYY 或 YYYY-MM-DD（可选，空字符串等同不填）', classIds: '整数数组（可选）' },
         update: { name: '可选', phone: '可选11位', birthDate: '可选' },
       },
       schedules: {

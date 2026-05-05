@@ -1,6 +1,6 @@
 import { body } from 'express-validator';
 
-const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+const DATE_RE = /^\d{4}(-\d{2}-\d{2})?$/;
 const PHONE_RE = /^1[3-9]\d{9}$/;
 
 export const validateCreateStudent = [
