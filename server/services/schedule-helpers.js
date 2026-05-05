@@ -22,6 +22,12 @@ export function resolveRange(query) {
     const s = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
     return { ...query, start: s, end: s };
   }
+  if (query.range === 'tomorrow') {
+    const tmr = new Date(d);
+    tmr.setDate(d.getDate() + 1);
+    const s = `${tmr.getFullYear()}-${pad(tmr.getMonth() + 1)}-${pad(tmr.getDate())}`;
+    return { ...query, start: s, end: s };
+  }
   if (query.range === 'week') {
     const day = d.getDay();
     const mon = new Date(d);

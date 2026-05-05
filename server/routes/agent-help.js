@@ -49,7 +49,7 @@ router.get('/agent/help', (req, res) => {
       },
       schedules: {
         'GET /api/schedules?start=YYYY-MM-DD&end=YYYY-MM-DD': '获取日期范围内的排课（含班级信息）',
-        'GET /api/schedules?range=today|week|month': '快捷范围：today=今天，week=本周（周一到周日），month=本月。与 start/end 互斥',
+        'GET /api/schedules?range=today|tomorrow|week|month': '快捷范围：today=今天，tomorrow=明天，week=本周（周一到周日），month=本月。与 start/end 互斥',
         'GET /api/schedules?start=&end=&classId=N': '同上，额外按班级 ID 过滤（服务端过滤，节省流量）',
         'GET /api/schedules/:id': '获取单条排课详情（含班级信息）',
         'POST /api/schedules': '创建单次排课，返回完整排课对象（含 class 字段）；如有时间冲突，额外返回 warnings 数组（不阻止创建）',
@@ -87,7 +87,7 @@ router.get('/agent/help', (req, res) => {
       },
       images: {
         'GET /api/schedule-image?start=YYYY-MM-DD&end=YYYY-MM-DD': '生成课表 PNG 图片（返回 image/png），支持任意时间范围；失败时返回 JSON {error, detail}',
-        'GET /api/schedule-image?range=today|week|month': '快捷范围，与 GET /api/schedules 的 range 参数一致',
+        'GET /api/schedule-image?range=today|tomorrow|week|month': '快捷范围，与 GET /api/schedules 的 range 参数一致',
         'GET /api/schedule-image?start=&end=&theme=light|dark|auto': 'theme=light 强制浅色，dark 强制深色，auto（默认）按小时自动切换（7:00-19:00 浅色，其余深色）',
         'GET /api/schedule-image?start=&end=&rowH=N': '每小时行高像素（16-60，默认 30），增大后文字更清晰，图片更高',
         'GET /api/schedule-image?start=&end=&scale=N': '整体缩放因子（0.25-3，默认 2），scale=1 适合手机查看，scale=0.5 更小体积',
@@ -226,7 +226,8 @@ router.get('/agent/help', (req, res) => {
     notes: [
       '所有 JSON 响应的 Content-Type 均为 application/json; charset=utf-8',
       '排课冲突不会被服务端阻止，前端并排显示并红色高亮；可用 GET /api/schedules/conflicts 查询已有冲突',
-      'GET /api/schedules 支持 range=today|week|month 快捷参数，week=本周周一到周日，与 start/end 互斥',
+      'GET /api/schedules 支持 range=today|tomorrow|week|month 快捷参数，week=本周周一到周日，与 start/end 互斥',
+      '日期相关接口（range、free-slots、conflicts 的 today 默认值等）基于服务器系统时区；部署时请确认 TZ=Asia/Shanghai 或等值中国时区',
       'free-slots 支持 after/before 参数限制查询时段（如 after=14:00&before=21:00），优先级高于 dayStart/dayEnd；支持 minDuration=N 过滤（只返回连续可用 ≥N 分钟的时段）',
       'POST/PUT /api/schedules 返回的排课对象可能含 warnings 字段（数组），包含同一时段的冲突排课信息（id/classId/className/startTime/endTime），不阻止创建/更新',
       'conflicts 返回 {total, groups:[{date, schedules:[...]}]}，schedules 为同一天内互相重叠的排课组（每组至少2条）',
@@ -238,7 +239,7 @@ router.get('/agent/help', (req, res) => {
       'GET /api/schedules/summary 和 GET /api/schedules/export 均支持 &format=csv，响应含 UTF-8 BOM，Excel 直接打开不乱码',
       'GET /api/backup 返回全量 JSON；POST /api/backup/restore 原子还原（事务），恢复过程中 teacherId 强制绑定当前账号',
       '学生可属于多个班级，通过 classIds 数组关联；DELETE /api/students/:id 删除学生实体并清理所有关联，DELETE /api/classes/:classId/students/:studentId 仅从指定班级移除',
-      '所有写操作（排课增删改、班级增删改、批量操作）均自动写入 audit_log，可通过 GET /api/audit-log 查询',
+      '所有写操作（排课增删改、班级增删改、批量操作）均自动写入 audit_log，可通过 GET /api/audit-log 查询；日志自动滚动删除，超过 10000 条时删除最旧记录',
       '注册成功后系统自动将 ALLOW_REGISTRATION 设为 false，单用户设计',
       '所有写接口均使用 express-validator 校验输入，校验失败返回 400 {error: "提示信息"}，详见下方 validationRules',
     ],

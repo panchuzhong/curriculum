@@ -89,14 +89,21 @@ router.post('/restore', (req, res) => {
   // Force all teacher-scoped records to belong to the authenticated teacher
   const forceOwner = arr => (arr || []).map(r => ({ ...r, teacherId: tid }));
 
+  // Fix legacy createdAt that stored literal "CURRENT_TIMESTAMP"
+  const now = new Date().toISOString().replace('T', ' ').slice(0, 19);
+  const fixTimestamps = arr => (arr || []).map(r => ({
+    ...r,
+    createdAt: (!r.createdAt || r.createdAt === 'CURRENT_TIMESTAMP') ? now : r.createdAt,
+  }));
+
   const restoreData = {
-    classes: forceOwner(data.classes),
-    pricingTiers: forceOwner(data.pricingTiers || []),
-    students: forceOwner(data.students),
+    classes: fixTimestamps(forceOwner(data.classes)),
+    pricingTiers: fixTimestamps(forceOwner(data.pricingTiers || [])),
+    students: fixTimestamps(forceOwner(data.students)),
     classStudents: data.classStudents || [],
-    schedules: data.schedules,
+    schedules: fixTimestamps(data.schedules),
     holidays: forceOwner(data.holidays || []),
-    semesters: forceOwner(data.semesters || []),
+    semesters: fixTimestamps(forceOwner(data.semesters || [])),
   };
 
   const counts = {};

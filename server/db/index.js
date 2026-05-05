@@ -199,4 +199,9 @@ export function initDb() {
     CREATE INDEX IF NOT EXISTS idx_semesters_teacherId ON semesters(teacher_id);
     CREATE INDEX IF NOT EXISTS idx_class_students_classId ON class_students(class_id);
   `);
+
+  // Fix legacy createdAt that stored literal "CURRENT_TIMESTAMP" string
+  for (const table of ['classes', 'students', 'schedules', 'pricing_tiers', 'semesters']) {
+    db.exec(`UPDATE ${table} SET created_at = datetime('now') WHERE created_at = 'CURRENT_TIMESTAMP'`);
+  }
 }
