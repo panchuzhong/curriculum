@@ -6,8 +6,8 @@
 
 ### 课表管理
 - **周课表**：时间轴网格，周一至周日，7:45-23:00
-- **月课表**：日历视图，点击跳转周课表
-- **年课表**：12 月概览，点击跳转月课表
+- **月课表**：日历视图，点击跳转周课表，移动端左右滑动切换
+- **年课表**：12 月概览，点击跳转月课表，移动端左右滑动切换
 - **排课冲突检测**：冲突课程并排显示，红色边框高亮
 - **法定节假日标记**：节假日/调休自动标注
 - **今日高亮**：当天日期蓝色标记
@@ -25,15 +25,16 @@
 
 ### 排课
 - **手动排课**：点击课表空白时段
-- **批量排课**：学期模式（按周几自动生成，自动跳过节假日）+ 指定日期模式
+- **批量排课**：学期模式（按周几自动生成，自动跳过节假日）+ 日期范围模式（自动生成日期列表，支持每天/隔天/每周间隔）
 - **批量调整**：同一班级、同一星期几、指定日期起批量修改时间/地点（`PUT /api/schedules/batch`）
-- **批量删课**：按 ID 数组或日期范围批量删除
+- **批量删课**：按 ID 数组或日期范围批量删除，删除前预览数量确认
 - **单次调整**：每节课可独立修改时间、地点
 
 ### 统计报表
-- 周报/月报/年报，按学科、年级、班级统计
+- 周报/月报/年报，按学科、年级、班级、月份统计
+- 支持按班级筛选，切换班级后所有图表联动
 - 排课次数、教学时长、预估收入
-- 服务端汇总接口 `GET /api/schedules/summary`，支持 `format=csv` 导出
+- 服务端汇总接口 `GET /api/schedules/summary`，支持 `classId` 过滤、`format=csv` 导出
 - 排课明细导出 `GET /api/schedules/export`，支持 `format=csv`（Excel 兼容 UTF-8 BOM）
 
 ### 操作日志
@@ -207,7 +208,7 @@ sudo systemctl start curriculum-scheduler
 | DELETE | /api/schedules/batch | 批量删除（ids 数组 或 start+end+classId） |
 | POST | /api/schedules/batch | 批量创建（学期模式/日期模式） |
 | PUT | /api/schedules/batch | 批量调整时间/地点（同班级同星期几，指定日期起） |
-| GET | /api/schedules/summary?start=&end= | 课时与收入汇总统计（可加 &format=csv） |
+| GET | /api/schedules/summary?start=&end= | 课时与收入汇总统计（可加 &classId= &format=csv） |
 | GET | /api/schedules/export?start=&end= | 排课明细导出（可加 &classId= &format=csv） |
 | GET | /api/schedules/free-slots?date= | 查询单日空闲时段（可加 after=&before= 限制时段） |
 | GET | /api/schedules/free-slots?start=&end= | 查询多日空闲时段（可加 after=&before=） |
@@ -242,7 +243,7 @@ sudo systemctl start curriculum-scheduler
 **图片**
 | 方法 | 路径 | 说明 |
 |------|------|------|
-| GET | /api/schedule-image?start=&end= | 生成课表 PNG；theme=light\|dark\|auto（默认 auto）；rowH=16-60（默认 30） |
+| GET | /api/schedule-image?start=&end= | 生成课表 PNG；theme=light\|dark\|auto（默认 auto）；rowH=16-60（默认 30）；scale=0.25-3（默认 2）；highlight=YYYY-MM-DD |
 
 **操作日志**
 | 方法 | 路径 | 说明 |
@@ -375,7 +376,7 @@ new_curriculum/
 │   │   ├── semesters.js          # 学期
 │   │   ├── holidays.js           # 节假日
 │   │   ├── pricing-tiers.js      # 定价阶梯
-│   │   ├── schedule-image.js     # PNG 图片生成（支持 theme/rowH）
+│   │   ├── schedule-image.js     # PNG 图片生成（支持 theme/rowH/scale/highlight）
 │   │   ├── audit-log.js          # 操作日志查询
 │   │   ├── backup.js             # 全量备份与还原
 │   │   └── agent-help.js         # AI Agent 帮助文档
@@ -398,7 +399,7 @@ new_curriculum/
 │   ├── App.jsx                   # 路由
 │   ├── api.js                    # 统一 fetch 封装（含 JWT 注入）
 │   ├── components/               # 通用组件（Layout 布局）
-│   ├── hooks/                    # 自定义 Hooks（useSwipeNavigation）
+│   ├── hooks/                    # 自定义 Hooks（useSwipeNavigation, useSimpleSwipe）
 │   ├── auth/                     # 登录 / 注册页
 │   ├── classes/                  # 班级管理、学生管理
 │   ├── schedule/                 # 周/月/年课表、排课弹窗、批量操作、导出

@@ -46,7 +46,7 @@ export default function WeekNavBar({
         <button onClick={goToThisWeek} className={todayBtn}>{isMobile ? '今天' : '本周'}</button>
         <div className={`flex gap-1 ${isMobile ? 'ml-1' : 'ml-2'}`}>
           <button onClick={() => setShowBatch(true)} className={actBtn('bg-green-600 hover:bg-green-700')}>
-            {isMobile ? '批量' : '批量排课'}
+            {isMobile ? '批量' : '批量操作'}
           </button>
           <button disabled={exporting} onClick={openExport}
             className={actBtn('bg-purple-600 hover:bg-purple-700 disabled:opacity-50')}>

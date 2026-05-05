@@ -1,14 +1,17 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../api';
 import { getSubjectColor } from '../utils/colors';
 import { toHoursAbs } from '../utils/date';
+import { useSimpleSwipe } from '../hooks/useSimpleSwipe';
 
 export default function YearlySchedule() {
   const navigate = useNavigate();
   const [year, setYear] = useState(new Date().getFullYear());
   const [schedules, setSchedules] = useState([]);
   const [classes, setClasses] = useState([]);
+  const [animKey, setAnimKey] = useState(0);
+  const animDir = useRef(1);
 
   useEffect(() => {
     api.getSchedules(`${year}-01-01`, `${year}-12-31`).then(setSchedules).catch(() => {});
@@ -31,16 +34,25 @@ export default function YearlySchedule() {
 
   const navBtn = "px-2 sm:px-4 py-1.5 sm:py-2 text-xs sm:text-base bg-gray-200 dark:bg-gray-700 rounded hover:bg-gray-300 dark:hover:bg-gray-600 active:scale-95 transition-transform select-none";
 
+  function changeYear(delta) {
+    animDir.current = delta;
+    setYear(y => y + delta);
+    setAnimKey(k => k + 1);
+  }
+
+  const swipe = useSimpleSwipe({ onPrev: () => changeYear(-1), onNext: () => changeYear(1) });
+
   return (
-    <div>
+    <div {...swipe}>
       <div className="flex items-center justify-between mb-2 sm:mb-4">
-        <button onClick={() => setYear(y => y - 1)} className={navBtn}><span className="sm:hidden">‹</span><span className="hidden sm:inline">上一年</span></button>
+        <button onClick={() => changeYear(-1)} className={navBtn}><span className="sm:hidden">‹</span><span className="hidden sm:inline">上一年</span></button>
         <h2 className="text-base sm:text-xl font-medium">{year}年</h2>
         <div className="flex gap-1 sm:gap-2">
-          <button onClick={() => setYear(new Date().getFullYear())} className={navBtn}><span className="sm:hidden">今</span><span className="hidden sm:inline">今年</span></button>
-          <button onClick={() => setYear(y => y + 1)} className={navBtn}><span className="sm:hidden">›</span><span className="hidden sm:inline">下一年</span></button>
+          <button onClick={() => setYear(new Date().getFullYear())} className={`${navBtn} px-3 sm:px-4`}>今年</button>
+          <button onClick={() => changeYear(1)} className={navBtn}><span className="sm:hidden">›</span><span className="hidden sm:inline">下一年</span></button>
         </div>
       </div>
+      <div key={animKey} className={animDir.current > 0 ? 'slide-in-right' : 'slide-in-left'}>
       <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 sm:gap-4">
         {Array.from({ length: 12 }, (_, m) => {
           const data = byMonth[m];
@@ -102,6 +114,7 @@ export default function YearlySchedule() {
             </div>
           );
         })}
+      </div>
       </div>
     </div>
   );

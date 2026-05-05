@@ -63,11 +63,11 @@ export default function useWeekNavigation({ searchParams }) {
   }, [allDates]);
 
   useEffect(() => {
-    api.getSchedules(allDates[0], allDates[TOTAL_COLS - 1]).then(setAllSchedules);
+    api.getSchedules(allDates[0], allDates[TOTAL_COLS - 1]).then(setAllSchedules).catch(() => {});
   }, []);
 
   function reload() {
-    api.getSchedules(allDates[0], allDates[TOTAL_COLS - 1]).then(setAllSchedules);
+    api.getSchedules(allDates[0], allDates[TOTAL_COLS - 1]).then(setAllSchedules).catch(() => {});
   }
 
   function safeSetSchedules(schedules) {
@@ -106,7 +106,7 @@ export default function useWeekNavigation({ searchParams }) {
     const newDates = getAllDates(newCenter);
     flushSync(() => setAllDates(newDates));
     // useLayoutEffect has already snapped CSS to INITIAL_OFFSET
-    api.getSchedules(newDates[0], newDates[TOTAL_COLS - 1]).then(safeSetSchedules);
+    api.getSchedules(newDates[0], newDates[TOTAL_COLS - 1]).then(safeSetSchedules).catch(() => {});
   }
 
   // Animated button navigation (desktop prev/next, "today")

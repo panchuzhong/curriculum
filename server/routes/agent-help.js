@@ -4,7 +4,7 @@ const router = Router();
 router.get('/agent/help', (req, res) => {
   res.json({
     name: '课表管理系统 API',
-    version: '1.5.0',
+    version: '1.6.0',
     description: '面向私人教师的课表管理平台 API，供 AI Agent 访问',
     auth: {
       type: 'API Key 或 JWT Token',
@@ -58,7 +58,7 @@ router.get('/agent/help', (req, res) => {
         'DELETE /api/schedules/batch': '批量删除排课（见 batchDeleteModes）',
         'POST /api/schedules/batch': '批量创建排课（见 batchScheduleModes）',
         'PUT /api/schedules/batch': '批量更新排课时间/地点（见 batchUpdateMode）',
-        'GET /api/schedules/summary?start=YYYY-MM-DD&end=YYYY-MM-DD': '课时与收入汇总统计（见 summaryResponse）；加 &format=csv 返回 CSV 文件（UTF-8 BOM，Excel 兼容）',
+        'GET /api/schedules/summary?start=YYYY-MM-DD&end=YYYY-MM-DD': '课时与收入汇总统计（见 summaryResponse）；加 &format=csv 返回 CSV 文件（UTF-8 BOM，Excel 兼容）；加 &classId=1 或 &classId=1,2,3 按班级过滤',
         'GET /api/schedules/export?start=YYYY-MM-DD&end=YYYY-MM-DD': '导出排课明细列表（含班级信息）；加 &classId=N 过滤班级；加 &format=csv 返回 CSV',
         'GET /api/schedules/free-slots?date=YYYY-MM-DD': '查询单日空闲时段（默认 08:00-23:00；可用 after=HH:MM&before=HH:MM 限制时段）',
         'GET /api/schedules/free-slots?date=&minDuration=60': '只返回连续可用 ≥60 分钟的时段，适合约课筛选',
@@ -156,7 +156,7 @@ router.get('/agent/help', (req, res) => {
       example: '{"classId":1,"fromDate":"2026-05-01","weekday":6,"updates":{"startTime":"14:00","endTime":"16:00"}}',
     },
     summaryResponse: {
-      description: 'GET /api/schedules/summary 返回结构',
+      description: 'GET /api/schedules/summary 返回结构；支持 &classId=N（逗号分隔多个）按班级过滤',
       fields: {
         count: '排课总次数',
         hours: '总教学课时（小时，含小数）',
@@ -224,6 +224,7 @@ router.get('/agent/help', (req, res) => {
       },
     },
     notes: [
+      '所有 JSON 响应的 Content-Type 均为 application/json; charset=utf-8',
       '排课冲突不会被服务端阻止，前端并排显示并红色高亮；可用 GET /api/schedules/conflicts 查询已有冲突',
       'GET /api/schedules 支持 range=today|week|month 快捷参数，week=本周周一到周日，与 start/end 互斥',
       'free-slots 支持 after/before 参数限制查询时段（如 after=14:00&before=21:00），优先级高于 dayStart/dayEnd；支持 minDuration=N 过滤（只返回连续可用 ≥N 分钟的时段）',
@@ -286,6 +287,7 @@ router.get('/agent/help', (req, res) => {
       '获取指定班级本周课表': 'GET /api/schedules?start=2026-04-27&end=2026-05-03&classId=1',
       '获取单条排课': 'GET /api/schedules/42',
       '本月收入汇总（JSON）': 'GET /api/schedules/summary?start=2026-05-01&end=2026-05-31',
+      '本月收入汇总（按班级过滤）': 'GET /api/schedules/summary?start=2026-05-01&end=2026-05-31&classId=1',
       '本月收入汇总（CSV 下载）': 'GET /api/schedules/summary?start=2026-05-01&end=2026-05-31&format=csv',
       '导出排课明细（JSON）': 'GET /api/schedules/export?start=2026-05-01&end=2026-05-31',
       '导出排课明细（CSV 下载）': 'GET /api/schedules/export?start=2026-05-01&end=2026-05-31&format=csv',

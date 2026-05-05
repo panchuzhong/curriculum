@@ -17,6 +17,15 @@ import backupRoutes from './routes/backup.js';
 const app = express();
 app.use(express.json({ limit: '10mb' }));
 
+app.use((req, res, next) => {
+  const origJson = res.json.bind(res);
+  res.json = (body) => {
+    res.setHeader('Content-Type', 'application/json; charset=utf-8');
+    return origJson(body);
+  };
+  next();
+});
+
 // Init DB
 initDb();
 

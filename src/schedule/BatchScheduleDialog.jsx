@@ -17,6 +17,10 @@ export default function BatchScheduleDialog({ onClose, onSaved }) {
   const [op, setOp] = useState('create'); // create | delete
   const [mode, setMode] = useState('semester'); // semester | dates
   const [result, setResult] = useState(null);
+  const [rangeStart, setRangeStart] = useState('');
+  const [rangeEnd, setRangeEnd] = useState('');
+  const [rangeStep, setRangeStep] = useState(1);
+  const [previewCount, setPreviewCount] = useState(null);
   const [form, setForm] = useState({
     classId: '',
     semesterId: '',
@@ -33,6 +37,43 @@ export default function BatchScheduleDialog({ onClose, onSaved }) {
   }, []);
 
   const selectedSemester = semesters.find(s => s.id === +form.semesterId);
+
+  function generateRangeDates() {
+    if (!rangeStart || !rangeEnd) return;
+    const dates = [];
+    const d = new Date(rangeStart + 'T00:00:00');
+    const end = new Date(rangeEnd + 'T00:00:00');
+    while (d <= end) {
+      dates.push(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`);
+      d.setDate(d.getDate() + rangeStep);
+    }
+    setForm(f => ({ ...f, dates: dates.join(', ') }));
+  }
+
+  function getDeleteRange() {
+    let start, end;
+    if (mode === 'semester') {
+      if (!form.semesterId || !selectedSemester) return null;
+      start = selectedSemester.startDate;
+      end = selectedSemester.endDate;
+    } else {
+      const dates = form.dates.split(/[,，\s]+/).map(d => d.trim()).filter(Boolean);
+      if (dates.length < 2) return null;
+      start = dates[0];
+      end = dates[dates.length - 1];
+    }
+    return { start, end };
+  }
+
+  async function handlePreviewDelete() {
+    if (!form.classId) return;
+    const range = getDeleteRange();
+    if (!range) return;
+    try {
+      const scheds = await api.getSchedules(range.start, range.end, +form.classId);
+      setPreviewCount(scheds.length);
+    } catch (e) { alert(e.message || '查询失败'); }
+  }
 
   async function handleSubmit() {
     if (!form.classId) return;
@@ -59,18 +100,9 @@ export default function BatchScheduleDialog({ onClose, onSaved }) {
         setResult({ op: 'create', count: res.count });
       } else {
         // delete mode
-        let start, end;
-        if (mode === 'semester') {
-          if (!form.semesterId || !selectedSemester) return;
-          start = selectedSemester.startDate;
-          end = selectedSemester.endDate;
-        } else {
-          const dates = form.dates.split(/[,，\s]+/).map(d => d.trim()).filter(Boolean);
-          if (dates.length < 2) return;
-          start = dates[0];
-          end = dates[dates.length - 1];
-        }
-        const res = await api.batchDeleteSchedules({ classId: +form.classId, start, end });
+        const range = getDeleteRange();
+        if (!range) return;
+        const res = await api.batchDeleteSchedules({ classId: +form.classId, start: range.start, end: range.end });
         setResult({ op: 'delete', count: res.count });
       }
     } catch (e) { alert(e.message || '操作失败'); }
@@ -109,7 +141,7 @@ export default function BatchScheduleDialog({ onClose, onSaved }) {
             {/* 班级 */}
             <div>
               <label className="block text-sm text-gray-500 dark:text-gray-400 mb-1">选择班级</label>
-              <select className={sel} value={form.classId} onChange={e => setForm({...form, classId: e.target.value})}>
+              <select className={sel} value={form.classId} onChange={e => { setForm({...form, classId: e.target.value}); setPreviewCount(null); }}>
                 <option value="">-- 请选择 --</option>
                 {classes.map(c => (
                   <option key={c.id} value={c.id}>{c.isCompetition ? '★ ' : ''}{c.name} ({c.grade} {c.subject})</option>
@@ -133,7 +165,7 @@ export default function BatchScheduleDialog({ onClose, onSaved }) {
               <>
                 <div>
                   <label className="block text-sm text-gray-500 dark:text-gray-400 mb-1">选择学期（必填，自动跳过节假日）</label>
-                  <select className={sel} value={form.semesterId} onChange={e => setForm({...form, semesterId: e.target.value})}>
+                  <select className={sel} value={form.semesterId} onChange={e => { setForm({...form, semesterId: e.target.value}); setPreviewCount(null); }}>
                     <option value="">-- 请选择 --</option>
                     {semesters.map(s => (
                       <option key={s.id} value={s.id}>{s.name} ({s.startDate} ~ {s.endDate})</option>
@@ -157,12 +189,41 @@ export default function BatchScheduleDialog({ onClose, onSaved }) {
             )}
 
             {mode === 'dates' && op === 'create' && (
-              <div>
-                <label className="block text-sm text-gray-500 dark:text-gray-400 mb-1">日期列表（逗号分隔）</label>
-                <textarea className={`${sel} h-24`} value={form.dates}
-                  onChange={e => setForm({...form, dates: e.target.value})}
-                  placeholder="2026-05-01, 2026-05-08, 2026-05-15" />
-              </div>
+              <>
+                <div className="bg-gray-50 dark:bg-gray-700/50 rounded-lg p-3 space-y-2">
+                  <div className="text-xs text-gray-500 dark:text-gray-400 font-medium">日期范围（自动生成）</div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <label className="block text-xs text-gray-400 mb-0.5">开始</label>
+                      <input type="date" className={sel} value={rangeStart} onChange={e => setRangeStart(e.target.value)} />
+                    </div>
+                    <div>
+                      <label className="block text-xs text-gray-400 mb-0.5">结束</label>
+                      <input type="date" className={sel} value={rangeEnd} onChange={e => setRangeEnd(e.target.value)} />
+                    </div>
+                  </div>
+                  <div className="flex gap-2 items-end">
+                    <div className="flex-1">
+                      <label className="block text-xs text-gray-400 mb-0.5">间隔</label>
+                      <select className={sel} value={rangeStep} onChange={e => setRangeStep(+e.target.value)}>
+                        <option value={1}>每天</option>
+                        <option value={2}>隔天</option>
+                        <option value={7}>每周</option>
+                      </select>
+                    </div>
+                    <button type="button" onClick={generateRangeDates}
+                      className="px-3 py-2 bg-blue-600 text-white text-sm rounded hover:bg-blue-700 whitespace-nowrap">
+                      生成日期
+                    </button>
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-sm text-gray-500 dark:text-gray-400 mb-1">日期列表（可手动编辑）</label>
+                  <textarea className={`${sel} h-24`} value={form.dates}
+                    onChange={e => setForm({...form, dates: e.target.value})}
+                    placeholder="2026-05-01, 2026-05-08, 2026-05-15" />
+                </div>
+              </>
             )}
 
             {mode === 'dates' && op === 'delete' && (
@@ -193,17 +254,42 @@ export default function BatchScheduleDialog({ onClose, onSaved }) {
               <div>
                 <label className="block text-sm text-gray-500 dark:text-gray-400 mb-1">计费时长（分钟，留空自动计算）</label>
                 <input type="number" className={sel} value={form.durationBilling}
-                  onChange={e => setForm({...form, durationBilling: e.target.value})}
+                  onChange={e => setForm({...form, durationBilling: e.target.value === '' ? '' : +e.target.value})}
                   placeholder="默认由结束-开始时间计算" />
               </div>
             )}
 
             <div className="flex gap-2 mt-4">
-              <button onClick={handleSubmit}
-                className={`flex-1 p-2 text-white rounded ${op === 'delete' ? 'bg-red-600 hover:bg-red-700' : 'bg-blue-600 hover:bg-blue-700'}`}>
-                {op === 'delete' ? '确认删除' : '批量排课'}
-              </button>
-              <button onClick={onClose} className="p-2 bg-gray-300 dark:bg-gray-600 rounded">取消</button>
+              {op === 'delete' ? (
+                previewCount != null ? (
+                  <>
+                    <p className="flex-1 p-2 text-sm text-red-600 dark:text-red-400 font-medium text-center">
+                      将删除 {previewCount} 条排课，操作不可撤销
+                    </p>
+                    <button onClick={handleSubmit}
+                      className="px-4 p-2 text-white bg-red-600 hover:bg-red-700 rounded">
+                      确认
+                    </button>
+                    <button onClick={() => setPreviewCount(null)} className="p-2 bg-gray-300 dark:bg-gray-600 rounded">取消</button>
+                  </>
+                ) : (
+                  <>
+                    <button onClick={handlePreviewDelete}
+                      className="flex-1 p-2 text-white bg-red-600 hover:bg-red-700 rounded">
+                      预览删除
+                    </button>
+                    <button onClick={onClose} className="p-2 bg-gray-300 dark:bg-gray-600 rounded">取消</button>
+                  </>
+                )
+              ) : (
+                <>
+                  <button onClick={handleSubmit}
+                    className="flex-1 p-2 text-white bg-blue-600 hover:bg-blue-700 rounded">
+                    批量排课
+                  </button>
+                  <button onClick={onClose} className="p-2 bg-gray-300 dark:bg-gray-600 rounded">取消</button>
+                </>
+              )}
             </div>
           </div>
         ) : (

@@ -14,7 +14,7 @@ export default function ClassList() {
     try {
       await api.createClass(form);
       setShowNew(false);
-      api.getClasses().then(setClasses);
+      api.getClasses().then(setClasses).catch(() => {});
     } catch (e) { alert(e.message || '创建失败'); }
   }
 
@@ -22,7 +22,7 @@ export default function ClassList() {
     try {
       await api.updateClass(expandedId, form);
       setExpandedId(null);
-      api.getClasses().then(setClasses);
+      api.getClasses().then(setClasses).catch(() => {});
     } catch (e) { alert(e.message || '更新失败'); }
   }
 
@@ -31,7 +31,7 @@ export default function ClassList() {
     if (!confirm('确定删除？')) return;
     try {
       await api.deleteClass(id);
-      api.getClasses().then(setClasses);
+      api.getClasses().then(setClasses).catch(() => {});
     } catch (e) { alert(e.message || '删除失败'); }
   }
 

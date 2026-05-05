@@ -34,6 +34,7 @@ export default function useScheduleExport({ weekStart, visibleDays, addDays }) {
   }
 
   async function exportCSV(start, end) {
+    try {
     const weekdayNames = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
     const data = await api.getSchedules(start, end);
     const rows = [['日期', '星期', '班级', '年级', '学科', '开始时间', '结束时间', '计费时长(分钟)', '上课地点', '竞赛课', '单价', '学生人数', '优惠金额']];
@@ -58,6 +59,7 @@ export default function useScheduleExport({ weekStart, visibleDays, addDays }) {
     a.download = `课表_${start}_${end}.csv`;
     a.click();
     URL.revokeObjectURL(url);
+    } catch (e) { alert('导出失败'); }
   }
 
   return {

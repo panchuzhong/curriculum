@@ -184,7 +184,7 @@ export default function ScheduleDialog({ date, startTime, schedule, onClose, onS
             <div>
               <label className="block text-sm text-gray-500 dark:text-gray-400 mb-1">计费时长（分钟，留空自动计算）</label>
               <input type="number" className="w-full p-2 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded" value={form.durationBilling}
-                onChange={e => setForm({...form, durationBilling: e.target.value})}
+                onChange={e => setForm({...form, durationBilling: e.target.value === '' ? '' : +e.target.value})}
                 placeholder="默认由结束-开始时间计算" />
             </div>
             <div>

@@ -1,9 +1,10 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { api } from '../api';
 import { getClassColor, getTextColor } from '../utils/colors';
 import { isHoliday, getHolidayName, isWorkday, getWorkdayReason } from '../utils/holidays';
 import { todayStr, getMonday } from '../utils/date';
+import { useSimpleSwipe } from '../hooks/useSimpleSwipe';
 
 function getMonthDates(year, month) {
   const first = new Date(year, month, 1);
@@ -26,6 +27,8 @@ export default function MonthlySchedule() {
   const [year, setYear] = useState(searchParams.get('year') ? +searchParams.get('year') : now.getFullYear());
   const [month, setMonth] = useState(searchParams.get('month') != null ? +searchParams.get('month') : now.getMonth());
   const [schedules, setSchedules] = useState([]);
+  const [animKey, setAnimKey] = useState(0);
+  const animDir = useRef(1);
 
   const startDate = formatDate(year, month, 1);
   const endDate = new Date(year, month + 1, 0);
@@ -43,28 +46,35 @@ export default function MonthlySchedule() {
   });
 
   function prevMonth() {
+    animDir.current = -1;
     if (month === 0) { setYear(y => y - 1); setMonth(11); }
     else setMonth(m => m - 1);
+    setAnimKey(k => k + 1);
   }
 
   function nextMonth() {
+    animDir.current = 1;
     if (month === 11) { setYear(y => y + 1); setMonth(0); }
     else setMonth(m => m + 1);
+    setAnimKey(k => k + 1);
   }
 
   const navBtn = "px-2 sm:px-4 py-1.5 sm:py-2 text-xs sm:text-base bg-gray-200 dark:bg-gray-700 rounded hover:bg-gray-300 dark:hover:bg-gray-600 active:scale-95 transition-transform select-none";
 
+  const swipe = useSimpleSwipe({ onPrev: prevMonth, onNext: nextMonth });
+
   return (
-    <div>
+    <div {...swipe}>
       <div className="flex items-center justify-between mb-2 sm:mb-4">
         <button onClick={prevMonth} className={navBtn}><span className="sm:hidden">‹</span><span className="hidden sm:inline">上月</span></button>
         <h2 className="text-base sm:text-xl font-medium">{year}年{month + 1}月</h2>
         <div className="flex gap-1 sm:gap-2">
           <button onClick={() => { const n = new Date(); setYear(n.getFullYear()); setMonth(n.getMonth()); }}
-            className={navBtn}><span className="sm:hidden">今</span><span className="hidden sm:inline">本月</span></button>
+            className={`${navBtn} px-3 sm:px-4`}>本月</button>
           <button onClick={nextMonth} className={navBtn}><span className="sm:hidden">›</span><span className="hidden sm:inline">下月</span></button>
         </div>
       </div>
+      <div key={animKey} className={animDir.current > 0 ? 'slide-in-right' : 'slide-in-left'}>
       <div className="grid grid-cols-7 gap-0.5 sm:gap-1">
         {['一','二','三','四','五','六','日'].map(d => (
           <div key={d} className="p-1 sm:p-2 text-center text-xs sm:text-base bg-gray-100 dark:bg-gray-800 rounded">
@@ -111,6 +121,7 @@ export default function MonthlySchedule() {
             </div>
           );
         })}
+      </div>
       </div>
     </div>
   );

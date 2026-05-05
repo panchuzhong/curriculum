@@ -67,6 +67,7 @@ export default function Reports() {
   const [period, setPeriod] = useState(null);
   const [year, setYear] = useState(new Date().getFullYear());
   const [month, setMonth] = useState(new Date().getMonth());
+  const [filterClassId, setFilterClassId] = useState('');
 
   useEffect(() => { api.getClasses().then(setClasses).catch(() => {}); }, []);
 
@@ -102,13 +103,16 @@ export default function Reports() {
     .filter(s => classMap[s.classId])
     .map(s => ({ ...s, class: classMap[s.classId] }));
 
+  // Apply class filter
+  const filtered = filterClassId ? enriched.filter(s => s.classId === +filterClassId) : enriched;
+
   // Aggregate stats
-  const totalClasses = enriched.length;
-  const totalHours = enriched.reduce((sum, s) => sum + toHoursAbs(s.durationBilling), 0);
-  const totalRevenue = enriched.reduce((sum, s) => sum + calcRevenue(s.class, s.durationBilling), 0);
+  const totalClasses = filtered.length;
+  const totalHours = filtered.reduce((sum, s) => sum + toHoursAbs(s.durationBilling), 0);
+  const totalRevenue = filtered.reduce((sum, s) => sum + calcRevenue(s.class, s.durationBilling), 0);
 
   // By subject
-  const bySubject = groupBy(enriched, s => s.class.subject);
+  const bySubject = groupBy(filtered, s => s.class.subject);
   const subjectData = SUBJECTS
     .filter(sub => bySubject[sub])
     .map(sub => ({
@@ -122,7 +126,7 @@ export default function Reports() {
 
   // By grade
   const GRADES = ['初一', '初二', '初三', '高一', '高二', '高三', '大学'];
-  const byGrade = groupBy(enriched, s => s.class.grade);
+  const byGrade = groupBy(filtered, s => s.class.grade);
   const gradeData = GRADES
     .filter(g => byGrade[g])
     .map(g => ({
@@ -135,7 +139,7 @@ export default function Reports() {
     .sort((a, b) => b.value - a.value);
 
   // By class
-  const byClass = groupBy(enriched, s => s.classId);
+  const byClass = groupBy(filtered, s => s.classId);
   const classData = Object.entries(byClass)
     .map(([cid, scheds]) => {
       const cls = classMap[cid];
@@ -148,6 +152,19 @@ export default function Reports() {
       };
     })
     .sort((a, b) => b.revenue - a.revenue);
+
+  // By month (YYYY-MM)
+  const byMonth = groupBy(filtered, s => s.date.slice(0, 7));
+  const monthData = Object.entries(byMonth)
+    .map(([m, scheds]) => ({
+      label: `${parseInt(m.split('-')[1])}月`,
+      value: scheds.length,
+      hours: scheds.reduce((sum, s) => sum + toHoursAbs(s.durationBilling), 0),
+      revenue: scheds.reduce((sum, s) => sum + calcRevenue(s.class, s.durationBilling), 0),
+      color: '#6366f1',
+      sortKey: m,
+    }))
+    .sort((a, b) => a.sortKey.localeCompare(b.sortKey));
 
   function loadWeek(monday) {
     const end = addDays(monday, 6);
@@ -175,6 +192,13 @@ export default function Reports() {
 
       {/* Period selector */}
       <div className="flex items-center gap-2 sm:gap-4 mb-3 sm:mb-6 flex-wrap">
+        <select value={filterClassId} onChange={e => setFilterClassId(e.target.value)}
+          className="px-2 py-1 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded text-xs sm:text-sm">
+          <option value="">全部班级</option>
+          {classes.map(c => (
+            <option key={c.id} value={c.id}>{c.isCompetition ? '★ ' : ''}{c.name}</option>
+          ))}
+        </select>
         {tab === 'week' && period && (
           <div className="flex items-center gap-1 sm:gap-2">
             <button onClick={() => loadWeek(addDays(period.start, -7))} className="px-2 py-1 bg-gray-200 dark:bg-gray-700 rounded hover:bg-gray-300 dark:hover:bg-gray-600 active:scale-95 transition-transform text-sm">◀</button>
@@ -250,6 +274,20 @@ export default function Reports() {
               maxVal={Math.max(...gradeData.map(d => d.value))}
             />
           </div>
+
+          {/* By month */}
+          {monthData.length > 1 && (
+            <div className="bg-gray-100 dark:bg-gray-800 p-4 rounded-lg">
+              <h3 className="font-bold mb-3">按月份统计</h3>
+              <BarChart
+                data={monthData.map(d => ({
+                  ...d,
+                  display: `${d.value}次 / ¥${d.revenue.toLocaleString()}`,
+                }))}
+                maxVal={Math.max(...monthData.map(d => d.value))}
+              />
+            </div>
+          )}
 
           {/* By class */}
           <div className="bg-gray-100 dark:bg-gray-800 p-4 rounded-lg lg:col-span-2">

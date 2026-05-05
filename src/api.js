@@ -73,7 +73,11 @@ export const api = {
   deletePricingTier: (id) => request('DELETE', `/pricing-tiers/${id}`),
 
   // Schedules
-  getSchedules: (start, end) => request('GET', `/schedules?start=${start}&end=${end}`),
+  getSchedules: (start, end, classId) => {
+    let url = `/schedules?start=${start}&end=${end}`;
+    if (classId) url += `&classId=${classId}`;
+    return request('GET', url);
+  },
   createSchedule: (data) => request('POST', '/schedules', data),
   batchSchedules: (data) => request('POST', '/schedules/batch', data),
   batchDeleteSchedules: (data) => request('DELETE', '/schedules/batch', data),

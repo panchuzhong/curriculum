@@ -260,7 +260,11 @@ router.get('/summary', (req, res) => {
     .where(and(eq(classes.teacherId, req.teacherId), eq(classes.deleted, false))).all();
   const classMap = {};
   teacherClasses.forEach(c => classMap[c.id] = c);
-  const classIds = teacherClasses.map(c => c.id);
+  let classIds = teacherClasses.map(c => c.id);
+  if (req.query.classId) {
+    const queryClassIds = req.query.classId.split(',').map(Number).filter(Boolean);
+    if (queryClassIds.length) classIds = classIds.filter(id => queryClassIds.includes(id));
+  }
   if (classIds.length === 0) {
     const empty = { count: 0, hours: 0, revenue: 0, byClass: [], bySubject: [], byGrade: [] };
     if (format === 'csv') {
