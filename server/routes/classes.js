@@ -1,6 +1,6 @@
 import { Router } from 'express';
-import { drizzleDb } from '../db/index.js';
-import { classes, students, classStudents } from '../db/schema.js';
+import { drizzleDb, db } from '../db/index.js';
+import { classes, students, classStudents, schedules } from '../db/schema.js';
 import { eq, and } from 'drizzle-orm';
 import { authMiddleware } from '../middleware/auth.js';
 import { getDefaultPrice } from '../db/seed.js';
@@ -19,6 +19,23 @@ router.get('/', (req, res) => {
     .where(and(...conditions))
     .all();
   res.json(result.map(c => ({ ...c, isDeleted: !!c.deleted })));
+});
+
+router.get('/locations/suggest', (req, res) => {
+  const classLocs = db.prepare(
+    "SELECT DISTINCT defaultLocationName FROM classes WHERE teacherId = ? AND defaultLocationName IS NOT NULL AND defaultLocationName != '' AND deleted = 0"
+  ).all(req.teacherId).map(r => r.defaultLocationName);
+  const schedLocs = db.prepare(
+    "SELECT DISTINCT s.locationName FROM schedules s JOIN classes c ON s.class_id = c.id WHERE c.teacher_id = ? AND s.locationName IS NOT NULL AND s.locationName != ''"
+  ).all(req.teacherId).map(r => r.locationName);
+  res.json([...new Set([...classLocs, ...schedLocs])].sort());
+});
+
+router.get('/:id', (req, res) => {
+  const cls = drizzleDb.select().from(classes)
+    .where(and(eq(classes.id, +req.params.id), eq(classes.teacherId, req.teacherId))).get();
+  if (!cls) return res.status(404).json({ error: 'Not found' });
+  res.json({ ...cls, isDeleted: !!cls.deleted });
 });
 
 router.post('/', validateCreateClass, handle, (req, res) => {

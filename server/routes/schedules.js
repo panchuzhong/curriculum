@@ -225,7 +225,7 @@ router.put('/:id', (req, res) => {
   const allowed = ['classId', 'date', 'startTime', 'endTime', 'durationBilling', 'locationName', 'locationLat', 'locationLng'];
   const updates = Object.fromEntries(Object.entries(req.body).filter(([k]) => allowed.includes(k)));
   if (Object.keys(updates).length === 0) return res.status(400).json({ error: 'No valid fields' });
-  if (updates.startTime || updates.endTime) {
+  if (updates.startTime !== undefined || updates.endTime !== undefined) {
     updates.durationBilling = calcDurationBilling(
       updates.startTime || existing.startTime,
       updates.endTime || existing.endTime,

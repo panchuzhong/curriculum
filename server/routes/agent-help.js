@@ -4,7 +4,7 @@ const router = Router();
 router.get('/agent/help', (req, res) => {
   res.json({
     name: '课表管理系统 API',
-    version: '1.6.0',
+    version: '1.6.2',
     description: '面向私人教师的课表管理平台 API，供 AI Agent 访问',
     auth: {
       type: 'API Key 或 JWT Token',
@@ -33,6 +33,8 @@ router.get('/agent/help', (req, res) => {
       classes: {
         'GET /api/classes': '获取班级列表（不含已软删除）；返回 isDeleted 布尔字段',
         'GET /api/classes?includeDeleted=true': '获取全部班级（含已软删除），isDeleted 字段区分',
+        'GET /api/classes/:id': '获取单个班级详情（含 isDeleted），需 ownership 匹配',
+        'GET /api/classes/locations/suggest': '获取当前教师所有去重地点名称（从班级默认地点和排课地点合并去重，字母排序）',
         'POST /api/classes': '创建班级（unitPrice 留空时自动匹配阶梯定价）',
         'PUT /api/classes/:id': '更新班级信息',
         'DELETE /api/classes/:id': '删除班级（软删除，排课记录保留）',

@@ -183,6 +183,8 @@ sudo systemctl start curriculum-scheduler
 | 方法 | 路径 | 说明 |
 |------|------|------|
 | GET | /api/classes | 班级列表（不含已删除） |
+| GET | /api/classes/:id | 获取单个班级详情 |
+| GET | /api/classes/locations/suggest | 获取所有去重地点名称（班级+排课合并去重） |
 | POST | /api/classes | 创建班级 |
 | PUT | /api/classes/:id | 更新班级 |
 | DELETE | /api/classes/:id | 删除班级（软删除） |
