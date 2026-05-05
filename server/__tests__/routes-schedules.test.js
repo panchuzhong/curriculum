@@ -75,6 +75,33 @@ describe('PUT /api/schedules/:id', () => {
       .send({ startTime: '10:00' });
     expect(res.status).toBe(200);
   });
+
+  it('does not recalculate durationBilling when only locationName changes', async () => {
+    const { body: { id } } = await request(app).post('/api/schedules').set(auth(token))
+      .send({ classId, date: '2026-05-04', startTime: '09:00', endTime: '11:00' });
+    // durationBilling should be 120 (2 hours)
+    const before = await request(app).get('/api/schedules?start=2026-05-04&end=2026-05-04').set(auth(token));
+    expect(before.body[0].durationBilling).toBe(120);
+
+    const res = await request(app).put(`/api/schedules/${id}`).set(auth(token))
+      .send({ locationName: '新地点' });
+    expect(res.status).toBe(200);
+
+    const after = await request(app).get('/api/schedules?start=2026-05-04&end=2026-05-04').set(auth(token));
+    expect(after.body[0].durationBilling).toBe(120);
+    expect(after.body[0].locationName).toBe('新地点');
+  });
+
+  it('recalculates durationBilling when startTime changes', async () => {
+    const { body: { id } } = await request(app).post('/api/schedules').set(auth(token))
+      .send({ classId, date: '2026-05-04', startTime: '09:00', endTime: '11:00' });
+
+    await request(app).put(`/api/schedules/${id}`).set(auth(token))
+      .send({ startTime: '10:00' });
+
+    const res = await request(app).get('/api/schedules?start=2026-05-04&end=2026-05-04').set(auth(token));
+    expect(res.body[0].durationBilling).toBe(60);
+  });
 });
 
 describe('DELETE /api/schedules/:id', () => {

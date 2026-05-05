@@ -110,3 +110,62 @@ describe('Data isolation', () => {
     expect(res.body).toHaveLength(0);
   });
 });
+
+describe('GET /api/classes/:id', () => {
+  it('returns a single class', async () => {
+    const { body: { id } } = await request(app).post('/api/classes').set(auth(token))
+      .send({ name: '数学一班', grade: '高一', subject: '数学', studentCount: 5, unitPrice: 200 });
+    const res = await request(app).get(`/api/classes/${id}`).set(auth(token));
+    expect(res.status).toBe(200);
+    expect(res.body.name).toBe('数学一班');
+    expect(res.body.unitPrice).toBe(200);
+    expect(res.body.isDeleted).toBe(false);
+  });
+
+  it('returns 404 for nonexistent id', async () => {
+    const res = await request(app).get('/api/classes/99999').set(auth(token));
+    expect(res.status).toBe(404);
+  });
+
+  it('returns 404 for other teacher class', async () => {
+    const { body: { id } } = await request(app).post('/api/classes').set(auth(token))
+      .send({ name: '班', grade: '高一', subject: '数学', studentCount: 5 });
+    const { token: token2 } = await makeUser(drizzleDb, 'user2');
+    const res = await request(app).get(`/api/classes/${id}`).set(auth(token2));
+    expect(res.status).toBe(404);
+  });
+});
+
+describe('GET /api/classes/locations/suggest', () => {
+  it('returns distinct location names from classes', async () => {
+    await request(app).post('/api/classes').set(auth(token))
+      .send({ name: '班A', grade: '高一', subject: '数学', studentCount: 5, defaultLocationName: '图书馆' });
+    await request(app).post('/api/classes').set(auth(token))
+      .send({ name: '班B', grade: '高二', subject: '物理', studentCount: 3, defaultLocationName: '图书馆' });
+    await request(app).post('/api/classes').set(auth(token))
+      .send({ name: '班C', grade: '高三', subject: '英语', studentCount: 2, defaultLocationName: '教室A' });
+    const res = await request(app).get('/api/classes/locations/suggest').set(auth(token));
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual(['图书馆', '教室A']);
+  });
+
+  it('excludes locations from soft-deleted classes', async () => {
+    await request(app).post('/api/classes').set(auth(token))
+      .send({ name: '班A', grade: '高一', subject: '数学', studentCount: 5, defaultLocationName: '图书馆' });
+    const { body: { id } } = await request(app).post('/api/classes').set(auth(token))
+      .send({ name: '班B', grade: '高二', subject: '物理', studentCount: 3, defaultLocationName: '教室A' });
+    await request(app).delete(`/api/classes/${id}`).set(auth(token));
+    const res = await request(app).get('/api/classes/locations/suggest').set(auth(token));
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual(['图书馆']);
+  });
+
+  it('does not include other teacher locations', async () => {
+    await request(app).post('/api/classes').set(auth(token))
+      .send({ name: '班A', grade: '高一', subject: '数学', studentCount: 5, defaultLocationName: '图书馆' });
+    const { token: token2 } = await makeUser(drizzleDb, 'user2');
+    const res = await request(app).get('/api/classes/locations/suggest').set(auth(token2));
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual([]);
+  });
+});
