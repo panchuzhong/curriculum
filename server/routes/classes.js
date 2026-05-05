@@ -23,11 +23,11 @@ router.get('/', (req, res) => {
 
 router.get('/locations/suggest', (req, res) => {
   const classLocs = db.prepare(
-    "SELECT DISTINCT defaultLocationName FROM classes WHERE teacherId = ? AND defaultLocationName IS NOT NULL AND defaultLocationName != '' AND deleted = 0"
-  ).all(req.teacherId).map(r => r.defaultLocationName);
+    "SELECT DISTINCT default_location_name FROM classes WHERE teacher_id = ? AND default_location_name IS NOT NULL AND default_location_name != '' AND deleted = 0"
+  ).all(req.teacherId).map(r => r.default_location_name);
   const schedLocs = db.prepare(
-    "SELECT DISTINCT s.locationName FROM schedules s JOIN classes c ON s.class_id = c.id WHERE c.teacher_id = ? AND s.locationName IS NOT NULL AND s.locationName != ''"
-  ).all(req.teacherId).map(r => r.locationName);
+    "SELECT DISTINCT s.location_name FROM schedules s JOIN classes c ON s.class_id = c.id WHERE c.teacher_id = ? AND s.location_name IS NOT NULL AND s.location_name != ''"
+  ).all(req.teacherId).map(r => r.location_name);
   res.json([...new Set([...classLocs, ...schedLocs])].sort());
 });
 
