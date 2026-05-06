@@ -48,7 +48,7 @@ function AuthInit({ children }) {
 export default function App() {
   return (
     <ErrorBoundary>
-      <BrowserRouter>
+      <BrowserRouter basename={import.meta.env.BASE_URL}>
         <AuthInit>
           <Routes>
             <Route path="/login" element={<LoginPage />} />

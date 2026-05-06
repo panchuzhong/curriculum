@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { drizzleDb } from '../db/index.js';
 import { auditLog } from '../db/schema.js';
-import { eq, desc } from 'drizzle-orm';
+import { eq, desc, and } from 'drizzle-orm';
 import { authMiddleware } from '../middleware/auth.js';
 
 const router = Router();
@@ -12,15 +12,15 @@ router.get('/', (req, res) => {
   const { limit = 100, table, action } = req.query;
   const cap = Math.min(+limit, 500);
 
-  let results = drizzleDb.select().from(auditLog)
-    .where(eq(auditLog.teacherId, req.teacherId))
-    .orderBy(desc(auditLog.id))
-    .limit(cap * 4) // fetch extra for JS filtering
-    .all();
+  const conditions = [eq(auditLog.teacherId, req.teacherId)];
+  if (table) conditions.push(eq(auditLog.tableName, table));
+  if (action) conditions.push(eq(auditLog.action, action));
 
-  if (table) results = results.filter(r => r.tableName === table);
-  if (action) results = results.filter(r => r.action === action);
-  results = results.slice(0, cap);
+  const results = drizzleDb.select().from(auditLog)
+    .where(and(...conditions))
+    .orderBy(desc(auditLog.id))
+    .limit(cap)
+    .all();
 
   res.json(results.map(r => ({
     ...r,

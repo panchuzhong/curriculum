@@ -24,7 +24,7 @@ async function request(method, path, body, { noAuth = false } = {}) {
   const res = await fetch(`${API_BASE}${path}`, opts);
   if (!noAuth && res.status === 401) {
     clearToken();
-    window.location.href = '/login';
+    window.location.href = `${import.meta.env.BASE_URL}login`;
     return;
   }
   const text = await res.text();

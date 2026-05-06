@@ -86,7 +86,8 @@ cp .env.example .env
 编辑 `.env`：
 
 ```env
-PORT=8080                              # 服务端口
+PORT=8443                              # 服务端口（默认 8443）
+HOST=127.0.0.1                         # 监听地址（默认仅本地，外网访问设为 0.0.0.0）
 JWT_SECRET=your-secret-key             # JWT 密钥（请修改为随机字符串）
 ALLOW_REGISTRATION=true                # 首次启动设为 true，注册后自动关闭
 DB_PATH=./data/data.db                 # 数据库路径
@@ -101,7 +102,7 @@ npm run dev
 ```
 
 - 前端热更新：http://localhost:5173
-- 后端 API：http://localhost:8080
+- 后端 API：http://localhost:8443
 
 ### 生产部署
 
@@ -110,7 +111,7 @@ npm run build
 ALLOW_REGISTRATION=true node server/index.js
 ```
 
-访问 http://localhost:8080，注册第一个账号后系统自动关闭注册。
+访问 http://localhost:8443，注册第一个账号后系统自动关闭注册。
 
 ### 服务器依赖（Ubuntu）
 
@@ -331,11 +332,11 @@ JSON 格式含完整班级信息（`class` 字段）；CSV 含中文列头、星
 
 ```bash
 # 导出
-curl -H "X-API-Key: <key>" http://localhost:8080/api/backup -o backup.json
+curl -H "X-API-Key: <key>" http://localhost:8443/api/backup -o backup.json
 
 # 还原
 curl -X POST -H "X-API-Key: <key>" -H "Content-Type: application/json" \
-  http://localhost:8080/api/backup/restore -d @backup.json
+  http://localhost:8443/api/backup/restore -d @backup.json
 ```
 
 还原为事务原子操作：先删除当前教师所有数据，再按原 ID 重新写入。还原时 `teacherId` 强制覆盖为当前认证账号。
@@ -439,10 +440,10 @@ cp data/data.db data/data.db.backup.$(date +%Y%m%d)
 **API 备份（含还原）：**
 ```bash
 # 导出
-curl -H "X-API-Key: <key>" http://localhost:8080/api/backup -o backup.json
+curl -H "X-API-Key: <key>" http://localhost:8443/api/backup -o backup.json
 # 还原
 curl -X POST -H "X-API-Key: <key>" -H "Content-Type: application/json" \
-  http://localhost:8080/api/backup/restore -d @backup.json
+  http://localhost:8443/api/backup/restore -d @backup.json
 ```
 
 ## License
