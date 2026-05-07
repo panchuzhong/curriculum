@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm run *)",
+      "Bash(npm rebuild *)",
+      "Bash(pkill -f \"concurrently\")",
+      "Bash(pkill -f \"vite\")",
+      "Bash(pkill -f \"node server/index.js\")",
+      "Bash(npx vite *)",
+      "Bash(node *)"
+    ]
+  }
+}
