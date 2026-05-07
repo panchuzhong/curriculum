@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { addDays } from '../utils/date';
 import ScheduleGrid from './ScheduleGrid';
@@ -11,6 +11,7 @@ import WeekNavBar from './WeekNavBar';
 
 export default function WeeklySchedule() {
   const [searchParams] = useSearchParams();
+  const containerRef = useRef(null);
 
   const {
     gridRef, weekStart, allDates, allSchedules, isMobile, visibleDays,
@@ -25,8 +26,23 @@ export default function WeeklySchedule() {
     openExport, exportPNG, exportCSV, setShowExport,
   } = useScheduleExport({ weekStart, visibleDays, addDays });
 
+  useEffect(() => { containerRef.current?.focus(); }, []);
+
+  useEffect(() => {
+    const onKey = (e) => {
+      if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
+      if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.tagName === 'SELECT') return;
+      e.preventDefault();
+      const delta = e.ctrlKey || e.metaKey ? (visibleDays || 7) * (e.key === 'ArrowLeft' ? -1 : 1)
+        : e.key === 'ArrowLeft' ? -1 : 1;
+      navigateTo(addDays(weekStart, delta));
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [weekStart, visibleDays, navigateTo]);
+
   return (
-    <div className="h-full flex flex-col">
+    <div ref={containerRef} tabIndex={-1} className="outline-none h-full flex flex-col">
       <WeekNavBar
         weekStart={weekStart} visibleDays={visibleDays} isMobile={isMobile}
         navigateTo={navigateTo} goToThisWeek={goToThisWeek}

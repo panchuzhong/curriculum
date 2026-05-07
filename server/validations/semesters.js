@@ -1,7 +1,7 @@
 import { body } from 'express-validator';
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
-const VALID_TYPES = ['春季', '秋季', '暑假', '寒假'];
+const VALID_TYPES = ['spring', 'fall', 'summer', 'winter'];
 
 export const validateCreateSemester = [
   body('name').notEmpty().withMessage('学期名称不能为空'),
