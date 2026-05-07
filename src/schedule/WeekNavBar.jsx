@@ -32,7 +32,7 @@ export default function WeekNavBar({
         )}
       </div>
 
-      <span className={`tabular-nums font-medium ${isMobile ? 'text-sm' : 'text-lg'}`}>
+      <span className={`tabular-nums font-medium ${isMobile ? 'text-base' : 'text-xl'}`}>
         {dateLabel}
       </span>
 
