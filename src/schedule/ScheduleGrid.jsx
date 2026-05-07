@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useContext } from 'react';
-import { todayStr } from '../utils/date';
+import { todayStr, addDays } from '../utils/date';
 import { isHoliday, isWorkday } from '../utils/holidays';
 import { DarkContext } from '../utils/colors';
 import TimeColumn from './TimeColumn';
@@ -11,6 +11,7 @@ const DEFAULT_START = 7;
 const DEFAULT_END = 23;
 const MIN_ROW_HEIGHT = 24;
 const TOP_OFFSET_MIN = 15;
+const BOTTOM_OFFSET_MIN = 15;
 const HEADER_HEIGHT = 52;
 
 // Set once on first touchstart — used to skip onClick on cell backgrounds for touch devices
@@ -92,7 +93,7 @@ function NowLine({ rowHeight, topGapHeight, firstLabelMin }) {
   );
 }
 
-export default function ScheduleGrid({ dates, schedules, visibleDays = 7, onScheduleClick, onCellClick }) {
+export default function ScheduleGrid({ dates, schedules, visibleDays = 7, weekStart, onScheduleClick, onCellClick }) {
   const today = todayStr();
   useContext(DarkContext);
   const timeBodyRef = useRef(null);
@@ -112,29 +113,39 @@ export default function ScheduleGrid({ dates, schedules, visibleDays = 7, onSche
   });
   Object.values(byDate).forEach(arr => arr.sort((a, b) => a.startTime.localeCompare(b.startTime)));
 
+  // Only consider schedules in currently visible days for range calculation
+  const visibleDateSet = weekStart
+    ? new Set(Array.from({ length: visibleDays }, (_, i) => addDays(weekStart, i)))
+    : new Set(dates);
   let startHour = DEFAULT_START;
-  let endHour = DEFAULT_END;
+  let latestEndMin = DEFAULT_END * 60;
   schedules.forEach(s => {
+    if (!visibleDateSet.has(s.date)) return;
     const sh = parseInt(s.startTime.split(':')[0]);
-    const eh = parseInt(s.endTime.split(':')[0]) + (parseInt(s.endTime.split(':')[1]) > 0 ? 1 : 0);
-    const actualEh = eh <= sh ? eh + 24 : eh;
     if (sh < startHour) startHour = sh;
-    if (actualEh > endHour) endHour = actualEh;
+    const eMin = toMin(s.endTime);
+    const sMin = toMin(s.startTime);
+    const actualEnd = eMin < sMin ? eMin + 24 * 60 : eMin;
+    if (actualEnd > latestEndMin) latestEndMin = actualEnd;
   });
   startHour = Math.max(0, Math.min(startHour, DEFAULT_START));
-  endHour = Math.min(24, Math.max(endHour, DEFAULT_END));
+
+  // Bottom boundary: at least 23:15, or latest end + 15 min
+  const bottomMin = Math.max(DEFAULT_END * 60 + BOTTOM_OFFSET_MIN, latestEndMin + BOTTOM_OFFSET_MIN);
+  const endHour = Math.max(DEFAULT_END, Math.floor(bottomMin / 60));
 
   const displayHours = [];
   for (let h = startHour + 1; h <= endHour; h++) displayHours.push(h);
   const numDisplayHours = displayHours.length;
   const topGapFraction = TOP_OFFSET_MIN / 60;
-  const totalRowUnits = topGapFraction + numDisplayHours;
+  const lastRowFraction = (bottomMin - endHour * 60) / 60;
+  const totalRowUnits = topGapFraction + (numDisplayHours - 1) + lastRowFraction;
 
   useEffect(() => {
     function calcHeight() {
       if (!timeBodyRef.current) return;
       const available = timeBodyRef.current.clientHeight - HEADER_HEIGHT;
-      const ideal = Math.max(MIN_ROW_HEIGHT, Math.floor(available / totalRowUnits) - 1);
+      const ideal = Math.max(MIN_ROW_HEIGHT, Math.floor(available / totalRowUnits));
       setRowHeight(ideal);
     }
     calcHeight();
@@ -143,6 +154,7 @@ export default function ScheduleGrid({ dates, schedules, visibleDays = 7, onSche
   }, [totalRowUnits]);
 
   const topGapHeight = topGapFraction * rowHeight;
+  const lastRowHeight = lastRowFraction * rowHeight;
   const totalHeight = totalRowUnits * rowHeight;
   const firstLabelMin = displayHours[0] * 60;
 
@@ -160,7 +172,7 @@ export default function ScheduleGrid({ dates, schedules, visibleDays = 7, onSche
   return (
     <div ref={timeBodyRef} className="h-full" style={{ display: 'grid', gridTemplateColumns: '64px 1fr', overflow: 'hidden' }}>
       {/* Left: static time column */}
-      <TimeColumn HEADER_HEIGHT={HEADER_HEIGHT} displayHours={displayHours} rowHeight={rowHeight} topGapHeight={topGapHeight} />
+      <TimeColumn HEADER_HEIGHT={HEADER_HEIGHT} displayHours={displayHours} rowHeight={rowHeight} topGapHeight={topGapHeight} lastRowHeight={lastRowHeight} />
 
       {/* Right: single animated track containing all day columns */}
       <div className="overflow-hidden" style={{ height: '100%' }}>
@@ -190,11 +202,11 @@ export default function ScheduleGrid({ dates, schedules, visibleDays = 7, onSche
                     className="cursor-pointer hover:bg-gray-100/50 dark:hover:bg-gray-800/30 transition-colors" />
 
                   {/* Hour cells */}
-                  {displayHours.map(hour => (
+                  {displayHours.map((hour, idx) => (
                     <div key={hour}
                       onClick={() => { if (!_isTouchDev) onCellClick?.(date, `${String(hour).padStart(2, '0')}:00`); }}
                       className="border-t border-gray-100 dark:border-gray-800 cursor-pointer hover:bg-gray-100/50 dark:hover:bg-gray-800/30 transition-colors"
-                      style={{ height: rowHeight }}
+                      style={{ height: idx === numDisplayHours - 1 ? lastRowHeight : rowHeight }}
                     />
                   ))}
 

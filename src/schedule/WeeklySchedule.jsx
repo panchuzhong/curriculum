@@ -55,6 +55,7 @@ export default function WeeklySchedule() {
           dates={allDates}
           schedules={allSchedules}
           visibleDays={visibleDays}
+          weekStart={weekStart}
           onScheduleClick={s => setDialog({ schedule: s, date: s.date, startTime: s.startTime })}
           onCellClick={(date, startTime) => setDialog({ date, startTime })}
         />

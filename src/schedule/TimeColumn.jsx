@@ -1,4 +1,5 @@
-export default function TimeColumn({ HEADER_HEIGHT, displayHours, rowHeight, topGapHeight }) {
+export default function TimeColumn({ HEADER_HEIGHT, displayHours, rowHeight, topGapHeight, lastRowHeight }) {
+  const numHours = displayHours.length;
   return (
     <div className="flex flex-col border-r border-gray-200 dark:border-gray-700">
       <div style={{ height: HEADER_HEIGHT, flexShrink: 0 }}
@@ -7,8 +8,8 @@ export default function TimeColumn({ HEADER_HEIGHT, displayHours, rowHeight, top
       </div>
       <div className="flex-1 overflow-hidden relative bg-white dark:bg-gray-900">
         <div style={{ height: topGapHeight }} className="border-b border-gray-200 dark:border-gray-800" />
-        {displayHours.map(hour => (
-          <div key={hour} className="relative" style={{ height: rowHeight }}>
+        {displayHours.map((hour, idx) => (
+          <div key={hour} className="relative" style={{ height: idx === numHours - 1 ? lastRowHeight : rowHeight }}>
             <div className="absolute top-0 left-0 right-0 border-b border-gray-200 dark:border-gray-800" />
             <span className="absolute text-[11px] text-gray-400 dark:text-gray-500 bg-white dark:bg-gray-900 px-1"
               style={{ top: '-7px', left: '50%', transform: 'translateX(-50%)' }}>
@@ -16,7 +17,6 @@ export default function TimeColumn({ HEADER_HEIGHT, displayHours, rowHeight, top
             </span>
           </div>
         ))}
-        <div className="absolute bottom-0 left-0 right-0 border-b border-gray-200 dark:border-gray-800" />
       </div>
     </div>
   );
