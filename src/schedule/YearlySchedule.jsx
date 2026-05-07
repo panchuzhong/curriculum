@@ -92,14 +92,13 @@ export default function YearlySchedule() {
   });
 
   const cols = isMobile ? 2 : 3;
-  const gridRows = Array.from({ length: Math.ceil(12 / cols) }, (_, row) => {
+  const mobileRows = isMobile ? Array.from({ length: Math.ceil(12 / cols) }, (_, row) => {
     const hasData = Array.from({ length: cols }, (_, c) => {
       const m = row * cols + c;
-      if (m >= 12) return false;
-      return byMonth[m].schedules.length > 0;
+      return m < 12 && byMonth[m].schedules.length > 0;
     }).some(Boolean);
     return hasData ? '1fr' : 'auto';
-  }).join(' ');
+  }).join(' ') : undefined;
 
   const yearByCategory = {};
   let yearTotalHours = 0;
@@ -139,8 +138,8 @@ export default function YearlySchedule() {
         </div>
       </div>
       <div key={animKey} className={`flex-1 min-h-0 flex flex-col ${animDir.current > 0 ? 'slide-in-right' : animDir.current < 0 ? 'slide-in-left' : ''}`}>
-        <div className="grid grid-cols-2 sm:grid-cols-3 gap-1 sm:gap-2 flex-1 min-h-0"
-          style={{ gridTemplateRows: gridRows }}>
+        <div className={`grid grid-cols-2 sm:grid-cols-3 gap-1 sm:gap-2 flex-1 min-h-0 ${mobileRows ? '' : 'grid-rows-4'}`}
+          style={mobileRows ? { gridTemplateRows: mobileRows } : undefined}>
           {Array.from({ length: 12 }, (_, m) => {
             const data = byMonth[m];
             const totalHours = data.schedules.reduce((sum, s) => sum + toHoursAbs(s.durationBilling), 0);
@@ -157,15 +156,28 @@ export default function YearlySchedule() {
 
             return (
               <div key={m} onClick={() => navigate(`/monthly?year=${year}&month=${m}`)}
-                className={`bg-gray-100 dark:bg-gray-800 rounded cursor-pointer hover:bg-gray-200 dark:hover:bg-gray-700 overflow-hidden ${
-                  totalHours > 0 ? 'p-1.5 sm:p-2 flex flex-col justify-between' : 'px-1.5 py-1 sm:px-2 sm:py-1'
+                className={`bg-gray-100 dark:bg-gray-800 rounded cursor-pointer hover:bg-gray-200 dark:hover:bg-gray-700 overflow-hidden p-1.5 sm:p-2 flex flex-col ${
+                  totalHours > 0 ? 'justify-between' : isMobile ? '' : 'justify-between'
                 }`}
-                style={totalHours > 0 ? { fontSize: 'clamp(10px, 1.2vw, 14px)' } : undefined}>
+                style={{ fontSize: 'clamp(10px, 1.2vw, 14px)' }}>
                 {totalHours === 0 ? (
-                  <div className="flex items-center justify-between text-xs">
-                    <span className="text-gray-400">{m + 1}月</span>
-                    <span className="text-gray-300 dark:text-gray-600">无排课</span>
+                  isMobile ? (
+                    <div className="flex items-center justify-between">
+                      <span className="text-gray-400">{m + 1}月</span>
+                      <span className="text-gray-300 dark:text-gray-600">无排课</span>
+                    </div>
+                  ) : (
+                  <>
+                  <div>
+                    <div className="flex items-center justify-between gap-1">
+                      <span className="font-bold text-[1.15em]">{m + 1}月</span>
+                      <span className="text-gray-400">0天 · 0次</span>
+                      <span className="font-medium text-gray-400">0.0h</span>
+                    </div>
                   </div>
+                  <div className="flex h-2 rounded overflow-hidden mt-1 bg-gray-200 dark:bg-gray-700" />
+                  </>
+                  )
                 ) : (
                 <>
                 <div>
