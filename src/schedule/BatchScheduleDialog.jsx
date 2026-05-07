@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { todayStr } from '../utils/date';
 import { api } from '../api';
 
 const WEEKDAY_OPTIONS = [
@@ -17,11 +18,11 @@ export default function BatchScheduleDialog({ onClose, onSaved }) {
   const [op, setOp] = useState('create'); // create | delete
   const [mode, setMode] = useState('semester'); // semester | dates
   const [result, setResult] = useState(null);
-  const [rangeStart, setRangeStart] = useState('');
+  const [rangeStart, setRangeStart] = useState(todayStr());
   const [rangeEnd, setRangeEnd] = useState('');
   const [rangeStep, setRangeStep] = useState(1);
   const [previewCount, setPreviewCount] = useState(null);
-  const [delStart, setDelStart] = useState('');
+  const [delStart, setDelStart] = useState(todayStr());
   const [delEnd, setDelEnd] = useState('');
   const [form, setForm] = useState({
     classId: '',
@@ -180,6 +181,14 @@ export default function BatchScheduleDialog({ onClose, onSaved }) {
                     <select className={sel} value={form.weekday} onChange={e => setForm({...form, weekday: +e.target.value})}>
                       {WEEKDAY_OPTIONS.map(w => <option key={w.value} value={w.value}>{w.label}</option>)}
                     </select>
+                    {selectedSemester && (
+                      <p className="mt-1 text-xs text-gray-400">
+                        从 {(() => {
+                          const today = todayStr();
+                          return today > selectedSemester.startDate ? today : selectedSemester.startDate;
+                        })()} 起排课
+                      </p>
+                    )}
                   </div>
                 )}
                 {op === 'delete' && selectedSemester && (

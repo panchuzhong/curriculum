@@ -61,13 +61,15 @@ function BarChart({ data, maxVal }) {
 }
 
 export default function Reports() {
-  const [tab, setTab] = useState('week'); // week | month | year
+  const [tab, setTab] = useState('week'); // week | month | year | custom
   const [classes, setClasses] = useState([]);
   const [schedules, setSchedules] = useState([]);
   const [period, setPeriod] = useState(null);
   const [year, setYear] = useState(new Date().getFullYear());
   const [month, setMonth] = useState(new Date().getMonth());
   const [filterClassId, setFilterClassId] = useState('');
+  const [customStart, setCustomStart] = useState(todayStr());
+  const [customEnd, setCustomEnd] = useState(todayStr());
 
   useEffect(() => { api.getClasses().then(setClasses).catch(() => {}); }, []);
 
@@ -82,15 +84,19 @@ export default function Reports() {
       const r = getMonthRange(year, month);
       start = r.start;
       end = r.end;
-    } else {
+    } else if (tab === 'year') {
       const r = getYearRange(year);
       start = r.start;
       end = r.end;
+    } else {
+      start = customStart;
+      end = customEnd;
     }
 
+    if (!start || !end || start > end) return;
     setPeriod({ start, end });
     api.getSchedules(start, end).then(setSchedules).catch(() => {});
-  }, [tab, year, month]);
+  }, [tab, year, month, customStart, customEnd]);
 
   if (!period) return null;
 
@@ -181,6 +187,7 @@ export default function Reports() {
             { key: 'week', label: '周报' },
             { key: 'month', label: '月报' },
             { key: 'year', label: '年报' },
+            { key: 'custom', label: '自定义' },
           ].map(t => (
             <button key={t.key} onClick={() => setTab(t.key)}
               className={`px-2 sm:px-3 py-1 rounded text-xs sm:text-sm ${tab === t.key ? 'bg-blue-600 text-white' : ''}`}>
@@ -227,6 +234,15 @@ export default function Reports() {
               className="px-2 py-1 bg-gray-200 dark:bg-gray-700 rounded hover:bg-gray-300 dark:hover:bg-gray-600 active:scale-95 transition-transform">▶</button>
             <button onClick={() => setYear(new Date().getFullYear())}
               className="px-2 sm:px-3 py-1 bg-gray-200 dark:bg-gray-700 rounded text-xs sm:text-sm hover:bg-gray-300 dark:hover:bg-gray-600 active:scale-95 transition-transform">今年</button>
+          </div>
+        )}
+        {tab === 'custom' && (
+          <div className="flex items-center gap-1 sm:gap-2">
+            <input type="date" value={customStart} onChange={e => setCustomStart(e.target.value)}
+              className="px-2 py-1 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded text-xs sm:text-sm" />
+            <span className="text-gray-400">~</span>
+            <input type="date" value={customEnd} onChange={e => setCustomEnd(e.target.value)}
+              className="px-2 py-1 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded text-xs sm:text-sm" />
           </div>
         )}
       </div>

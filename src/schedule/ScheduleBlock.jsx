@@ -22,6 +22,7 @@ export default function ScheduleBlock({ item, hasConflict, totalCols, rowHeight,
     <div
       key={item.id}
       onClick={() => !_isTouchDev && onScheduleClick?.(item)}
+      onContextMenu={e => e.preventDefault()}
       onTouchStart={e => {
         e.stopPropagation();
         if (e.touches.length !== 1) return;
@@ -31,7 +32,7 @@ export default function ScheduleBlock({ item, hasConflict, totalCols, rowHeight,
           navigator.vibrate?.(30);
           onScheduleClick?.(item);
           schedLpRef.current = null;
-        }, 450);
+        }, 300);
         schedLpRef.current = { timer, startX: t.clientX, startY: t.clientY };
       }}
       onTouchMove={e => {
@@ -49,7 +50,7 @@ export default function ScheduleBlock({ item, hasConflict, totalCols, rowHeight,
           schedLpRef.current = null;
         }
       }}
-      className={`absolute rounded-md cursor-pointer overflow-hidden z-10 transition-shadow hover:shadow-md ${
+      className={`absolute rounded-md cursor-pointer overflow-hidden z-10 transition-shadow hover:shadow-md select-none ${
         hasConflict ? 'ring-2 ring-red-500' : ''
       }`}
       style={{

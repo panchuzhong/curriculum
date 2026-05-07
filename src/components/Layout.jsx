@@ -1,5 +1,5 @@
 import { useState, useEffect, useLayoutEffect } from 'react';
-import { Link, useLocation } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { clearToken } from '../api';
 import { setDarkMode, DarkContext } from '../utils/colors';
 
@@ -16,6 +16,7 @@ const NAV_LINKS = [
 
 export default function Layout({ children }) {
   const location = useLocation();
+  const navigate = useNavigate();
   const [dark, setDark] = useState(() => {
     const saved = localStorage.getItem('theme');
     if (saved) return saved === 'dark';
@@ -57,6 +58,23 @@ export default function Layout({ children }) {
     return saved ? parseInt(saved) : (tablet ? 100 : 224);
   });
   const [resizing, setResizing] = useState(false);
+
+  useEffect(() => {
+    if (isMobile) return;
+    const onKey = (e) => {
+      if (e.key !== 'ArrowUp' && e.key !== 'ArrowDown') return;
+      if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.tagName === 'SELECT') return;
+      e.preventDefault();
+      const idx = NAV_LINKS.findIndex(l => l.to === location.pathname);
+      if (idx === -1) return;
+      const next = e.key === 'ArrowUp'
+        ? (idx - 1 + NAV_LINKS.length) % NAV_LINKS.length
+        : (idx + 1) % NAV_LINKS.length;
+      navigate(NAV_LINKS[next].to);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [isMobile, location.pathname, navigate]);
 
   function sidebarStorageKey() {
     const w = window.innerWidth;

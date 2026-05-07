@@ -1,11 +1,12 @@
 import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../api';
-import { getSubjectColor } from '../utils/colors';
+import { getCategoryColor } from '../utils/colors';
 import { toHoursAbs } from '../utils/date';
 import { useSimpleSwipe } from '../hooks/useSimpleSwipe';
 
-const COLLAPSE_THRESHOLD = 3;
+const COLLAPSE_THRESHOLD_MOBILE = 4;
+const COLLAPSE_THRESHOLD_DESKTOP = 9;
 
 function getCategory(cls) {
   if (!cls) return '未知';
@@ -18,15 +19,6 @@ function getCategory(cls) {
   return prefix ? `${prefix}${s}` : s;
 }
 
-const GRADE_COLORS = {
-  '初中': '#3b82f6',
-  '高中': '#6366f1',
-  '大学': '#8b5cf6',
-  '初中竞赛': '#f59e0b',
-  '高中竞赛': '#f43f5e',
-  '其他': '#6b7280',
-};
-
 function getGradeLevel(cat) {
   const match = cat.match(/^(初中竞赛|高中竞赛|初中|高中|大学)/);
   return match ? match[1] : '其他';
@@ -36,10 +28,22 @@ function groupByGrade(entries) {
   const grouped = {};
   entries.forEach(([cat, h]) => {
     const level = getGradeLevel(cat);
-    if (!grouped[level]) grouped[level] = 0;
-    grouped[level] += h;
+    if (!grouped[level]) grouped[level] = { hours: 0, dominantCat: cat, dominantH: 0 };
+    grouped[level].hours += h;
+    if (h > grouped[level].dominantH) {
+      grouped[level].dominantH = h;
+      grouped[level].dominantCat = cat;
+    }
   });
-  return Object.entries(grouped).sort((a, b) => b[1] - a[1]);
+  return Object.entries(grouped)
+    .map(([level, d]) => [level, d.hours, d.dominantCat])
+    .sort((a, b) => b[1] - a[1]);
+}
+
+const FALLBACK_COLOR = 'hsl(0, 0%, 50%)';
+
+function resolveColor(label, dominantCategory) {
+  return getCategoryColor(label) || getCategoryColor(dominantCategory) || FALLBACK_COLOR;
 }
 
 export default function YearlySchedule() {
@@ -50,6 +54,8 @@ export default function YearlySchedule() {
   const [animKey, setAnimKey] = useState(0);
   const animDir = useRef(1);
   const containerRef = useRef(null);
+  const [isMobile, setIsMobile] = useState(() => window.innerWidth < 768);
+  const collapseLimit = isMobile ? COLLAPSE_THRESHOLD_MOBILE : COLLAPSE_THRESHOLD_DESKTOP;
 
   useEffect(() => {
     api.getSchedules(`${year}-01-01`, `${year}-12-31`).then(setSchedules).catch(() => {});
@@ -57,6 +63,12 @@ export default function YearlySchedule() {
   }, [year]);
 
   useEffect(() => { containerRef.current?.focus(); }, []);
+
+  useEffect(() => {
+    const onResize = () => setIsMobile(window.innerWidth < 768);
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, []);
 
   useEffect(() => {
     const onKey = (e) => {
@@ -79,6 +91,16 @@ export default function YearlySchedule() {
     byMonth[m].schedules.push({ ...s, class: cls });
   });
 
+  const cols = isMobile ? 2 : 3;
+  const gridRows = Array.from({ length: Math.ceil(12 / cols) }, (_, row) => {
+    const hasData = Array.from({ length: cols }, (_, c) => {
+      const m = row * cols + c;
+      if (m >= 12) return false;
+      return byMonth[m].schedules.length > 0;
+    }).some(Boolean);
+    return hasData ? '1fr' : 'auto';
+  }).join(' ');
+
   const yearByCategory = {};
   let yearTotalHours = 0;
   const yearDates = new Set();
@@ -92,7 +114,7 @@ export default function YearlySchedule() {
     yearDates.add(s.date);
   });
   const yearCategoryEntries = Object.entries(yearByCategory).sort((a, b) => b[1] - a[1]);
-  const yearCondensed = yearCategoryEntries.length > COLLAPSE_THRESHOLD;
+  const yearCondensed = yearCategoryEntries.length > collapseLimit;
   const yearDisplayEntries = yearCondensed ? groupByGrade(yearCategoryEntries) : yearCategoryEntries;
   const yearMaxHours = yearDisplayEntries.length > 0 ? yearDisplayEntries[0][1] : 1;
 
@@ -117,7 +139,8 @@ export default function YearlySchedule() {
         </div>
       </div>
       <div key={animKey} className={`flex-1 min-h-0 flex flex-col ${animDir.current > 0 ? 'slide-in-right' : animDir.current < 0 ? 'slide-in-left' : ''}`}>
-        <div className="grid grid-cols-2 sm:grid-cols-3 grid-rows-4 gap-1 sm:gap-2 flex-1 min-h-0">
+        <div className="grid grid-cols-2 sm:grid-cols-3 gap-1 sm:gap-2 flex-1 min-h-0"
+          style={{ gridTemplateRows: gridRows }}>
           {Array.from({ length: 12 }, (_, m) => {
             const data = byMonth[m];
             const totalHours = data.schedules.reduce((sum, s) => sum + toHoursAbs(s.durationBilling), 0);
@@ -129,27 +152,33 @@ export default function YearlySchedule() {
               byCategory[cat] += toHoursAbs(s.durationBilling);
             });
             const categoryEntries = Object.entries(byCategory).sort((a, b) => b[1] - a[1]);
-            const condensed = categoryEntries.length > COLLAPSE_THRESHOLD;
+            const condensed = categoryEntries.length > collapseLimit;
             const displayEntries = condensed ? groupByGrade(categoryEntries) : categoryEntries;
 
             return (
               <div key={m} onClick={() => navigate(`/monthly?year=${year}&month=${m}`)}
-                className="p-1.5 sm:p-2 bg-gray-100 dark:bg-gray-800 rounded cursor-pointer hover:bg-gray-200 dark:hover:bg-gray-700 overflow-hidden flex flex-col justify-between"
-                style={{ fontSize: 'clamp(10px, 1.2vw, 14px)' }}>
+                className={`bg-gray-100 dark:bg-gray-800 rounded cursor-pointer hover:bg-gray-200 dark:hover:bg-gray-700 overflow-hidden ${
+                  totalHours > 0 ? 'p-1.5 sm:p-2 flex flex-col justify-between' : 'px-1.5 py-1 sm:px-2 sm:py-1'
+                }`}
+                style={totalHours > 0 ? { fontSize: 'clamp(10px, 1.2vw, 14px)' } : undefined}>
+                {totalHours === 0 ? (
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="text-gray-400">{m + 1}月</span>
+                    <span className="text-gray-300 dark:text-gray-600">无排课</span>
+                  </div>
+                ) : (
+                <>
                 <div>
                   <div className="flex items-center justify-between gap-1">
                     <span className="font-bold text-[1.15em]">{m + 1}月</span>
-                    {totalHours > 0 && (
-                      <>
-                        <span className="text-gray-500 dark:text-gray-400">{data.dates.size}天 · {data.schedules.length}次</span>
-                        <span className="font-medium text-blue-600 dark:text-blue-400">{totalHours.toFixed(1)}h</span>
-                      </>
-                    )}
+                    <span className="text-gray-500 dark:text-gray-400">{data.dates.size}天 · {data.schedules.length}次</span>
+                    <span className="font-medium text-blue-600 dark:text-blue-400">{totalHours.toFixed(1)}h</span>
                   </div>
                   {displayEntries.length > 0 && (
                     <div className="flex items-center gap-1 flex-wrap mt-1">
-                      {displayEntries.map(([label, h]) => {
-                        const color = condensed ? GRADE_COLORS[label] || '#6b7280' : getSubjectColor(label.replace(/^(初中竞赛|高中竞赛|初中|高中|大学)/, ''));
+                      {displayEntries.map(entry => {
+                        const [label, h, dominantCat] = condensed ? entry : [entry[0], entry[1]];
+                        const color = resolveColor(label, dominantCat);
                         return (
                           <span key={label} className="inline-flex items-center px-1.5 py-0.5 rounded"
                             style={{ backgroundColor: color, color: '#fff' }}>
@@ -160,22 +189,21 @@ export default function YearlySchedule() {
                     </div>
                   )}
                 </div>
-                {totalHours === 0 ? (
-                  <div className="text-gray-400">无排课</div>
-                ) : (
-                  <div className="flex h-2 rounded overflow-hidden mt-1">
-                    {(condensed ? displayEntries : categoryEntries).map(([label, h]) => {
-                      const color = condensed ? GRADE_COLORS[label] || '#6b7280' : getSubjectColor(label.replace(/^(初中竞赛|高中竞赛|初中|高中|大学)/, ''));
-                      return (
-                        <div key={label}
-                          style={{ width: `${(h / totalHours) * 100}%`, backgroundColor: color }}
-                          title={condensed
-                            ? categoryEntries.filter(([c]) => getGradeLevel(c) === label).map(([c, hh]) => `${c} ${hh.toFixed(1)}h`).join(' · ')
-                            : `${label} ${h.toFixed(1)}h`
-                          } />
-                      );
-                    })}
+                <div className="flex h-2 rounded overflow-hidden mt-1">
+                  {displayEntries.map(entry => {
+                    const [label, h, dominantCat] = condensed ? entry : [entry[0], entry[1]];
+                    const color = resolveColor(label, dominantCat);
+                    return (
+                      <div key={label}
+                        style={{ width: `${(h / totalHours) * 100}%`, backgroundColor: color }}
+                        title={condensed
+                          ? categoryEntries.filter(([c]) => getGradeLevel(c) === label).map(([c, hh]) => `${c} ${hh.toFixed(1)}h`).join(' · ')
+                          : `${label} ${h.toFixed(1)}h`
+                        } />
+                    );
+                  })}
                   </div>
+                </>
                 )}
               </div>
             );
@@ -191,10 +219,9 @@ export default function YearlySchedule() {
               </span>
             </div>
             <div className="space-y-0.5">
-              {yearDisplayEntries.map(([label, h]) => {
-                const color = yearCondensed
-                  ? GRADE_COLORS[label] || '#6b7280'
-                  : getSubjectColor(label.replace(/^(初中竞赛|高中竞赛|初中|高中|大学)/, ''));
+              {yearDisplayEntries.map(entry => {
+                const [label, h, dominantCat] = yearCondensed ? entry : [entry[0], entry[1]];
+                const color = resolveColor(label, dominantCat);
                 return (
                   <div key={label} className="flex items-center gap-2">
                     <span className="w-16 sm:w-24 truncate text-right text-[0.9em]">{label}</span>

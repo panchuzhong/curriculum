@@ -50,7 +50,8 @@ router.get('/', (req, res) => {
   const result = drizzleDb.select().from(schedules)
     .where(and(gte(schedules.date, start), lte(schedules.date, end)))
     .all()
-    .filter(s => classIds.includes(s.classId));
+    .filter(s => classIds.includes(s.classId))
+    .sort((a, b) => a.date !== b.date ? a.date.localeCompare(b.date) : a.startTime.localeCompare(b.startTime));
 
   const classMap = {};
   drizzleDb.select().from(classes).where(eq(classes.deleted, false)).all()
@@ -96,7 +97,9 @@ router.post('/batch', validateBatchCreate, handle, (req, res) => {
       .where(and(eq(semesters.id, semesterId), eq(semesters.teacherId, req.teacherId))).get();
     if (!semester) return res.status(404).json({ error: 'Semester not found' });
 
-    const current = new Date(semester.startDate + 'T00:00:00');
+    const today = new Date().toISOString().slice(0, 10);
+    const semesterStart = today > semester.startDate ? today : semester.startDate;
+    const current = new Date(semesterStart + 'T00:00:00');
     const end = new Date(semester.endDate + 'T00:00:00');
     while (current <= end) {
       const dateStr = toLocalDateStr(current);

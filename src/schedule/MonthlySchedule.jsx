@@ -16,6 +16,13 @@ function getMonthDates(year, month) {
   return dates;
 }
 
+function timeToMin(t) {
+  const [h, m] = t.split(':').map(Number);
+  return h * 60 + (m || 0);
+}
+
+const DAY_END_MIN = 24 * 60;
+
 function formatDate(y, m, d) {
   return `${y}-${String(m + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
 }
@@ -56,6 +63,7 @@ export default function MonthlySchedule() {
     if (!byDate[s.date]) byDate[s.date] = [];
     byDate[s.date].push(s);
   });
+  Object.values(byDate).forEach(arr => arr.sort((a, b) => a.startTime.localeCompare(b.startTime)));
 
   function prevMonth() {
     animDir.current = -1;
@@ -109,25 +117,55 @@ export default function MonthlySchedule() {
               const monday = getMonday(dateStr);
               navigate(`/?week=${monday}`);
             }}
-              className={`px-1 py-0.5 sm:p-1.5 rounded cursor-pointer overflow-hidden ${
+              className={`px-1 py-0.5 sm:p-1.5 rounded cursor-pointer overflow-hidden flex flex-col ${
                 isToday ? 'bg-blue-100 dark:bg-blue-900/30 ring-1 ring-blue-400' :
                 holiday ? 'bg-red-50 dark:bg-red-900/20' :
                 workday ? 'bg-orange-50 dark:bg-orange-900/20' :
                 'bg-gray-100 dark:bg-gray-800'
               } hover:bg-gray-200 dark:hover:bg-gray-700`}>
-              <div className="flex items-center gap-0.5 mb-0.5 flex-wrap">
+              <div className="flex items-center gap-0.5 mb-0.5 flex-wrap shrink-0">
                 <span className={`text-[10px] sm:text-xs ${isToday ? 'font-bold text-blue-600 dark:text-blue-400' : 'text-gray-500 dark:text-gray-400'}`}>{day}</span>
                 {isToday && <span className="text-[8px] sm:text-[9px] bg-blue-500 text-white px-0.5 rounded">今</span>}
                 {holiday && <span className="text-[8px] sm:text-[9px] bg-red-500 text-white px-0.5 rounded truncate max-w-full">{getHolidayName(dateStr)}</span>}
                 {workday && <span className="text-[8px] sm:text-[9px] bg-orange-500 text-white px-0.5 rounded">班</span>}
               </div>
-              {daySchedules.map(s => (
-                <div key={s.id}
-                  className="text-[8px] sm:text-[10px] px-0.5 py-px rounded mb-px truncate"
-                  style={{ backgroundColor: getClassColor(s.class), color: getTextColor(s.class) }}>
-                  {s.class?.isCompetition && '★ '}{s.class?.name}
+              {daySchedules.length > 0 && (() => {
+                const minBar = 9;
+                const placed = [];
+                const earliest = Math.min(...daySchedules.map(s => timeToMin(s.startTime)));
+                const dayStart = Math.max(0, earliest - 15);
+                const dayTotal = DAY_END_MIN - dayStart;
+                return (
+                <div className="relative flex-1 min-h-0">
+                  {daySchedules.map((s) => {
+                    const startMin = timeToMin(s.startTime);
+                    const endMin = timeToMin(s.endTime);
+                    const dur = endMin - startMin;
+                    let topPct = Math.max(0, (startMin - dayStart) / dayTotal * 100);
+                    const heightPct = Math.max(minBar, dur / dayTotal * 100);
+                    for (const p of placed) {
+                      if (topPct < p.bottom) topPct = p.bottom;
+                    }
+                    placed.push({ bottom: topPct + heightPct + 0.5 });
+                    return (
+                      <div key={s.id}
+                        className="absolute left-0.5 right-0.5 rounded truncate px-0.5 flex items-center"
+                        style={{
+                          top: `${topPct}%`,
+                          height: `${heightPct}%`,
+                          backgroundColor: getClassColor(s.class),
+                          color: getTextColor(s.class),
+                          fontSize: 'clamp(7px, 0.85vw, 10px)',
+                          overflow: 'hidden',
+                        }}
+                        title={`${s.startTime}-${s.endTime} ${s.class?.isCompetition ? '★ ' : ''}${s.class?.name}`}>
+                        {s.class?.isCompetition && '★ '}{s.class?.name}
+                      </div>
+                    );
+                  })}
                 </div>
-              ))}
+                );
+              })()}
             </div>
           );
         })}

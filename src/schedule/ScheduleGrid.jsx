@@ -110,6 +110,7 @@ export default function ScheduleGrid({ dates, schedules, visibleDays = 7, onSche
   schedules.forEach(s => {
     if (byDate[s.date] !== undefined) byDate[s.date].push(s);
   });
+  Object.values(byDate).forEach(arr => arr.sort((a, b) => a.startTime.localeCompare(b.startTime)));
 
   let startHour = DEFAULT_START;
   let endHour = DEFAULT_END;

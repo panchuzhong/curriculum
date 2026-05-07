@@ -39,3 +39,22 @@ export function getSubjectColor(subject) {
   const hue = SUBJECT_HUES[subject] || { h: 0, s: 0 };
   return `hsl(${hue.h}, ${hue.s}%, 50%)`;
 }
+
+const GRADE_REPRESENTATIVE = {
+  '初中': '初二', '高中': '高二', '大学': '大学',
+  '初中竞赛': '初二', '高中竞赛': '高二',
+};
+
+export function getCategoryColor(category) {
+  const match = category.match(/^(初中竞赛|高中竞赛|初中|高中|大学)/);
+  const gradeLevel = match ? match[1] : null;
+  const subject = gradeLevel ? category.slice(gradeLevel.length) : category;
+  if (!subject) return null;
+
+  const hue = SUBJECT_HUES[subject] || { h: 0, s: 0 };
+  const repGrade = gradeLevel ? (GRADE_REPRESENTATIVE[gradeLevel] ?? '高二') : '高二';
+  const baseL = GRADE_LIGHTNESS[repGrade] ?? 50;
+  const l = mappedLightness(baseL, _dark);
+  const s = Math.round(hue.s * satMod(baseL, _dark));
+  return `hsl(${hue.h}, ${s}%, ${Math.round(l)}%)`;
+}
