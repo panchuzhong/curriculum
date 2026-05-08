@@ -1,7 +1,7 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useContext } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { api } from '../api';
-import { getClassColor, getTextColor } from '../utils/colors';
+import { getClassColor, getTextColor, DarkContext } from '../utils/colors';
 import { isHoliday, getHolidayName, isWorkday, getWorkdayReason } from '../utils/holidays';
 import { todayStr, getMonday } from '../utils/date';
 import { useSimpleSwipe } from '../hooks/useSimpleSwipe';
@@ -29,6 +29,7 @@ function formatDate(y, m, d) {
 
 export default function MonthlySchedule() {
   const navigate = useNavigate();
+  const dark = useContext(DarkContext);
   const [searchParams] = useSearchParams();
   const now = new Date();
   const [year, setYear] = useState(searchParams.get('year') ? +searchParams.get('year') : now.getFullYear());
@@ -154,8 +155,8 @@ export default function MonthlySchedule() {
                         style={{
                           top: `${topPct}%`,
                           height: `${heightPct}%`,
-                          backgroundColor: getClassColor(s.class),
-                          color: getTextColor(s.class),
+                          backgroundColor: getClassColor(s.class, dark),
+                          color: getTextColor(s.class, dark),
                           fontSize: 'clamp(7px, 0.85vw, 10px)',
                           overflow: 'hidden',
                         }}

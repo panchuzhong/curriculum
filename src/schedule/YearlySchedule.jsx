@@ -1,7 +1,7 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useContext } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../api';
-import { getCategoryColor } from '../utils/colors';
+import { getCategoryColor, DarkContext } from '../utils/colors';
 import { toHoursAbs } from '../utils/date';
 import { useSimpleSwipe } from '../hooks/useSimpleSwipe';
 
@@ -42,12 +42,13 @@ function groupByGrade(entries) {
 
 const FALLBACK_COLOR = 'hsl(0, 0%, 50%)';
 
-function resolveColor(label, dominantCategory) {
-  return getCategoryColor(label) || getCategoryColor(dominantCategory) || FALLBACK_COLOR;
+function resolveColor(label, dominantCategory, dark) {
+  return getCategoryColor(label, dark) || getCategoryColor(dominantCategory, dark) || FALLBACK_COLOR;
 }
 
 export default function YearlySchedule() {
   const navigate = useNavigate();
+  const dark = useContext(DarkContext);
   const [year, setYear] = useState(new Date().getFullYear());
   const [schedules, setSchedules] = useState([]);
   const [classes, setClasses] = useState([]);
@@ -190,7 +191,7 @@ export default function YearlySchedule() {
                     <div className="flex items-center gap-1 flex-wrap mt-1">
                       {displayEntries.map(entry => {
                         const [label, h, dominantCat] = condensed ? entry : [entry[0], entry[1]];
-                        const color = resolveColor(label, dominantCat);
+                        const color = resolveColor(label, dominantCat, dark);
                         return (
                           <span key={label} className="inline-flex items-center px-1.5 py-0.5 rounded"
                             style={{ backgroundColor: color, color: '#fff' }}>
@@ -204,7 +205,7 @@ export default function YearlySchedule() {
                 <div className="flex h-2 rounded overflow-hidden mt-1">
                   {displayEntries.map(entry => {
                     const [label, h, dominantCat] = condensed ? entry : [entry[0], entry[1]];
-                    const color = resolveColor(label, dominantCat);
+                    const color = resolveColor(label, dominantCat, dark);
                     return (
                       <div key={label}
                         style={{ width: `${(h / totalHours) * 100}%`, backgroundColor: color }}
@@ -233,7 +234,7 @@ export default function YearlySchedule() {
             <div className="space-y-0.5">
               {yearDisplayEntries.map(entry => {
                 const [label, h, dominantCat] = yearCondensed ? entry : [entry[0], entry[1]];
-                const color = resolveColor(label, dominantCat);
+                const color = resolveColor(label, dominantCat, dark);
                 return (
                   <div key={label} className="flex items-center gap-2">
                     <span className="w-16 sm:w-24 truncate text-right text-[0.9em]">{label}</span>

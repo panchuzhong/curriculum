@@ -1,6 +1,8 @@
-import { getClassColor, getTextColor } from '../utils/colors';
+import { useContext } from 'react';
+import { getClassColor, getTextColor, DarkContext } from '../utils/colors';
 
 export default function ScheduleBlock({ item, hasConflict, totalCols, rowHeight, topGapHeight, firstLabelMin, totalHeight, onScheduleClick, schedLpRef, wasRecentTouch }) {
+  const dark = useContext(DarkContext);
   const topPx = topGapHeight + (toMin(item.startTime) - firstLabelMin) / 60 * rowHeight;
   const dur = duration(item.startTime, item.endTime);
   const heightPx = dur / 60 * rowHeight - 2;
@@ -58,8 +60,8 @@ export default function ScheduleBlock({ item, hasConflict, totalCols, rowHeight,
         height: `${clippedHeight}px`,
         left: `${leftPct}%`,
         width: `calc(${widthPct}% - 2px)`,
-        backgroundColor: hasConflict ? '#ef4444' : getClassColor(item.class),
-        color: hasConflict ? '#ffffff' : getTextColor(item.class),
+        backgroundColor: hasConflict ? '#ef4444' : getClassColor(item.class, dark),
+        color: hasConflict ? '#ffffff' : getTextColor(item.class, dark),
       }}
     >
       {isShort ? (

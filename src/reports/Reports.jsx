@@ -1,6 +1,6 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useContext } from 'react';
 import { api } from '../api';
-import { getClassColor, getSubjectColor } from '../utils/colors';
+import { getClassColor, getSubjectColor, DarkContext } from '../utils/colors';
 import { SUBJECTS, GRADES } from '../utils/constants';
 import { todayStr, getMonday, addDays, fmt, getMonthRange, getYearRange, toHoursAbs } from '../utils/date';
 
@@ -61,6 +61,7 @@ function BarChart({ data, maxVal }) {
 }
 
 export default function Reports() {
+  const dark = useContext(DarkContext);
   const [tab, setTab] = useState('week'); // week | month | year | custom
   const [classes, setClasses] = useState([]);
   const [schedules, setSchedules] = useState([]);
@@ -153,7 +154,7 @@ export default function Reports() {
         value: scheds.length,
         hours: scheds.reduce((sum, s) => sum + toHoursAbs(s.durationBilling), 0),
         revenue: scheds.reduce((sum, s) => sum + calcRevenue(cls, s.durationBilling), 0),
-        color: getClassColor(cls),
+        color: getClassColor(cls, dark),
       };
     })
     .sort((a, b) => b.revenue - a.revenue);

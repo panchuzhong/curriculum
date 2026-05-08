@@ -1,10 +1,11 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useContext } from 'react';
 import { api } from '../api';
-import { getClassColor } from '../utils/colors';
+import { getClassColor, DarkContext } from '../utils/colors';
 import { useToast } from '../components/ToastProvider';
 import ClassForm from './ClassForm';
 
 export default function ClassList() {
+  const dark = useContext(DarkContext);
   const toast = useToast();
   const [classes, setClasses] = useState([]);
   const [expandedId, setExpandedId] = useState(null);
@@ -55,7 +56,7 @@ export default function ClassList() {
             <div className="p-4 flex items-center justify-between cursor-pointer hover:bg-gray-200 dark:hover:bg-gray-700"
               onClick={() => { setExpandedId(expandedId === cls.id ? null : cls.id); setShowNew(false); }}>
               <div className="flex items-center gap-3">
-                <div className="w-1 self-stretch rounded-full shrink-0" style={{ backgroundColor: getClassColor(cls) }} />
+                <div className="w-1 self-stretch rounded-full shrink-0" style={{ backgroundColor: getClassColor(cls, dark) }} />
                 <div>
                   <div className="font-bold">
                     {cls.isCompetition && '★ '}{cls.name}

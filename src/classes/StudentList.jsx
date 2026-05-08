@@ -1,6 +1,6 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useContext } from 'react';
 import { api } from '../api';
-import { getClassColor } from '../utils/colors';
+import { getClassColor, DarkContext } from '../utils/colors';
 import { useToast } from '../components/ToastProvider';
 
 function StudentDialog({ student, classes, onClose, onSaved }) {
@@ -102,7 +102,7 @@ function StudentDialog({ student, classes, onClose, onSaved }) {
                       ? 'bg-blue-600 text-white border-blue-600'
                       : 'bg-white dark:bg-gray-700 border-gray-300 dark:border-gray-600'
                   }`}>
-                  <span className="inline-block w-2 h-2 rounded mr-1" style={{ backgroundColor: getClassColor(cls) }} />
+                  <span className="inline-block w-2 h-2 rounded mr-1" style={{ backgroundColor: getClassColor(cls, dark) }} />
                   {cls.name}
                 </button>
               ))}
@@ -125,6 +125,7 @@ function StudentDialog({ student, classes, onClose, onSaved }) {
 }
 
 export default function StudentList() {
+  const dark = useContext(DarkContext);
   const [classes, setClasses] = useState([]);
   const [students, setStudents] = useState([]);
   const [dialog, setDialog] = useState(null); // null | 'new' | student object

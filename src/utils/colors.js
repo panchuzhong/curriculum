@@ -20,16 +20,16 @@ function satMod(baseL, dark) {
   return 0.85 + t * 0.15;           // 0.85–1.00
 }
 
-export function getClassColor(cls) {
+export function getClassColor(cls, dark = _dark) {
   const hue = SUBJECT_HUES[cls.subject] || { h: 0, s: 0 };
   const baseL = GRADE_LIGHTNESS[cls.grade] ?? 50;
-  const l = mappedLightness(baseL, _dark);
-  const s = Math.round(hue.s * satMod(baseL, _dark));
+  const l = mappedLightness(baseL, dark);
+  const s = Math.round(hue.s * satMod(baseL, dark));
   return `hsl(${hue.h}, ${s}%, ${Math.round(l)}%)`;
 }
 
-export function getTextColor(cls) {
-  if (_dark) return 'rgba(255,255,255,0.92)';
+export function getTextColor(cls, dark = _dark) {
+  if (dark) return 'rgba(255,255,255,0.92)';
   const baseL = GRADE_LIGHTNESS[cls.grade] ?? 50;
   const l = mappedLightness(baseL, false);
   return l < 55 ? '#ffffff' : '#1a1a1a';
@@ -45,7 +45,7 @@ const GRADE_REPRESENTATIVE = {
   '初中竞赛': '初二', '高中竞赛': '高二',
 };
 
-export function getCategoryColor(category) {
+export function getCategoryColor(category, dark = _dark) {
   const match = category.match(/^(初中竞赛|高中竞赛|初中|高中|大学)/);
   const gradeLevel = match ? match[1] : null;
   const subject = gradeLevel ? category.slice(gradeLevel.length) : category;
@@ -54,7 +54,7 @@ export function getCategoryColor(category) {
   const hue = SUBJECT_HUES[subject] || { h: 0, s: 0 };
   const repGrade = gradeLevel ? (GRADE_REPRESENTATIVE[gradeLevel] ?? '高二') : '高二';
   const baseL = GRADE_LIGHTNESS[repGrade] ?? 50;
-  const l = mappedLightness(baseL, _dark);
-  const s = Math.round(hue.s * satMod(baseL, _dark));
+  const l = mappedLightness(baseL, dark);
+  const s = Math.round(hue.s * satMod(baseL, dark));
   return `hsl(${hue.h}, ${s}%, ${Math.round(l)}%)`;
 }

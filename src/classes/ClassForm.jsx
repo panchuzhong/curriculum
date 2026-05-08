@@ -1,9 +1,10 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useContext } from 'react';
 import { GRADES } from '../utils/constants';
 import { api } from '../api';
-import { getClassColor, getTextColor } from '../utils/colors';
+import { getClassColor, getTextColor, DarkContext } from '../utils/colors';
 
 export default function ClassForm({ initial, onSubmit, onCancel }) {
+  const dark = useContext(DarkContext);
   const [subjects, setSubjects] = useState([]);
   const [form, setForm] = useState(initial || {
     name: '', grade: '初三', subject: '', studentCount: 1,
@@ -54,7 +55,7 @@ export default function ClassForm({ initial, onSubmit, onCancel }) {
               {subjects.map(s => <option key={s} value={s}>{s}</option>)}
             </select>
             <div className="w-10 h-10 rounded flex items-center justify-center text-xs font-bold shrink-0"
-              style={{ backgroundColor: getClassColor(form), color: getTextColor(form) }}>
+              style={{ backgroundColor: getClassColor(form, dark), color: getTextColor(form, dark) }}>
               {form.subject ? form.subject[0] : '?'}
             </div>
           </div>
