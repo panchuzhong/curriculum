@@ -1,8 +1,10 @@
 import { useState, useEffect } from 'react';
 import { api } from '../api';
 import { getClassColor } from '../utils/colors';
+import { useToast } from '../components/ToastProvider';
 
 function StudentDialog({ student, classes, onClose, onSaved }) {
+  const toast = useToast();
   const [form, setForm] = useState({
     name: '', birthDate: '', phone: '', parentName: '', parentPhone: '', note: '', classIds: [],
   });
@@ -40,7 +42,7 @@ function StudentDialog({ student, classes, onClose, onSaved }) {
         await api.createStudent(form);
       }
       onSaved();
-    } catch (e) { alert(e.message || '保存失败'); }
+    } catch (e) { toast(e.message || '保存失败'); }
   }
 
   async function handleDelete() {
@@ -49,7 +51,7 @@ function StudentDialog({ student, classes, onClose, onSaved }) {
     try {
       await api.deleteStudent(student.id);
       onSaved();
-    } catch (e) { alert(e.message || '删除失败'); }
+    } catch (e) { toast(e.message || '删除失败'); }
   }
 
   return (

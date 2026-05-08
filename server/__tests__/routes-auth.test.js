@@ -1,8 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import request from 'supertest';
-import { mockCommonDeps, setupApp, makeUser, auth } from './route-helpers.js';
-
-mockCommonDeps();
+import { setupApp, makeUser, auth } from './route-helpers.js';
 
 let app, drizzleDb;
 
@@ -109,5 +107,34 @@ describe('PUT /api/auth/password', () => {
     const res = await request(app).put('/api/auth/password').set(auth(token))
       .send({ oldPassword: 'pass123', newPassword: '12345' });
     expect(res.status).toBe(400);
+  });
+});
+
+describe('PUT /api/auth/subjects', () => {
+  it('updates subjects', async () => {
+    const { token } = await makeUser(drizzleDb);
+    const res = await request(app).put('/api/auth/subjects').set(auth(token))
+      .send({ subjects: ['数学', '英语'] });
+    expect(res.status).toBe(200);
+    expect(res.body.subjects).toEqual(['数学', '英语']);
+  });
+
+  it('rejects non-array subjects', async () => {
+    const { token } = await makeUser(drizzleDb);
+    const res = await request(app).put('/api/auth/subjects').set(auth(token))
+      .send({ subjects: '数学' });
+    expect(res.status).toBe(400);
+  });
+});
+
+describe('PUT /api/auth/api-key', () => {
+  it('regenerates api key', async () => {
+    const { token } = await makeUser(drizzleDb);
+    const profile = await request(app).get('/api/auth/profile').set(auth(token));
+    const oldKey = profile.body.apiKey;
+    const res = await request(app).put('/api/auth/api-key').set(auth(token));
+    expect(res.status).toBe(200);
+    expect(res.body.apiKey).toBeDefined();
+    expect(res.body.apiKey).not.toBe(oldKey);
   });
 });

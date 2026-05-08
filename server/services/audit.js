@@ -17,7 +17,7 @@ export function logAudit({ teacherId, action, tableName, recordId, before, after
 
     const count = db.prepare('SELECT COUNT(*) as c FROM audit_log').get().c;
     if (count > MAX_AUDIT_ROWS) {
-      db.exec(`DELETE FROM audit_log WHERE id IN (SELECT id FROM audit_log ORDER BY id ASC LIMIT ${count - MAX_AUDIT_ROWS})`);
+      db.prepare('DELETE FROM audit_log WHERE id IN (SELECT id FROM audit_log ORDER BY id ASC LIMIT ?)').run(count - MAX_AUDIT_ROWS);
     }
   } catch {
     // Audit failures must never break the main request

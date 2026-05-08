@@ -8,20 +8,18 @@ import jwt from 'jsonwebtoken';
 
 const container = { drizzleDb: null, db: null };
 
-export function mockCommonDeps() {
-  vi.mock('../db/index.js', () => ({
-    get drizzleDb() { return container.drizzleDb; },
-    get db() { return container.db; },
-    initDb: vi.fn(),
-  }));
-  vi.mock('../db/seed.js', () => ({
-    seedPricingTiers: vi.fn(),
-    getDefaultPrice: vi.fn(() => 100),
-  }));
-  vi.mock('../services/audit.js', () => ({
-    logAudit: vi.fn(),
-  }));
-}
+vi.mock('../db/index.js', () => ({
+  get drizzleDb() { return container.drizzleDb; },
+  get db() { return container.db; },
+  initDb: vi.fn(),
+}));
+vi.mock('../db/seed.js', () => ({
+  seedPricingTiers: vi.fn(),
+  getDefaultPrice: vi.fn(() => 100),
+}));
+vi.mock('../services/audit.js', () => ({
+  logAudit: vi.fn(),
+}));
 
 function signToken(teacherId) {
   return jwt.sign({ teacherId }, process.env.JWT_SECRET, { expiresIn: '7d' });

@@ -34,7 +34,7 @@ router.get('/', async (req, res) => {
     res.send(buffer);
   } catch (err) {
     console.error('Image generation failed:', err);
-    res.status(500).json({ error: 'Image generation failed', detail: err.message });
+    res.status(500).json({ error: 'Image generation failed' });
   }
 });
 

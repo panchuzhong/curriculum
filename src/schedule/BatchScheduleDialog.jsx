@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { todayStr } from '../utils/date';
 import { api } from '../api';
+import { useToast } from '../components/ToastProvider';
 
 const WEEKDAY_OPTIONS = [
   { value: 1, label: '周一' },
@@ -13,6 +14,7 @@ const WEEKDAY_OPTIONS = [
 ];
 
 export default function BatchScheduleDialog({ onClose, onSaved }) {
+  const toast = useToast();
   const [classes, setClasses] = useState([]);
   const [semesters, setSemesters] = useState([]);
   const [op, setOp] = useState('create'); // create | delete
@@ -75,7 +77,7 @@ export default function BatchScheduleDialog({ onClose, onSaved }) {
     try {
       const scheds = await api.getSchedules(range.start, range.end, +form.classId);
       setPreviewCount(scheds.length);
-    } catch (e) { alert(e.message || '查询失败'); }
+    } catch (e) { toast(e.message || '查询失败'); }
   }
 
   async function handleSubmit() {
@@ -108,7 +110,7 @@ export default function BatchScheduleDialog({ onClose, onSaved }) {
         const res = await api.batchDeleteSchedules({ classId: +form.classId, start: range.start, end: range.end });
         setResult({ op: 'delete', count: res.count });
       }
-    } catch (e) { alert(e.message || '操作失败'); }
+    } catch (e) { toast(e.message || '操作失败'); }
   }
 
   const sel = 'w-full p-2 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded';

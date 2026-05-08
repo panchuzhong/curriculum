@@ -50,6 +50,14 @@ router.put('/:id', validateUpdateHoliday, handle, (req, res) => {
   const allowed = ['date', 'type', 'name'];
   const safeUpdates = Object.fromEntries(Object.entries(req.body).filter(([k]) => allowed.includes(k)));
   if (Object.keys(safeUpdates).length === 0) return res.status(400).json({ error: 'No valid fields' });
+
+  // Check for duplicate date when changing date
+  if (safeUpdates.date && safeUpdates.date !== existing.date) {
+    const dup = drizzleDb.select().from(holidays)
+      .where(and(eq(holidays.teacherId, req.teacherId), eq(holidays.date, safeUpdates.date))).get();
+    if (dup) return res.status(409).json({ error: '该日期已有记录' });
+  }
+
   drizzleDb.update(holidays).set(safeUpdates).where(eq(holidays.id, +id)).run();
   res.json({ ok: true });
 });

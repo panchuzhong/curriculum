@@ -106,6 +106,12 @@ router.post('/restore', (req, res) => {
     semesters: fixTimestamps(forceOwner(data.semesters || [])),
   };
 
+  // Validate schedule and classStudents references point to restored classes
+  const classIds = new Set(restoreData.classes.map(c => c.id));
+  const studentIds = new Set(restoreData.students.map(s => s.id));
+  restoreData.schedules = restoreData.schedules.filter(s => classIds.has(s.classId));
+  restoreData.classStudents = restoreData.classStudents.filter(l => classIds.has(l.classId) && studentIds.has(l.studentId));
+
   const counts = {};
 
   db.transaction(() => {

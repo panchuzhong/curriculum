@@ -1,8 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import request from 'supertest';
-import { mockCommonDeps, setupApp, makeUser, auth } from './route-helpers.js';
-
-mockCommonDeps();
+import { setupApp, makeUser, auth } from './route-helpers.js';
 
 let app, drizzleDb, token;
 
@@ -77,6 +75,11 @@ describe('DELETE /api/students/:id', () => {
     expect(res.status).toBe(200);
     const list = await request(app).get('/api/students').set(auth(token));
     expect(list.body).toHaveLength(0);
+  });
+
+  it('returns 404 for nonexistent id', async () => {
+    const res = await request(app).delete('/api/students/999999').set(auth(token));
+    expect(res.status).toBe(404);
   });
 });
 

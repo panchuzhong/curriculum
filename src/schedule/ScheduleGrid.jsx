@@ -1,7 +1,6 @@
-import { useState, useEffect, useRef, useContext } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { todayStr, addDays } from '../utils/date';
 import { isHoliday, isWorkday } from '../utils/holidays';
-import { DarkContext } from '../utils/colors';
 import TimeColumn from './TimeColumn';
 import DayHeader from './DayHeader';
 import ScheduleBlock from './ScheduleBlock';
@@ -14,11 +13,12 @@ const TOP_OFFSET_MIN = 15;
 const BOTTOM_OFFSET_MIN = 15;
 const HEADER_HEIGHT = 52;
 
-// Set once on first touchstart — used to skip onClick on cell backgrounds for touch devices
-let _isTouchDev = false;
+// Track recent touch events — suppress click for 300ms after touch to prevent ghost clicks
+let _touchTime = 0;
 if (typeof window !== 'undefined') {
-  window.addEventListener('touchstart', () => { _isTouchDev = true; }, { once: true, passive: true });
+  window.addEventListener('touchstart', () => { _touchTime = Date.now(); }, { passive: true });
 }
+function wasRecentTouch() { return Date.now() - _touchTime < 300; }
 
 function toMin(t) {
   const [h, m] = t.split(':').map(Number);
@@ -95,7 +95,6 @@ function NowLine({ rowHeight, topGapHeight, firstLabelMin }) {
 
 export default function ScheduleGrid({ dates, schedules, visibleDays = 7, weekStart, onScheduleClick, onCellClick }) {
   const today = todayStr();
-  useContext(DarkContext);
   const timeBodyRef = useRef(null);
   const [rowHeight, setRowHeight] = useState(MIN_ROW_HEIGHT);
   const gridStateRef = useRef({});
@@ -198,13 +197,13 @@ export default function ScheduleGrid({ dates, schedules, visibleDays = 7, weekSt
                   } ${holiday ? 'bg-red-50/30 dark:bg-red-900/5' : ''} ${workday ? 'bg-orange-50/30 dark:bg-orange-900/5' : ''}`}>
                   {/* Top gap */}
                   <div style={{ height: topGapHeight }}
-                    onClick={() => { if (!_isTouchDev) onCellClick?.(date, `${String(startHour).padStart(2, '0')}:45`); }}
+                    onClick={() => { if (!wasRecentTouch()) onCellClick?.(date, `${String(startHour).padStart(2, '0')}:45`); }}
                     className="cursor-pointer hover:bg-gray-100/50 dark:hover:bg-gray-800/30 transition-colors" />
 
                   {/* Hour cells */}
                   {displayHours.map((hour, idx) => (
                     <div key={hour}
-                      onClick={() => { if (!_isTouchDev) onCellClick?.(date, `${String(hour).padStart(2, '0')}:00`); }}
+                      onClick={() => { if (!wasRecentTouch()) onCellClick?.(date, `${String(hour).padStart(2, '0')}:00`); }}
                       className="border-t border-gray-100 dark:border-gray-800 cursor-pointer hover:bg-gray-100/50 dark:hover:bg-gray-800/30 transition-colors"
                       style={{ height: idx === numDisplayHours - 1 ? lastRowHeight : rowHeight }}
                     />
@@ -228,7 +227,7 @@ export default function ScheduleGrid({ dates, schedules, visibleDays = 7, weekSt
                         totalHeight={totalHeight}
                         onScheduleClick={onScheduleClick}
                         schedLpRef={schedLpRef}
-                        _isTouchDev={_isTouchDev}
+                        wasRecentTouch={wasRecentTouch}
                       />
                     ));
                   })}

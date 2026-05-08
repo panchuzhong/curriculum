@@ -3,10 +3,12 @@ import { api } from '../api';
 import PricingTierManager from '../pricing/PricingTierManager';
 import HolidayManager from './HolidayManager';
 import { getSubjectColor } from '../utils/colors';
+import { useToast } from '../components/ToastProvider';
 
 const ALL_SUBJECTS = ['数学', '物理', '化学', '英语', '语文', '生物', '历史', '地理', '政治', '信息技术', '美术', '音乐', '体育'];
 
 function SubjectSection() {
+  const toast = useToast();
   const [subjects, setSubjects] = useState([]);
   const [newSubject, setNewSubject] = useState('');
   const [saved, setSaved] = useState(false);
@@ -51,7 +53,7 @@ function SubjectSection() {
       setSaved(true);
       setTimeout(() => setSaved(false), 3000);
     } catch (err) {
-      alert('保存失败: ' + (err.message || '未知错误'));
+      toast('保存失败: ' + (err.message || '未知错误'));
     }
   }
 
@@ -119,6 +121,7 @@ function SubjectSection() {
 }
 
 function ApiKeySection() {
+  const toast = useToast();
   const [profile, setProfile] = useState(null);
   const [copied, setCopied] = useState(false);
 
@@ -131,7 +134,7 @@ function ApiKeySection() {
     try {
       const res = await api.regenerateApiKey();
       setProfile(p => ({ ...p, apiKey: res.apiKey }));
-    } catch (e) { alert(e.message || '重新生成失败'); }
+    } catch (e) { toast(e.message || '重新生成失败'); }
   }
 
   function copyKey() {

@@ -1,11 +1,11 @@
 import { Router } from 'express';
 import { drizzleDb } from '../db/index.js';
-import { schedules, classes, semesters } from '../db/schema.js';
+import { schedules, classes, semesters, holidays } from '../db/schema.js';
 import { eq, and, gte, lte, inArray } from 'drizzle-orm';
 import { authMiddleware } from '../middleware/auth.js';
 import { isHoliday } from '../services/holidays.js';
 import handle from '../validations/handle.js';
-import { validateCreateSchedule, validateBatchCreate, validateBatchUpdate, validateBatchDelete } from '../validations/schedules.js';
+import { validateCreateSchedule, validateBatchCreate, validateBatchUpdate, validateBatchDelete, validateUpdateSchedule } from '../validations/schedules.js';
 import { logAudit } from '../services/audit.js';
 import { toLocalDateStr, toMin, resolveRange, toCSV, detectConflictGroups, getScheduleWithClass, calcDurationBilling } from '../services/schedule-helpers.js';
 
@@ -41,7 +41,7 @@ router.get('/', (req, res) => {
   const { start, end } = resolveRange(req.query);
   if (!start || !end) return res.status(400).json({ error: 'start/end or range required' });
 
-  const teacherClasses = drizzleDb.select({ id: classes.id }).from(classes)
+  const teacherClasses = drizzleDb.select().from(classes)
     .where(and(eq(classes.teacherId, req.teacherId), eq(classes.deleted, false))).all();
   let classIds = teacherClasses.map(c => c.id);
   if (classIds.length === 0) return res.json([]);
@@ -54,8 +54,7 @@ router.get('/', (req, res) => {
     .sort((a, b) => a.date !== b.date ? a.date.localeCompare(b.date) : a.startTime.localeCompare(b.startTime));
 
   const classMap = {};
-  drizzleDb.select().from(classes).where(eq(classes.deleted, false)).all()
-    .forEach(c => classMap[c.id] = c);
+  teacherClasses.forEach(c => classMap[c.id] = c);
 
   res.json(result.map(s => ({ ...s, class: classMap[s.classId] })));
 });
@@ -63,7 +62,7 @@ router.get('/', (req, res) => {
 router.post('/', validateCreateSchedule, handle, (req, res) => {
   const { classId, date, startTime, endTime, durationBilling, locationName, locationLat, locationLng } = req.body;
   const cls = drizzleDb.select().from(classes)
-    .where(and(eq(classes.id, classId), eq(classes.teacherId, req.teacherId))).get();
+    .where(and(eq(classes.id, classId), eq(classes.teacherId, req.teacherId), eq(classes.deleted, false))).get();
   if (!cls) return res.status(404).json({ error: 'Class not found' });
 
   const billing = calcDurationBilling(startTime, endTime, durationBilling);
@@ -84,7 +83,7 @@ router.post('/', validateCreateSchedule, handle, (req, res) => {
 router.post('/batch', validateBatchCreate, handle, (req, res) => {
   const { classId, semesterId, weekday, dates: manualDates, startTime, endTime, durationBilling } = req.body;
   const cls = drizzleDb.select().from(classes)
-    .where(and(eq(classes.id, classId), eq(classes.teacherId, req.teacherId))).get();
+    .where(and(eq(classes.id, classId), eq(classes.teacherId, req.teacherId), eq(classes.deleted, false))).get();
   if (!cls) return res.status(404).json({ error: 'Class not found' });
 
   const billing = calcDurationBilling(startTime, endTime, durationBilling);
@@ -101,9 +100,17 @@ router.post('/batch', validateBatchCreate, handle, (req, res) => {
     const semesterStart = today > semester.startDate ? today : semester.startDate;
     const current = new Date(semesterStart + 'T00:00:00');
     const end = new Date(semester.endDate + 'T00:00:00');
+
+    // Fetch user-added holidays for this teacher
+    const userHolidayDates = new Set(
+      drizzleDb.select({ date: holidays.date }).from(holidays)
+        .where(and(eq(holidays.teacherId, req.teacherId), eq(holidays.type, 'holiday'))).all()
+        .map(h => h.date)
+    );
+
     while (current <= end) {
       const dateStr = toLocalDateStr(current);
-      if (current.getDay() === weekday && !isHoliday(dateStr)) {
+      if (current.getDay() === weekday && !isHoliday(dateStr) && !userHolidayDates.has(dateStr)) {
         targetDates.push(dateStr);
       }
       current.setDate(current.getDate() + 1);
@@ -112,23 +119,29 @@ router.post('/batch', validateBatchCreate, handle, (req, res) => {
     return res.status(400).json({ error: 'Provide semesterId+weekday or dates[]' });
   }
 
-  const inserted = [];
-  for (const date of targetDates) {
-    const result = drizzleDb.insert(schedules).values({
-      classId, date, startTime, endTime, durationBilling: billing,
-      locationName: cls.defaultLocationName,
-      locationLat: cls.defaultLocationLat,
-      locationLng: cls.defaultLocationLng,
-    }).run();
-    inserted.push(result.lastInsertRowid);
+  if (targetDates.length === 0) {
+    return res.status(400).json({ error: 'No valid dates to schedule' });
   }
-  res.json({ count: inserted.length, ids: inserted });
+
+  const values = targetDates.map(date => ({
+    classId, date, startTime, endTime, durationBilling: billing,
+    locationName: cls.defaultLocationName,
+    locationLat: cls.defaultLocationLat,
+    locationLng: cls.defaultLocationLng,
+  }));
+  const result = drizzleDb.insert(schedules).values(values).run();
+  res.json({ count: targetDates.length, ids: targetDates.map((_, i) => Number(result.lastInsertRowid) - targetDates.length + 1 + i) });
 });
 
 router.put('/batch', validateBatchUpdate, handle, (req, res) => {
   const { classId, fromDate, weekday, semesterOnly = true, updates } = req.body;
   if (!classId || !updates || Object.keys(updates).length === 0) {
     return res.status(400).json({ error: 'classId and updates required' });
+  }
+
+  // Require at least one scoping filter to prevent accidental mass updates
+  if (!fromDate && weekday == null) {
+    return res.status(400).json({ error: 'fromDate or weekday required to scope the update' });
   }
 
   const allowed = new Set(['startTime', 'endTime', 'durationBilling', 'locationName', 'locationLat', 'locationLng']);
@@ -216,18 +229,25 @@ router.delete('/batch', validateBatchDelete, handle, (req, res) => {
 
 // ── Single-item CRUD (:id routes) ──
 
-router.put('/:id', (req, res) => {
+router.put('/:id', validateUpdateSchedule, handle, (req, res) => {
   const { id } = req.params;
   const existing = drizzleDb.select().from(schedules).where(eq(schedules.id, +id)).get();
   if (!existing) return res.status(404).json({ error: 'Not found' });
 
   const cls = drizzleDb.select().from(classes)
-    .where(and(eq(classes.id, existing.classId), eq(classes.teacherId, req.teacherId))).get();
+    .where(and(eq(classes.id, existing.classId), eq(classes.teacherId, req.teacherId), eq(classes.deleted, false))).get();
   if (!cls) return res.status(403).json({ error: 'Forbidden' });
 
   const allowed = ['classId', 'date', 'startTime', 'endTime', 'durationBilling', 'locationName', 'locationLat', 'locationLng'];
   const updates = Object.fromEntries(Object.entries(req.body).filter(([k]) => allowed.includes(k)));
   if (Object.keys(updates).length === 0) return res.status(400).json({ error: 'No valid fields' });
+
+  // Validate new classId belongs to this teacher and is not deleted
+  if (updates.classId !== undefined) {
+    const newCls = drizzleDb.select().from(classes)
+      .where(and(eq(classes.id, updates.classId), eq(classes.teacherId, req.teacherId), eq(classes.deleted, false))).get();
+    if (!newCls) return res.status(403).json({ error: 'Forbidden' });
+  }
   if (updates.startTime !== undefined || updates.endTime !== undefined) {
     updates.durationBilling = calcDurationBilling(
       updates.startTime || existing.startTime,

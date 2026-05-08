@@ -253,11 +253,14 @@ export async function generateScheduleImage(schedulesWithClasses, startDate, end
     ],
     executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || undefined,
   });
-  const page = await browser.newPage();
-  await page.setContent(html, { waitUntil: 'networkidle0' });
-  const scaleFactor = scale ? Math.max(0.25, Math.min(3, +scale)) : 2;
-  await page.setViewport({ width: totalW + 32, height: totalH + HEADER_H + 100, deviceScaleFactor: scaleFactor });
-  const buffer = await page.screenshot({ type: 'png', fullPage: true });
-  await browser.close();
-  return buffer;
+  try {
+    const page = await browser.newPage();
+    await page.setContent(html, { waitUntil: 'networkidle0' });
+    const scaleFactor = scale ? Math.max(0.25, Math.min(3, +scale)) : 2;
+    await page.setViewport({ width: totalW + 32, height: totalH + HEADER_H + 100, deviceScaleFactor: scaleFactor });
+    const buffer = await page.screenshot({ type: 'png', fullPage: true });
+    return buffer;
+  } finally {
+    await browser.close();
+  }
 }

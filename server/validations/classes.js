@@ -13,6 +13,9 @@ export const validateCreateClass = [
 ];
 
 export const validateUpdateClass = [
+  body('name').optional().notEmpty().withMessage('班级名称不能为空'),
+  body('grade').optional().isIn(VALID_GRADES).withMessage(`年级须为: ${VALID_GRADES.join('/')}`),
+  body('subject').optional().notEmpty().withMessage('学科不能为空'),
   body('unitPrice').optional().isFloat({ gt: 0 }).withMessage('单价须大于0'),
   body('discountAmount').optional().isFloat({ min: 0 }).withMessage('优惠金额不能为负'),
   body('studentCount').optional().isInt({ min: 1 }).withMessage('学生人数须为正整数'),

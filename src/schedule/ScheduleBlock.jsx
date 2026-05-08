@@ -1,6 +1,6 @@
 import { getClassColor, getTextColor } from '../utils/colors';
 
-export default function ScheduleBlock({ item, hasConflict, totalCols, rowHeight, topGapHeight, firstLabelMin, totalHeight, onScheduleClick, schedLpRef, _isTouchDev }) {
+export default function ScheduleBlock({ item, hasConflict, totalCols, rowHeight, topGapHeight, firstLabelMin, totalHeight, onScheduleClick, schedLpRef, wasRecentTouch }) {
   const topPx = topGapHeight + (toMin(item.startTime) - firstLabelMin) / 60 * rowHeight;
   const dur = duration(item.startTime, item.endTime);
   const heightPx = dur / 60 * rowHeight - 2;
@@ -21,7 +21,7 @@ export default function ScheduleBlock({ item, hasConflict, totalCols, rowHeight,
   return (
     <div
       key={item.id}
-      onClick={() => !_isTouchDev && onScheduleClick?.(item)}
+      onClick={() => !wasRecentTouch() && onScheduleClick?.(item)}
       onContextMenu={e => e.preventDefault()}
       onTouchStart={e => {
         e.stopPropagation();

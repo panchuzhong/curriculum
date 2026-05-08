@@ -20,7 +20,7 @@ router.post('/', validateCreateTier, handle, (req, res) => {
   const result = drizzleDb.insert(pricingTiers).values({
     teacherId: req.teacherId, minStudents, maxStudents, pricePerStudentPerHour,
   }).run();
-  res.json({ id: result.lastInsertRowid });
+  res.json({ ok: true, id: result.lastInsertRowid });
 });
 
 router.put('/:id', validateUpdateTier, handle, (req, res) => {
@@ -37,6 +37,9 @@ router.put('/:id', validateUpdateTier, handle, (req, res) => {
 
 router.delete('/:id', (req, res) => {
   const { id } = req.params;
+  const existing = drizzleDb.select().from(pricingTiers)
+    .where(and(eq(pricingTiers.id, +id), eq(pricingTiers.teacherId, req.teacherId))).get();
+  if (!existing) return res.status(404).json({ error: 'Not found' });
   drizzleDb.delete(pricingTiers)
     .where(and(eq(pricingTiers.id, +id), eq(pricingTiers.teacherId, req.teacherId))).run();
   res.json({ ok: true });

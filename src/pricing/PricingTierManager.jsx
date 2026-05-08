@@ -1,7 +1,9 @@
 import { useState, useEffect } from 'react';
 import { api } from '../api';
+import { useToast } from '../components/ToastProvider';
 
 export default function PricingTierManager() {
+  const toast = useToast();
   const [tiers, setTiers] = useState([]);
   const [form, setForm] = useState({ minStudents: 1, maxStudents: 1, pricePerStudentPerHour: 800 });
 
@@ -16,14 +18,14 @@ export default function PricingTierManager() {
       });
       setForm({ minStudents: 1, maxStudents: 1, pricePerStudentPerHour: 800 });
       api.getPricingTiers().then(setTiers).catch(() => {});
-    } catch (e) { alert(e.message || '添加失败'); }
+    } catch (e) { toast(e.message || '添加失败'); }
   }
 
   async function removeTier(id) {
     try {
       await api.deletePricingTier(id);
       setTiers(t => t.filter(x => x.id !== id));
-    } catch (e) { alert(e.message || '删除失败'); }
+    } catch (e) { toast(e.message || '删除失败'); }
   }
 
   return (

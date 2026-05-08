@@ -130,7 +130,8 @@ export default function MonthlySchedule() {
                 {workday && <span className="text-[8px] sm:text-[9px] bg-orange-500 text-white px-0.5 rounded">班</span>}
               </div>
               {daySchedules.length > 0 && (() => {
-                const minBar = 9;
+                const maxSlots = Math.floor(100 / 4); // minimum 4% per bar
+                const minBar = daySchedules.length > maxSlots ? Math.floor(100 / daySchedules.length) : 9;
                 const placed = [];
                 const earliest = Math.min(...daySchedules.map(s => timeToMin(s.startTime)));
                 const dayStart = Math.max(0, earliest - 15);

@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { api } from '../api';
 import { refreshHolidays } from '../utils/holidays';
+import { useToast } from '../components/ToastProvider';
 
 // Built-in holiday data for quick import
 const BUILT_IN_HOLIDAYS = {
@@ -98,7 +99,6 @@ const BUILT_IN_HOLIDAYS = {
     { date: '2027-10-06', type: 'holiday', name: '国庆' },
     { date: '2027-10-07', type: 'holiday', name: '国庆' },
     { date: '2027-01-23', type: 'workday', name: '春节调休' },
-    { date: '2027-02-06', type: 'workday', name: '春节调休' },
     { date: '2027-04-25', type: 'workday', name: '劳动节调休' },
     { date: '2027-09-26', type: 'workday', name: '国庆调休' },
     { date: '2027-10-09', type: 'workday', name: '国庆调休' },
@@ -106,6 +106,7 @@ const BUILT_IN_HOLIDAYS = {
 };
 
 export default function HolidayManager() {
+  const toast = useToast();
   const [holidays, setHolidays] = useState([]);
   const [year, setYear] = useState(new Date().getFullYear());
   const [showAdd, setShowAdd] = useState(false);
@@ -130,7 +131,7 @@ export default function HolidayManager() {
       setForm({ date: '', type: 'holiday', name: '' });
       reload();
       refreshHolidays();
-    } catch (e) { alert(e.message || '添加失败'); }
+    } catch (e) { toast(e.message || '添加失败'); }
   }
 
   async function removeHoliday(id) {
@@ -138,16 +139,16 @@ export default function HolidayManager() {
       await api.deleteHoliday(id);
       reload();
       refreshHolidays();
-    } catch (e) { alert(e.message || '删除失败'); }
+    } catch (e) { toast(e.message || '删除失败'); }
   }
 
   async function importYear() {
     setImporting(true);
     try {
       const items = BUILT_IN_HOLIDAYS[String(year)];
-      if (!items) { alert(`${year}年暂无内置数据`); return; }
+      if (!items) { toast(`${year}年暂无内置数据`); return; }
       const res = await api.batchImportHolidays(items);
-      alert(`导入完成：新增 ${res.count} 条记录`);
+      toast(`导入完成：新增 ${res.count} 条记录`, 'success');
       reload();
       refreshHolidays();
     } finally {

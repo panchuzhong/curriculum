@@ -1,8 +1,10 @@
 import { useState } from 'react';
 import { api } from '../api';
 import { parseDateStr } from '../utils/date';
+import { useToast } from '../components/ToastProvider';
 
 export default function useScheduleExport({ weekStart, visibleDays, addDays }) {
+  const toast = useToast();
   const [exporting, setExporting] = useState(false);
   const [showExport, setShowExport] = useState(false);
   const [exportStart, setExportStart] = useState(null);
@@ -18,9 +20,11 @@ export default function useScheduleExport({ weekStart, visibleDays, addDays }) {
     setExporting(true);
     try {
       const token = localStorage.getItem('token');
+      if (!token) throw new Error('未登录');
       const res = await fetch(`/api/schedule-image?start=${start}&end=${end}`, {
         headers: { Authorization: `Bearer ${token}` },
       });
+      if (!res.ok) throw new Error('导出失败');
       const blob = await res.blob();
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
@@ -28,7 +32,7 @@ export default function useScheduleExport({ weekStart, visibleDays, addDays }) {
       a.download = `课表_${start}_${end}.png`;
       a.click();
       URL.revokeObjectURL(url);
-    } finally {
+    } catch (e) { toast('导出失败'); } finally {
       setExporting(false);
     }
   }
@@ -59,7 +63,7 @@ export default function useScheduleExport({ weekStart, visibleDays, addDays }) {
     a.download = `课表_${start}_${end}.csv`;
     a.click();
     URL.revokeObjectURL(url);
-    } catch (e) { alert('导出失败'); }
+    } catch (e) { toast('导出失败'); }
   }
 
   return {

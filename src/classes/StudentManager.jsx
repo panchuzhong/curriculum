@@ -1,7 +1,9 @@
 import { useState, useEffect } from 'react';
 import { api } from '../api';
+import { useToast } from '../components/ToastProvider';
 
 export default function StudentManager({ classId }) {
+  const toast = useToast();
   const [students, setStudents] = useState([]);
   const [name, setName] = useState('');
 
@@ -15,14 +17,14 @@ export default function StudentManager({ classId }) {
       await api.addStudent(classId, { name: name.trim() });
       setName('');
       api.getStudents(classId).then(setStudents).catch(() => {});
-    } catch (e) { alert(e.message || '添加失败'); }
+    } catch (e) { toast(e.message || '添加失败'); }
   }
 
   async function removeStudent(sid) {
     try {
       await api.removeStudentFromClass(classId, sid);
       setStudents(s => s.filter(x => x.id !== sid));
-    } catch (e) { alert(e.message || '删除失败'); }
+    } catch (e) { toast(e.message || '删除失败'); }
   }
 
   return (

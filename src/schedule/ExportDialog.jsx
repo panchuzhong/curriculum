@@ -3,13 +3,15 @@ import { todayStr, getMonday, addDays, parseDateStr } from '../utils/date';
 
 export default function ExportDialog({ defaultStart, defaultEnd, onClose, onExportPNG, onExportCSV }) {
   const today = todayStr();
-  const [start, setStart] = useState(today);
+  const [start, setStart] = useState(defaultStart || today);
   const [end, setEnd] = useState(defaultEnd);
   const [exporting, setExporting] = useState(false);
 
   const startD = parseDateStr(start);
   const endD = parseDateStr(end);
-  const days = Math.max(1, Math.round((endD - startD) / 86400000) + 1);
+  const days = (startD && endD && !isNaN(startD) && !isNaN(endD))
+    ? Math.max(1, Math.round((endD - startD) / 86400000) + 1)
+    : 0;
 
   async function handlePNG() {
     setExporting(true);

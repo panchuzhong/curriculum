@@ -51,7 +51,7 @@ router.post('/', validateCreateClass, handle, (req, res) => {
   const newId = Number(result.lastInsertRowid);
   logAudit({ teacherId: req.teacherId, action: 'CREATE', tableName: 'classes', recordId: newId,
     after: { name, grade, subject, studentCount, unitPrice: price } });
-  res.json({ id: newId });
+  res.json({ ok: true, id: newId });
 });
 
 router.put('/:id', validateUpdateClass, handle, (req, res) => {
@@ -109,7 +109,7 @@ classStudentRouter.post('/', validateClassStudent, handle, (req, res) => {
   }).run();
   const studentId = result.lastInsertRowid;
   drizzleDb.insert(classStudents).values({ classId, studentId }).run();
-  res.json({ id: studentId });
+  res.json({ ok: true, id: studentId });
 });
 
 classStudentRouter.delete('/:studentId', (req, res) => {

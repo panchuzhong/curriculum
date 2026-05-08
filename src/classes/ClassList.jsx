@@ -1,9 +1,11 @@
 import { useState, useEffect } from 'react';
 import { api } from '../api';
 import { getClassColor } from '../utils/colors';
+import { useToast } from '../components/ToastProvider';
 import ClassForm from './ClassForm';
 
 export default function ClassList() {
+  const toast = useToast();
   const [classes, setClasses] = useState([]);
   const [expandedId, setExpandedId] = useState(null);
   const [showNew, setShowNew] = useState(false);
@@ -15,7 +17,7 @@ export default function ClassList() {
       await api.createClass(form);
       setShowNew(false);
       api.getClasses().then(setClasses).catch(() => {});
-    } catch (e) { alert(e.message || '创建失败'); }
+    } catch (e) { toast(e.message || '创建失败'); }
   }
 
   async function handleUpdate(form) {
@@ -23,7 +25,7 @@ export default function ClassList() {
       await api.updateClass(expandedId, form);
       setExpandedId(null);
       api.getClasses().then(setClasses).catch(() => {});
-    } catch (e) { alert(e.message || '更新失败'); }
+    } catch (e) { toast(e.message || '更新失败'); }
   }
 
   async function handleDelete(id, e) {
@@ -32,7 +34,7 @@ export default function ClassList() {
     try {
       await api.deleteClass(id);
       api.getClasses().then(setClasses).catch(() => {});
-    } catch (e) { alert(e.message || '删除失败'); }
+    } catch (e) { toast(e.message || '删除失败'); }
   }
 
   return (

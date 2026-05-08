@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { drizzleDb } from '../db/index.js';
 import { students, classes, classStudents } from '../db/schema.js';
-import { eq, and } from 'drizzle-orm';
+import { eq, and, inArray } from 'drizzle-orm';
 import { authMiddleware } from '../middleware/auth.js';
 import handle from '../validations/handle.js';
 import { validateCreateStudent, validateUpdateStudent } from '../validations/students.js';
@@ -13,12 +13,16 @@ router.use(authMiddleware);
 router.get('/', (req, res) => {
   const result = drizzleDb.select().from(students)
     .where(eq(students.teacherId, req.teacherId)).all();
-  const enriched = result.map(s => {
-    const clsLinks = drizzleDb.select({ classId: classStudents.classId }).from(classStudents)
-      .where(eq(classStudents.studentId, s.id)).all();
-    return { ...s, classIds: clsLinks.map(l => l.classId) };
-  });
-  res.json(enriched);
+  const studentIds = result.map(s => s.id);
+  const allLinks = studentIds.length
+    ? drizzleDb.select({ studentId: classStudents.studentId, classId: classStudents.classId }).from(classStudents)
+        .where(inArray(classStudents.studentId, studentIds)).all()
+    : [];
+  const linksByStudent = {};
+  for (const l of allLinks) {
+    (linksByStudent[l.studentId] ??= []).push(l.classId);
+  }
+  res.json(result.map(s => ({ ...s, classIds: linksByStudent[s.id] || [] })));
 });
 
 // Get students for a specific class
@@ -50,14 +54,14 @@ router.post('/', validateCreateStudent, handle, (req, res) => {
   if (classIds && classIds.length > 0) {
     for (const classId of classIds) {
       const cls = drizzleDb.select().from(classes)
-        .where(and(eq(classes.id, classId), eq(classes.teacherId, req.teacherId))).get();
+        .where(and(eq(classes.id, classId), eq(classes.teacherId, req.teacherId), eq(classes.deleted, false))).get();
       if (cls) {
         drizzleDb.insert(classStudents).values({ classId, studentId }).run();
       }
     }
   }
 
-  res.json({ id: studentId });
+  res.json({ ok: true, id: studentId });
 });
 
 // Update a student
@@ -67,16 +71,20 @@ router.put('/:id', validateUpdateStudent, handle, (req, res) => {
     .where(and(eq(students.id, +id), eq(students.teacherId, req.teacherId))).get();
   if (!existing) return res.status(404).json({ error: 'Not found' });
 
-  const { name, birthDate, phone, parentName, parentPhone, note, classIds } = req.body;
-  drizzleDb.update(students).set({
-    name, birthDate, phone, parentName, parentPhone, note,
-  }).where(eq(students.id, +id)).run();
+  const allowed = ['name', 'birthDate', 'phone', 'parentName', 'parentPhone', 'note'];
+  const safeUpdates = Object.fromEntries(
+    Object.entries(req.body).filter(([k, v]) => allowed.includes(k) && v !== undefined)
+  );
+  if (Object.keys(safeUpdates).length > 0) {
+    drizzleDb.update(students).set(safeUpdates).where(eq(students.id, +id)).run();
+  }
 
+  const { classIds } = req.body;
   if (classIds !== undefined) {
     drizzleDb.delete(classStudents).where(eq(classStudents.studentId, +id)).run();
     for (const classId of classIds) {
       const cls = drizzleDb.select().from(classes)
-        .where(and(eq(classes.id, classId), eq(classes.teacherId, req.teacherId))).get();
+        .where(and(eq(classes.id, classId), eq(classes.teacherId, req.teacherId), eq(classes.deleted, false))).get();
       if (cls) {
         drizzleDb.insert(classStudents).values({ classId, studentId: +id }).run();
       }

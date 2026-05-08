@@ -1,8 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import request from 'supertest';
-import { mockCommonDeps, setupApp, makeUser, auth } from './route-helpers.js';
-
-mockCommonDeps();
+import { setupApp, makeUser, auth } from './route-helpers.js';
 
 vi.mock('fs', async () => {
   const actual = await vi.importActual('fs');

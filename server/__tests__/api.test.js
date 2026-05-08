@@ -1,7 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import express from 'express';
 import bcrypt from 'bcryptjs';
-import request from 'express';
 import { createTestDb } from './setup.js';
 import { classes, students, classStudents, schedules, pricingTiers, teachers, semesters } from '../db/schema.js';
 import { eq, and } from 'drizzle-orm';

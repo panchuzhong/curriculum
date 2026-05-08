@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { api } from '../api';
 import { getClassColor, getSubjectColor } from '../utils/colors';
-import { SUBJECTS } from '../utils/constants';
+import { SUBJECTS, GRADES } from '../utils/constants';
 import { todayStr, getMonday, addDays, fmt, getMonthRange, getYearRange, toHoursAbs } from '../utils/date';
 
 function calcRevenue(cls, durationBilling) {
@@ -131,7 +131,6 @@ export default function Reports() {
     .sort((a, b) => b.value - a.value);
 
   // By grade
-  const GRADES = ['初一', '初二', '初三', '高一', '高二', '高三', '大学'];
   const byGrade = groupBy(filtered, s => s.class.grade);
   const gradeData = GRADES
     .filter(g => byGrade[g])

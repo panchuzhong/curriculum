@@ -28,3 +28,11 @@ export const validateBatchUpdate = [
 export const validateBatchDelete = [
   body('ids').optional().isArray().withMessage('ids 须为数组'),
 ];
+
+export const validateUpdateSchedule = [
+  body('classId').optional().isInt({ min: 1 }).withMessage('classId 须为正整数'),
+  body('date').optional().matches(DATE_RE).withMessage('日期格式须为 YYYY-MM-DD'),
+  body('startTime').optional().matches(TIME_RE).withMessage('开始时间格式须为 HH:MM'),
+  body('endTime').optional().matches(TIME_RE).withMessage('结束时间格式须为 HH:MM'),
+  body('durationBilling').optional().isInt({ min: 0 }).withMessage('durationBilling 须为非负整数'),
+];

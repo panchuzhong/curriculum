@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import ErrorBoundary from './ErrorBoundary';
 import Layout from './components/Layout';
+import ToastProvider from './components/ToastProvider';
 import LoginPage from './auth/LoginPage';
 import RegisterPage from './auth/RegisterPage';
 import WeeklySchedule from './schedule/WeeklySchedule';
@@ -48,6 +49,7 @@ function AuthInit({ children }) {
 export default function App() {
   return (
     <ErrorBoundary>
+      <ToastProvider>
       <BrowserRouter basename={import.meta.env.BASE_URL}>
         <AuthInit>
           <Routes>
@@ -73,6 +75,7 @@ export default function App() {
           </Routes>
         </AuthInit>
       </BrowserRouter>
+      </ToastProvider>
     </ErrorBoundary>
   );
 }

@@ -22,7 +22,7 @@ const authLimiter = rateLimit({
   legacyHeaders: false,
 });
 
-router.post('/register', authLimiter, validateRegister, handle, (req, res) => {
+router.post('/register', authLimiter, validateRegister, handle, async (req, res) => {
   if (process.env.ALLOW_REGISTRATION !== 'true') {
     return res.status(403).json({ error: 'Registration is closed' });
   }
@@ -30,7 +30,7 @@ router.post('/register', authLimiter, validateRegister, handle, (req, res) => {
   const existing = drizzleDb.select().from(teachers).where(eq(teachers.username, username)).get();
   if (existing) return res.status(409).json({ error: 'Username taken' });
 
-  const passwordHash = bcrypt.hashSync(password, 10);
+  const passwordHash = await bcrypt.hash(password, 10);
   const apiKey = uuidv4();
   const subjects = JSON.stringify(DEFAULT_SUBJECTS);
   const result = drizzleDb.insert(teachers).values({ username, passwordHash, name, apiKey, subjects }).run();
@@ -42,10 +42,10 @@ router.post('/register', authLimiter, validateRegister, handle, (req, res) => {
   res.json({ token: signToken(result.lastInsertRowid), apiKey });
 });
 
-router.post('/login', authLimiter, validateLogin, handle, (req, res) => {
+router.post('/login', authLimiter, validateLogin, handle, async (req, res) => {
   const { username, password } = req.body;
   const teacher = drizzleDb.select().from(teachers).where(eq(teachers.username, username)).get();
-  if (!teacher || !bcrypt.compareSync(password, teacher.passwordHash)) {
+  if (!teacher || !(await bcrypt.compare(password, teacher.passwordHash))) {
     return res.status(401).json({ error: 'Invalid credentials' });
   }
   res.json({ token: signToken(teacher.id) });
@@ -70,13 +70,13 @@ router.put('/api-key', authMiddleware, (req, res) => {
   res.json({ apiKey: newKey });
 });
 
-router.put('/password', authMiddleware, validateChangePassword, handle, (req, res) => {
+router.put('/password', authMiddleware, validateChangePassword, handle, async (req, res) => {
   const { oldPassword, newPassword } = req.body;
   const teacher = drizzleDb.select().from(teachers).where(eq(teachers.id, req.teacherId)).get();
-  if (!teacher || !bcrypt.compareSync(oldPassword, teacher.passwordHash)) {
+  if (!teacher || !(await bcrypt.compare(oldPassword, teacher.passwordHash))) {
     return res.status(401).json({ error: '当前密码错误' });
   }
-  const passwordHash = bcrypt.hashSync(newPassword, 10);
+  const passwordHash = await bcrypt.hash(newPassword, 10);
   drizzleDb.update(teachers).set({ passwordHash }).where(eq(teachers.id, req.teacherId)).run();
   res.json({ ok: true });
 });

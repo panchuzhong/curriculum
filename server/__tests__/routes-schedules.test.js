@@ -1,8 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import request from 'supertest';
-import { mockCommonDeps, setupApp, makeUser, auth } from './route-helpers.js';
-
-mockCommonDeps();
+import { setupApp, makeUser, auth } from './route-helpers.js';
 vi.mock('../services/holidays.js', () => ({ isHoliday: () => false, getHolidayName: () => '' }));
 
 let app, drizzleDb, token, classId;
@@ -111,6 +109,11 @@ describe('DELETE /api/schedules/:id', () => {
     const res = await request(app).delete(`/api/schedules/${id}`).set(auth(token));
     expect(res.status).toBe(200);
   });
+
+  it('returns 404 for nonexistent id', async () => {
+    const res = await request(app).delete('/api/schedules/999999').set(auth(token));
+    expect(res.status).toBe(404);
+  });
 });
 
 describe('POST /api/schedules/batch', () => {
@@ -124,6 +127,12 @@ describe('POST /api/schedules/batch', () => {
   it('rejects missing classId', async () => {
     const res = await request(app).post('/api/schedules/batch').set(auth(token))
       .send({ startTime: '09:00', endTime: '10:30', dates: ['2026-05-04'] });
+    expect(res.status).toBe(400);
+  });
+
+  it('rejects empty dates array', async () => {
+    const res = await request(app).post('/api/schedules/batch').set(auth(token))
+      .send({ classId, startTime: '09:00', endTime: '10:30', dates: [] });
     expect(res.status).toBe(400);
   });
 });
@@ -145,5 +154,32 @@ describe('DELETE /api/schedules/batch', () => {
       .send({ start: '2026-05-01', end: '2026-05-31' });
     expect(res.status).toBe(200);
     expect(res.body.count).toBe(1);
+  });
+});
+
+describe('GET /api/schedules/summary', () => {
+  it('returns empty summary when no schedules', async () => {
+    const res = await request(app).get('/api/schedules/summary?start=2026-05-01&end=2026-05-31').set(auth(token));
+    expect(res.status).toBe(200);
+    expect(res.body.count).toBe(0);
+    expect(res.body.hours).toBe(0);
+    expect(res.body.revenue).toBe(0);
+    expect(res.body.byClass).toEqual([]);
+  });
+
+  it('returns aggregated summary', async () => {
+    await request(app).post('/api/schedules').set(auth(token))
+      .send({ classId, date: '2026-05-04', startTime: '09:00', endTime: '10:30' });
+    const res = await request(app).get('/api/schedules/summary?start=2026-05-01&end=2026-05-31').set(auth(token));
+    expect(res.status).toBe(200);
+    expect(res.body.count).toBe(1);
+    expect(res.body.hours).toBe(1.5);
+    expect(res.body.byClass).toHaveLength(1);
+    expect(res.body.byClass[0].count).toBe(1);
+  });
+
+  it('requires start/end params', async () => {
+    const res = await request(app).get('/api/schedules/summary').set(auth(token));
+    expect(res.status).toBe(400);
   });
 });

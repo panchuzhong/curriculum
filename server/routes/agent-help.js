@@ -4,7 +4,7 @@ const router = Router();
 router.get('/agent/help', (req, res) => {
   res.json({
     name: '课表管理系统 API',
-    version: '1.6.4',
+    version: '1.6.6',
     description: '面向私人教师的课表管理平台 API，供 AI Agent 访问',
     auth: {
       type: 'API Key 或 JWT Token',
@@ -46,7 +46,7 @@ router.get('/agent/help', (req, res) => {
         'GET /api/students': '获取所有学生（含 classIds 数组）',
         'GET /api/students/by-class/:classId': '获取指定班级的学生列表',
         'POST /api/students': '创建学生（可通过 classIds 数组同时关联多个班级）',
-        'PUT /api/students/:id': '更新学生信息',
+        'PUT /api/students/:id': '更新学生信息（部分更新：仅写入传入的字段，未传字段保持不变；classIds 变更时全量替换班级关联）',
         'DELETE /api/students/:id': '删除学生（同时清理所有班级关联）',
       },
       schedules: {
@@ -55,7 +55,7 @@ router.get('/agent/help', (req, res) => {
         'GET /api/schedules?start=&end=&classId=N': '同上，额外按班级 ID 过滤（服务端过滤，节省流量）',
         'GET /api/schedules/:id': '获取单条排课详情（含班级信息）',
         'POST /api/schedules': '创建单次排课，返回完整排课对象（含 class 字段）；如有时间冲突，额外返回 warnings 数组（不阻止创建）',
-        'PUT /api/schedules/:id': '更新排课，返回完整排课对象；时间变更时自动重算 durationBilling；如有冲突返回 warnings',
+        'PUT /api/schedules/:id': '更新排课（输入经 express-validator 校验），返回完整排课对象；时间变更时自动重算 durationBilling；如有冲突返回 warnings；变更 classId 时校验目标班级归属且未软删除',
         'DELETE /api/schedules/:id': '删除单条排课',
         'DELETE /api/schedules/batch': '批量删除排课（见 batchDeleteModes）',
         'POST /api/schedules/batch': '批量创建排课（见 batchScheduleModes）',
@@ -77,7 +77,7 @@ router.get('/agent/help', (req, res) => {
         'GET /api/holidays': '获取所有节假日和调休记录',
         'GET /api/holidays/:year': '获取指定年份的节假日',
         'POST /api/holidays': '添加节假日/调休（需 date, type: holiday|workday, name）',
-        'PUT /api/holidays/:id': '更新节假日记录',
+        'PUT /api/holidays/:id': '更新节假日记录（变更日期时校验不与已有记录重复）',
         'DELETE /api/holidays/:id': '删除节假日记录',
         'POST /api/holidays/batch': '批量导入节假日（需 items 数组）',
       },
@@ -88,7 +88,7 @@ router.get('/agent/help', (req, res) => {
         'DELETE /api/pricing-tiers/:id': '删除定价阶梯',
       },
       images: {
-        'GET /api/schedule-image?start=YYYY-MM-DD&end=YYYY-MM-DD': '生成课表 PNG 图片（返回 image/png），支持任意时间范围；失败时返回 JSON {error, detail}',
+        'GET /api/schedule-image?start=YYYY-MM-DD&end=YYYY-MM-DD': '生成课表 PNG 图片（返回 image/png），支持任意时间范围；失败时返回 JSON {error}',
         'GET /api/schedule-image?range=today|tomorrow|week|month': '快捷范围，与 GET /api/schedules 的 range 参数一致',
         'GET /api/schedule-image?start=&end=&theme=light|dark|auto': 'theme=light 强制浅色，dark 强制深色，auto（默认）按小时自动切换（7:00-19:00 浅色，其余深色）',
         'GET /api/schedule-image?start=&end=&rowH=N': '每小时行高像素（16-60，默认 30），增大后文字更清晰，图片更高',
@@ -97,7 +97,7 @@ router.get('/agent/help', (req, res) => {
       },
       backup: {
         'GET /api/backup': '导出教师全量数据为 JSON（classes, students, schedules, semesters, holidays, pricingTiers, classStudents），触发浏览器下载',
-        'POST /api/backup/restore': '从备份 JSON 原子还原（先清空再写入，事务保证）；teacherId 强制覆盖为当前认证教师，防止数据越权',
+        'POST /api/backup/restore': '从备份 JSON 原子还原（先清空再写入，事务保证）；teacherId 强制覆盖为当前认证教师，防止数据越权；自动校验 classStudents 关联的 classId 和 studentId 是否存在，不存在则跳过',
       },
       auditLog: {
         'GET /api/audit-log': '查询操作日志（默认最新 100 条）',
@@ -108,7 +108,7 @@ router.get('/agent/help', (req, res) => {
     },
     batchScheduleModes: {
       semester: {
-        description: '按学期 + 每周几自动生成排课，自动跳过法定节假日',
+        description: '按学期 + 每周几自动生成排课，自动跳过法定节假日和用户自定义假期',
         params: {
           classId: '班级 ID（必填）',
           semesterId: '学期 ID（必填）',
@@ -236,11 +236,13 @@ router.get('/agent/help', (req, res) => {
       'POST /api/schedules 和 PUT /api/schedules/:id 均返回完整排课对象（含 class 字段），可直接判断是否存在冲突',
       'durationBilling 默认由 endTime - startTime 自动计算，跨午夜时自动处理',
       '法定节假日数据可通过 POST /api/holidays/batch 批量导入，批量排课（学期模式）自动跳过',
-      '图片导出支持任意时间范围，天数越多图片越宽；生成失败时返回 JSON 错误而非 HTML；rowH 范围 16-60，默认 30',
+      '图片导出支持任意时间范围，天数越多图片越宽；生成失败时返回 JSON {error}（不含内部 detail）；rowH 范围 16-60，默认 30',
       'PUT /api/schedules/batch 只允许修改时间和地点字段，classId/date 等核心字段不可批量篡改',
       'GET /api/schedules/summary 和 GET /api/schedules/export 均支持 &format=csv，响应含 UTF-8 BOM，Excel 直接打开不乱码',
-      'GET /api/backup 返回全量 JSON；POST /api/backup/restore 原子还原（事务），恢复过程中 teacherId 强制绑定当前账号',
+      'GET /api/backup 返回全量 JSON；POST /api/backup/restore 原子还原（事务），恢复过程中 teacherId 强制绑定当前账号；classStudents 关联会校验 classId/studentId 是否存在于恢复数据中，无效关联自动跳过',
       '学生可属于多个班级，通过 classIds 数组关联；DELETE /api/students/:id 删除学生实体并清理所有关联，DELETE /api/classes/:classId/students/:studentId 仅从指定班级移除',
+      'PUT /api/students/:id 采用部分更新语义：仅写入请求体中包含且值非 undefined 的字段，未传字段保持原值；classIds 传入时全量替换班级关联',
+      'PUT /api/holidays/:id 变更日期时会检查是否与已有节假日记录重复，重复则返回 400',
       '所有写操作（排课增删改、班级增删改、批量操作）均自动写入 audit_log，可通过 GET /api/audit-log 查询；日志自动滚动删除，超过 10000 条时删除最旧记录',
       '注册成功后系统自动将 ALLOW_REGISTRATION 设为 false，单用户设计',
       '所有写接口均使用 express-validator 校验输入，校验失败返回 400 {error: "提示信息"}，详见下方 validationRules',
@@ -255,7 +257,7 @@ router.get('/agent/help', (req, res) => {
       },
       classes: {
         create: { name: '必填', grade: '枚举：初一/初二/初三/高一/高二/高三/大学', subject: '必填', studentCount: '≥1整数' },
-        update: { name: '可选', grade: '可选枚举', subject: '可选', studentCount: '可选≥1' },
+        update: { name: '可选（不为空）', grade: '可选枚举', subject: '可选（不为空）', studentCount: '可选≥1', unitPrice: '可选>0', discountAmount: '可选≥0', isCompetition: '可选布尔' },
         addStudent: { name: '必填', phone: '11位手机号（可选）' },
       },
       students: {
@@ -264,6 +266,7 @@ router.get('/agent/help', (req, res) => {
       },
       schedules: {
         create: { classId: '整数必填', date: 'YYYY-MM-DD 必填', startTime: 'HH:MM 必填', endTime: 'HH:MM 必填' },
+        update: { classId: '可选整数（变更时校验归属和软删除）', date: '可选 YYYY-MM-DD', startTime: '可选 HH:MM', endTime: '可选 HH:MM', durationBilling: '可选正整数' },
         batchCreate: { classId: '整数必填', startTime: 'HH:MM 必填', endTime: 'HH:MM 必填' },
         batchUpdate: { classId: '整数必填', fromDate: 'YYYY-MM-DD 必填', weekday: '0-6 必填', updates: '对象必填' },
         batchDelete: { ids: '整数数组，或 start+end 日期范围' },

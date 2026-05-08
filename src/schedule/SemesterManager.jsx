@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { api } from '../api';
+import { useToast } from '../components/ToastProvider';
 
 const TYPES = [
   { value: 'spring', label: '春季' },
@@ -41,6 +42,7 @@ function getDefaultsFromSemesters(semesters) {
 }
 
 export default function SemesterManager() {
+  const toast = useToast();
   const [semesters, setSemesters] = useState([]);
   const [showForm, setShowForm] = useState(false);
   const [editing, setEditing] = useState(null);
@@ -62,9 +64,11 @@ export default function SemesterManager() {
     try {
       await api.createSemester(form);
       setShowForm(false);
-      setForm(getDefaults());
-      reload();
-    } catch (e) { alert(e.message || '创建失败'); }
+      api.getSemesters().then(s => {
+        setSemesters(s);
+        setForm(getDefaultsFromSemesters(s));
+      }).catch(() => {});
+    } catch (e) { toast(e.message || '创建失败'); }
   }
 
   async function handleUpdate() {
@@ -73,7 +77,7 @@ export default function SemesterManager() {
       await api.updateSemester(editing.id, form);
       setEditing(null);
       reload();
-    } catch (e) { alert(e.message || '更新失败'); }
+    } catch (e) { toast(e.message || '更新失败'); }
   }
 
   function startEdit(s) {
@@ -86,7 +90,7 @@ export default function SemesterManager() {
     try {
       await api.deleteSemester(id);
       reload();
-    } catch (e) { alert(e.message || '删除失败'); }
+    } catch (e) { toast(e.message || '删除失败'); }
   }
 
   return (

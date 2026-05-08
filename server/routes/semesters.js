@@ -20,7 +20,7 @@ router.post('/', validateCreateSemester, handle, (req, res) => {
   const result = drizzleDb.insert(semesters).values({
     teacherId: req.teacherId, name, type, startDate, endDate,
   }).run();
-  res.json({ id: result.lastInsertRowid });
+  res.json({ ok: true, id: result.lastInsertRowid });
 });
 
 router.put('/:id', validateUpdateSemester, handle, (req, res) => {

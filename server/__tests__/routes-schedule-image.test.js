@@ -1,8 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import request from 'supertest';
-import { mockCommonDeps, setupApp, makeUser, auth } from './route-helpers.js';
-
-mockCommonDeps();
+import { setupApp, makeUser, auth } from './route-helpers.js';
 
 vi.mock('../services/image-gen.js', () => ({
   generateScheduleImage: vi.fn(async () => Buffer.from('fake-png-data')),
