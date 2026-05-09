@@ -162,6 +162,7 @@ router.put('/batch', validateBatchUpdate, handle, (req, res) => {
     candidates = candidates.filter(s => new Date(s.date + 'T00:00:00').getDay() === +weekday);
   }
 
+  const beforeSemesterCount = candidates.length;
   if (semesterOnly) {
     const teacherSemesters = drizzleDb.select().from(semesters)
       .where(eq(semesters.teacherId, req.teacherId)).all();
@@ -171,8 +172,16 @@ router.put('/batch', validateBatchUpdate, handle, (req, res) => {
       );
     }
   }
+  const semesterFiltered = beforeSemesterCount - candidates.length;
 
-  if (candidates.length === 0) return res.json({ count: 0, ids: [] });
+  if (candidates.length === 0) {
+    const resp = { count: 0, ids: [] };
+    if (semesterFiltered > 0) {
+      resp.semesterFiltered = semesterFiltered;
+      resp.hint = `${semesterFiltered}条记录因不在当前学期内被过滤，如需修改请设置 semesterOnly=false`;
+    }
+    return res.json(resp);
+  }
 
   const updatedIds = [];
   for (const s of candidates) {
@@ -192,7 +201,12 @@ router.put('/batch', validateBatchUpdate, handle, (req, res) => {
     teacherId: req.teacherId, action: 'BATCH_UPDATE', tableName: 'schedules',
     after: { count: updatedIds.length, ids: updatedIds, classId, updates: safeUpdates },
   });
-  res.json({ count: updatedIds.length, ids: updatedIds });
+  const resp = { count: updatedIds.length, ids: updatedIds };
+  if (semesterFiltered > 0) {
+    resp.semesterFiltered = semesterFiltered;
+    resp.hint = `${semesterFiltered}条记录因不在当前学期内被过滤，如需修改请设置 semesterOnly=false`;
+  }
+  res.json(resp);
 });
 
 router.delete('/batch', validateBatchDelete, handle, (req, res) => {
