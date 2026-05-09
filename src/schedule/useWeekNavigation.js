@@ -3,6 +3,7 @@ import { flushSync } from 'react-dom';
 import { api } from '../api';
 import { parseDateStr, todayStr, getMonday, addDays } from '../utils/date';
 import useSwipeNavigation from '../hooks/useSwipeNavigation';
+import { useToast } from '../components/ToastProvider';
 
 const TOTAL_COLS = 21;
 const BUFFER = 7;
@@ -27,6 +28,7 @@ function getOrientation() {
 }
 
 export default function useWeekNavigation({ searchParams }) {
+  const toast = useToast();
   const [orient, setOrient] = useState(getOrientation);
   useEffect(() => {
     const onResize = () => setOrient(getOrientation());
@@ -63,11 +65,15 @@ export default function useWeekNavigation({ searchParams }) {
   }, [allDates]);
 
   useEffect(() => {
-    api.getSchedules(allDates[0], allDates[TOTAL_COLS - 1]).then(setAllSchedules).catch(() => {});
+    api.getSchedules(allDates[0], allDates[TOTAL_COLS - 1])
+      .then(setAllSchedules)
+      .catch(e => toast(e.message || '加载课表失败'));
   }, []);
 
   function reload() {
-    api.getSchedules(allDates[0], allDates[TOTAL_COLS - 1]).then(setAllSchedules).catch(() => {});
+    api.getSchedules(allDates[0], allDates[TOTAL_COLS - 1])
+      .then(setAllSchedules)
+      .catch(e => toast(e.message || '加载课表失败'));
   }
 
   function safeSetSchedules(schedules) {
@@ -106,7 +112,9 @@ export default function useWeekNavigation({ searchParams }) {
     const newDates = getAllDates(newCenter);
     flushSync(() => setAllDates(newDates));
     // useLayoutEffect has already snapped CSS to INITIAL_OFFSET
-    api.getSchedules(newDates[0], newDates[TOTAL_COLS - 1]).then(safeSetSchedules).catch(() => {});
+    api.getSchedules(newDates[0], newDates[TOTAL_COLS - 1])
+      .then(safeSetSchedules)
+      .catch(e => toast(e.message || '加载课表失败'));
   }
 
   // Animated button navigation (desktop prev/next, "today")

@@ -112,9 +112,10 @@ export default function HolidayManager() {
   const [showAdd, setShowAdd] = useState(false);
   const [form, setForm] = useState({ date: '', type: 'holiday', name: '' });
   const [importing, setImporting] = useState(false);
+  const [saving, setSaving] = useState(false);
 
   function reload() {
-    api.getHolidays().then(setHolidays).catch(() => {});
+    api.getHolidays().then(setHolidays).catch(e => toast(e.message || '加载节假日失败'));
   }
 
   useEffect(() => { reload(); }, []);
@@ -124,7 +125,8 @@ export default function HolidayManager() {
   const workdays = yearHolidays.filter(h => h.type === 'workday');
 
   async function addHoliday() {
-    if (!form.date) return;
+    if (!form.date || saving) return;
+    setSaving(true);
     try {
       await api.createHoliday(form);
       setShowAdd(false);
@@ -132,14 +134,18 @@ export default function HolidayManager() {
       reload();
       refreshHolidays();
     } catch (e) { toast(e.message || '添加失败'); }
+    finally { setSaving(false); }
   }
 
   async function removeHoliday(id) {
+    if (saving) return;
+    setSaving(true);
     try {
       await api.deleteHoliday(id);
       reload();
       refreshHolidays();
     } catch (e) { toast(e.message || '删除失败'); }
+    finally { setSaving(false); }
   }
 
   async function importYear() {

@@ -26,6 +26,7 @@ export default function BatchScheduleDialog({ onClose, onSaved }) {
   const [previewCount, setPreviewCount] = useState(null);
   const [delStart, setDelStart] = useState(todayStr());
   const [delEnd, setDelEnd] = useState('');
+  const [saving, setSaving] = useState(false);
   const [form, setForm] = useState({
     classId: '',
     semesterId: '',
@@ -37,8 +38,8 @@ export default function BatchScheduleDialog({ onClose, onSaved }) {
   });
 
   useEffect(() => {
-    api.getClasses().then(setClasses).catch(() => {});
-    api.getSemesters().then(setSemesters).catch(() => {});
+    api.getClasses().then(setClasses).catch(e => toast(e.message || '加载班级失败'));
+    api.getSemesters().then(setSemesters).catch(e => toast(e.message || '加载学期失败'));
   }, []);
 
   const selectedSemester = semesters.find(s => s.id === +form.semesterId);
@@ -81,8 +82,8 @@ export default function BatchScheduleDialog({ onClose, onSaved }) {
   }
 
   async function handleSubmit() {
-    if (!form.classId) return;
-
+    if (!form.classId || saving) return;
+    setSaving(true);
     try {
       if (op === 'create') {
         if (!form.startTime || !form.endTime) return;
@@ -111,6 +112,7 @@ export default function BatchScheduleDialog({ onClose, onSaved }) {
         setResult({ op: 'delete', count: res.count });
       }
     } catch (e) { toast(e.message || '操作失败'); }
+    finally { setSaving(false); }
   }
 
   const sel = 'w-full p-2 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded';
@@ -286,9 +288,9 @@ export default function BatchScheduleDialog({ onClose, onSaved }) {
                     <p className="flex-1 p-2 text-sm text-red-600 dark:text-red-400 font-medium text-center">
                       将删除 {previewCount} 条排课，操作不可撤销
                     </p>
-                    <button onClick={handleSubmit}
-                      className="px-4 p-2 text-white bg-red-600 hover:bg-red-700 rounded">
-                      确认
+                    <button onClick={handleSubmit} disabled={saving}
+                      className="px-4 p-2 text-white bg-red-600 hover:bg-red-700 rounded disabled:opacity-50">
+                      {saving ? '处理中...' : '确认'}
                     </button>
                     <button onClick={() => setPreviewCount(null)} className="p-2 bg-gray-300 dark:bg-gray-600 rounded">取消</button>
                   </>
@@ -303,9 +305,9 @@ export default function BatchScheduleDialog({ onClose, onSaved }) {
                 )
               ) : (
                 <>
-                  <button onClick={handleSubmit}
-                    className="flex-1 p-2 text-white bg-blue-600 hover:bg-blue-700 rounded">
-                    批量排课
+                  <button onClick={handleSubmit} disabled={saving}
+                    className="flex-1 p-2 text-white bg-blue-600 hover:bg-blue-700 rounded disabled:opacity-50">
+                    {saving ? '处理中...' : '批量排课'}
                   </button>
                   <button onClick={onClose} className="p-2 bg-gray-300 dark:bg-gray-600 rounded">取消</button>
                 </>

@@ -5,6 +5,7 @@ import { useToast } from '../components/ToastProvider';
 
 function StudentDialog({ student, classes, onClose, onSaved }) {
   const toast = useToast();
+  const [saving, setSaving] = useState(false);
   const [form, setForm] = useState({
     name: '', birthDate: '', phone: '', parentName: '', parentPhone: '', note: '', classIds: [],
   });
@@ -34,7 +35,8 @@ function StudentDialog({ student, classes, onClose, onSaved }) {
 
   async function handleSubmit(e) {
     e.preventDefault();
-    if (!form.name.trim()) return;
+    if (!form.name.trim() || saving) return;
+    setSaving(true);
     try {
       if (student) {
         await api.updateStudent(student.id, form);
@@ -43,15 +45,18 @@ function StudentDialog({ student, classes, onClose, onSaved }) {
       }
       onSaved();
     } catch (e) { toast(e.message || '保存失败'); }
+    finally { setSaving(false); }
   }
 
   async function handleDelete() {
-    if (!student) return;
+    if (!student || saving) return;
     if (!confirm('确定删除此学生？')) return;
+    setSaving(true);
     try {
       await api.deleteStudent(student.id);
       onSaved();
     } catch (e) { toast(e.message || '删除失败'); }
+    finally { setSaving(false); }
   }
 
   return (
@@ -109,14 +114,14 @@ function StudentDialog({ student, classes, onClose, onSaved }) {
             </div>
           </div>
           <div className="flex gap-2 mt-4">
-            <button type="submit"
-              className="flex-1 p-2 bg-blue-600 text-white rounded hover:bg-blue-700">保存</button>
+            <button type="submit" disabled={saving}
+              className="flex-1 p-2 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50">{saving ? '保存中...' : '保存'}</button>
             {student && (
-              <button type="button" onClick={handleDelete}
-                className="p-2 bg-red-600 text-white rounded hover:bg-red-700">删除</button>
+              <button type="button" onClick={handleDelete} disabled={saving}
+                className="p-2 bg-red-600 text-white rounded hover:bg-red-700 disabled:opacity-50">删除</button>
             )}
-            <button type="button" onClick={onClose}
-              className="p-2 bg-gray-300 dark:bg-gray-600 rounded">取消</button>
+            <button type="button" onClick={onClose} disabled={saving}
+              className="p-2 bg-gray-300 dark:bg-gray-600 rounded disabled:opacity-50">取消</button>
           </div>
         </form>
       </div>
@@ -126,14 +131,15 @@ function StudentDialog({ student, classes, onClose, onSaved }) {
 
 export default function StudentList() {
   const dark = useContext(DarkContext);
+  const toast = useToast();
   const [classes, setClasses] = useState([]);
   const [students, setStudents] = useState([]);
   const [dialog, setDialog] = useState(null); // null | 'new' | student object
   const [filterClass, setFilterClass] = useState('all');
 
   function reload() {
-    api.getClasses().then(setClasses).catch(() => {});
-    api.getAllStudents().then(setStudents).catch(() => {});
+    api.getClasses().then(setClasses).catch(e => toast(e.message || '加载班级失败'));
+    api.getAllStudents().then(setStudents).catch(e => toast(e.message || '加载学生失败'));
   }
 
   useEffect(() => { reload(); }, []);

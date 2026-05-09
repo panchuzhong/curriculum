@@ -10,32 +10,42 @@ export default function ClassList() {
   const [classes, setClasses] = useState([]);
   const [expandedId, setExpandedId] = useState(null);
   const [showNew, setShowNew] = useState(false);
+  const [saving, setSaving] = useState(false);
 
-  useEffect(() => { api.getClasses().then(setClasses).catch(() => {}); }, []);
+  useEffect(() => { api.getClasses().then(setClasses).catch(e => toast(e.message || '加载班级失败')); }, []);
 
   async function handleCreate(form) {
+    if (saving) return;
+    setSaving(true);
     try {
       await api.createClass(form);
       setShowNew(false);
-      api.getClasses().then(setClasses).catch(() => {});
+      api.getClasses().then(setClasses).catch(e => toast(e.message || '加载班级失败'));
     } catch (e) { toast(e.message || '创建失败'); }
+    finally { setSaving(false); }
   }
 
   async function handleUpdate(form) {
+    if (saving) return;
+    setSaving(true);
     try {
       await api.updateClass(expandedId, form);
       setExpandedId(null);
-      api.getClasses().then(setClasses).catch(() => {});
+      api.getClasses().then(setClasses).catch(e => toast(e.message || '加载班级失败'));
     } catch (e) { toast(e.message || '更新失败'); }
+    finally { setSaving(false); }
   }
 
   async function handleDelete(id, e) {
     e.stopPropagation();
+    if (saving) return;
     if (!confirm('确定删除？')) return;
+    setSaving(true);
     try {
       await api.deleteClass(id);
-      api.getClasses().then(setClasses).catch(() => {});
+      api.getClasses().then(setClasses).catch(e => toast(e.message || '加载班级失败'));
     } catch (e) { toast(e.message || '删除失败'); }
+    finally { setSaving(false); }
   }
 
   return (

@@ -3,12 +3,13 @@ import request from 'supertest';
 import { setupApp, makeUser, auth } from './route-helpers.js';
 vi.mock('../services/holidays.js', () => ({ isHoliday: () => false, getHolidayName: () => '' }));
 
-let app, drizzleDb, token, classId;
+let app, drizzleDb, token, classId, teacherId;
 
 beforeEach(async () => {
   ({ app, drizzleDb } = await setupApp('/api/schedules', '../routes/schedules.js'));
   const user = await makeUser(drizzleDb);
   token = user.token;
+  teacherId = user.id;
   const { classes } = await import('../db/schema.js');
   const r = drizzleDb.insert(classes).values({
     teacherId: user.id, name: '数学班', grade: '高一', subject: '数学', studentCount: 5, unitPrice: 100,
@@ -134,6 +135,92 @@ describe('POST /api/schedules/batch', () => {
     const res = await request(app).post('/api/schedules/batch').set(auth(token))
       .send({ classId, startTime: '09:00', endTime: '10:30', dates: [] });
     expect(res.status).toBe(400);
+  });
+
+  it('rejects dates array > 365', async () => {
+    const dates = Array.from({ length: 366 }, (_, i) => {
+      const d = new Date('2026-01-01');
+      d.setDate(d.getDate() + i);
+      return d.toISOString().slice(0, 10);
+    });
+    const res = await request(app).post('/api/schedules/batch').set(auth(token))
+      .send({ classId, startTime: '09:00', endTime: '10:30', dates });
+    expect(res.status).toBe(400);
+  });
+});
+
+describe('PUT /api/schedules/batch — semester filtering', () => {
+  async function seed(dates) {
+    for (const d of dates) {
+      await request(app).post('/api/schedules').set(auth(token))
+        .send({ classId, date: d, startTime: '09:00', endTime: '10:00' });
+    }
+  }
+  async function addSemester(start, end) {
+    const { semesters } = await import('../db/schema.js');
+    drizzleDb.insert(semesters).values({
+      teacherId, name: '春季', type: 'spring', startDate: start, endDate: end,
+    }).run();
+  }
+
+  it('case 1: all candidates inside a semester → modifies all, no hint', async () => {
+    await addSemester('2026-02-23', '2026-07-15');
+    await seed(['2026-05-04', '2026-05-11', '2026-05-18']);
+    const res = await request(app).put('/api/schedules/batch').set(auth(token))
+      .send({ classId, fromDate: '2026-05-01', updates: { startTime: '14:00', endTime: '15:00' } });
+    expect(res.status).toBe(200);
+    expect(res.body.count).toBe(3);
+    expect(res.body.semesterFiltered).toBeUndefined();
+    expect(res.body.hint).toBeUndefined();
+  });
+
+  it('case 2: all candidates outside any semester → modifies all, no hint', async () => {
+    await addSemester('2026-02-23', '2026-07-15');
+    await seed(['2026-08-01', '2026-08-08', '2026-08-15']);
+    const res = await request(app).put('/api/schedules/batch').set(auth(token))
+      .send({ classId, fromDate: '2026-08-01', updates: { locationName: '新校区' } });
+    expect(res.status).toBe(200);
+    expect(res.body.count).toBe(3);
+    expect(res.body.semesterFiltered).toBeUndefined();
+    expect(res.body.hint).toBeUndefined();
+  });
+
+  it('case 3: cross-semester (mixed) with semesterOnly=true (default) → only in-semester, with hint', async () => {
+    await addSemester('2026-02-23', '2026-07-15');
+    await seed(['2026-07-10', '2026-07-13', '2026-08-01', '2026-08-08']);
+    const res = await request(app).put('/api/schedules/batch').set(auth(token))
+      .send({ classId, fromDate: '2026-07-01', updates: { locationName: '新校区' } });
+    expect(res.status).toBe(200);
+    expect(res.body.count).toBe(2);
+    expect(res.body.semesterFiltered).toBe(2);
+    expect(res.body.hint).toContain('semesterOnly=false');
+  });
+
+  it('case 3b: cross-semester with semesterOnly=false → modifies all, no hint', async () => {
+    await addSemester('2026-02-23', '2026-07-15');
+    await seed(['2026-07-10', '2026-08-01']);
+    const res = await request(app).put('/api/schedules/batch').set(auth(token))
+      .send({ classId, fromDate: '2026-07-01', semesterOnly: false, updates: { locationName: 'X' } });
+    expect(res.status).toBe(200);
+    expect(res.body.count).toBe(2);
+    expect(res.body.semesterFiltered).toBeUndefined();
+  });
+
+  it('case 4: no semesters defined → modifies all, no hint', async () => {
+    await seed(['2026-05-04', '2026-08-01']);
+    const res = await request(app).put('/api/schedules/batch').set(auth(token))
+      .send({ classId, fromDate: '2026-05-01', updates: { locationName: 'X' } });
+    expect(res.status).toBe(200);
+    expect(res.body.count).toBe(2);
+    expect(res.body.semesterFiltered).toBeUndefined();
+  });
+
+  it('weekday omitted → matches all weekdays (no implicit weekday filter)', async () => {
+    await seed(['2026-08-01', '2026-08-02', '2026-08-03']); // Sat, Sun, Mon
+    const res = await request(app).put('/api/schedules/batch').set(auth(token))
+      .send({ classId, fromDate: '2026-08-01', updates: { locationName: 'Y' } });
+    expect(res.status).toBe(200);
+    expect(res.body.count).toBe(3);
   });
 });
 

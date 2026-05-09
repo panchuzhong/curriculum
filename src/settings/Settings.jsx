@@ -14,7 +14,7 @@ function SubjectSection() {
   const [saved, setSaved] = useState(false);
 
   useEffect(() => {
-    api.getProfile().then(p => setSubjects(p.subjects || [])).catch(() => {});
+    api.getProfile().then(p => setSubjects(p.subjects || [])).catch(e => toast(e.message || '加载学科失败'));
   }, []);
 
   function moveUp(i) {
@@ -126,7 +126,7 @@ function ApiKeySection() {
   const [copied, setCopied] = useState(false);
 
   useEffect(() => {
-    api.getProfile().then(setProfile).catch(() => {});
+    api.getProfile().then(setProfile).catch(e => toast(e.message || '加载个人信息失败'));
   }, []);
 
   async function regenerate() {

@@ -72,7 +72,7 @@ router.post('/', validateCreateSchedule, handle, (req, res) => {
     locationLat: locationLat ?? cls.defaultLocationLat,
     locationLng: locationLng ?? cls.defaultLocationLng,
   }).run();
-  const created = getScheduleWithClass(Number(result.lastInsertRowid));
+  const created = getScheduleWithClass(Number(result.lastInsertRowid), req.teacherId);
   logAudit({ teacherId: req.teacherId, action: 'CREATE', tableName: 'schedules', recordId: created.id, after: created });
   const warnings = getConflictsForSchedule(created.id, req.teacherId);
   res.json({ ...created, warnings: warnings.length > 0 ? warnings : undefined });
@@ -96,7 +96,7 @@ router.post('/batch', validateBatchCreate, handle, (req, res) => {
       .where(and(eq(semesters.id, semesterId), eq(semesters.teacherId, req.teacherId))).get();
     if (!semester) return res.status(404).json({ error: 'Semester not found' });
 
-    const today = new Date().toISOString().slice(0, 10);
+    const today = toLocalDateStr(new Date());
     const semesterStart = today > semester.startDate ? today : semester.startDate;
     const current = new Date(semesterStart + 'T00:00:00');
     const end = new Date(semester.endDate + 'T00:00:00');
@@ -162,17 +162,22 @@ router.put('/batch', validateBatchUpdate, handle, (req, res) => {
     candidates = candidates.filter(s => new Date(s.date + 'T00:00:00').getDay() === +weekday);
   }
 
-  const beforeSemesterCount = candidates.length;
+  let semesterFiltered = 0;
   if (semesterOnly) {
     const teacherSemesters = drizzleDb.select().from(semesters)
       .where(eq(semesters.teacherId, req.teacherId)).all();
     if (teacherSemesters.length > 0) {
-      candidates = candidates.filter(s =>
+      const inSemester = candidates.filter(s =>
         teacherSemesters.some(sem => s.date >= sem.startDate && s.date <= sem.endDate)
       );
+      // Only filter when the candidate set straddles semester boundaries.
+      // All-in or all-out scopes reflect a clear user intent and should pass through.
+      if (inSemester.length > 0 && inSemester.length < candidates.length) {
+        semesterFiltered = candidates.length - inSemester.length;
+        candidates = inSemester;
+      }
     }
   }
-  const semesterFiltered = beforeSemesterCount - candidates.length;
 
   if (candidates.length === 0) {
     const resp = { count: 0, ids: [] };
@@ -270,7 +275,7 @@ router.put('/:id', validateUpdateSchedule, handle, (req, res) => {
     );
   }
   drizzleDb.update(schedules).set(updates).where(eq(schedules.id, +id)).run();
-  const updated = getScheduleWithClass(+id);
+  const updated = getScheduleWithClass(+id, req.teacherId);
   logAudit({ teacherId: req.teacherId, action: 'UPDATE', tableName: 'schedules', recordId: +id, before: existing, after: updated });
   const warnings = getConflictsForSchedule(+id, req.teacherId);
   res.json({ ...updated, warnings: warnings.length > 0 ? warnings : undefined });
@@ -509,11 +514,8 @@ router.get('/conflicts', (req, res) => {
 });
 
 router.get('/:id', (req, res) => {
-  const s = getScheduleWithClass(+req.params.id);
+  const s = getScheduleWithClass(+req.params.id, req.teacherId);
   if (!s) return res.status(404).json({ error: 'Not found' });
-  const cls = drizzleDb.select().from(classes)
-    .where(and(eq(classes.id, s.classId), eq(classes.teacherId, req.teacherId))).get();
-  if (!cls) return res.status(403).json({ error: 'Forbidden' });
   res.json(s);
 });
 

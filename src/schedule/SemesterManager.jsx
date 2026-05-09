@@ -47,37 +47,42 @@ export default function SemesterManager() {
   const [showForm, setShowForm] = useState(false);
   const [editing, setEditing] = useState(null);
   const [form, setForm] = useState(null);
+  const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     api.getSemesters().then(s => {
       setSemesters(s);
       setForm(getDefaultsFromSemesters(s));
-    }).catch(() => {});
+    }).catch(e => toast(e.message || '加载学期失败'));
   }, []);
 
   function reload() {
-    api.getSemesters().then(setSemesters).catch(() => {});
+    api.getSemesters().then(setSemesters).catch(e => toast(e.message || '加载学期失败'));
   }
 
   async function handleCreate() {
-    if (!form.name || !form.startDate || !form.endDate) return;
+    if (!form.name || !form.startDate || !form.endDate || saving) return;
+    setSaving(true);
     try {
       await api.createSemester(form);
       setShowForm(false);
       api.getSemesters().then(s => {
         setSemesters(s);
         setForm(getDefaultsFromSemesters(s));
-      }).catch(() => {});
+      }).catch(e => toast(e.message || '加载学期失败'));
     } catch (e) { toast(e.message || '创建失败'); }
+    finally { setSaving(false); }
   }
 
   async function handleUpdate() {
-    if (!form.name || !form.startDate || !form.endDate) return;
+    if (!form.name || !form.startDate || !form.endDate || saving) return;
+    setSaving(true);
     try {
       await api.updateSemester(editing.id, form);
       setEditing(null);
       reload();
     } catch (e) { toast(e.message || '更新失败'); }
+    finally { setSaving(false); }
   }
 
   function startEdit(s) {
@@ -86,11 +91,14 @@ export default function SemesterManager() {
   }
 
   async function handleDelete(id) {
+    if (saving) return;
     if (!confirm('确定删除此学期？')) return;
+    setSaving(true);
     try {
       await api.deleteSemester(id);
       reload();
     } catch (e) { toast(e.message || '删除失败'); }
+    finally { setSaving(false); }
   }
 
   return (
@@ -129,10 +137,10 @@ export default function SemesterManager() {
             </div>
           </div>
           <div className="flex gap-2 mt-4">
-            <button onClick={editing ? handleUpdate : handleCreate}
-              className="px-4 py-2 bg-blue-600 text-white rounded">保存</button>
-            <button onClick={() => { setShowForm(false); setEditing(null); }}
-              className="px-4 py-2 bg-gray-300 dark:bg-gray-600 rounded">取消</button>
+            <button onClick={editing ? handleUpdate : handleCreate} disabled={saving}
+              className="px-4 py-2 bg-blue-600 text-white rounded disabled:opacity-50">{saving ? '保存中...' : '保存'}</button>
+            <button onClick={() => { setShowForm(false); setEditing(null); }} disabled={saving}
+              className="px-4 py-2 bg-gray-300 dark:bg-gray-600 rounded disabled:opacity-50">取消</button>
           </div>
         </div>
       )}
@@ -147,10 +155,10 @@ export default function SemesterManager() {
               </span>
             </div>
             <div className="flex gap-2">
-              <button onClick={() => startEdit(s)}
-                className="px-3 py-1 bg-gray-300 dark:bg-gray-600 rounded text-sm">编辑</button>
-              <button onClick={() => handleDelete(s.id)}
-                className="px-3 py-1 bg-red-600 text-white rounded text-sm">删除</button>
+              <button onClick={() => startEdit(s)} disabled={saving}
+                className="px-3 py-1 bg-gray-300 dark:bg-gray-600 rounded text-sm disabled:opacity-50">编辑</button>
+              <button onClick={() => handleDelete(s.id)} disabled={saving}
+                className="px-3 py-1 bg-red-600 text-white rounded text-sm disabled:opacity-50">删除</button>
             </div>
           </div>
         ))}

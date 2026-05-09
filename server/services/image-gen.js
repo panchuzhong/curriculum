@@ -64,18 +64,22 @@ function getDateRange(startDateStr, endDateStr) {
 function findConflictGroups(schedules) {
   if (!schedules.length) return [];
   const sorted = [...schedules].sort((a, b) => toMin(a.startTime) - toMin(b.startTime));
+  const endMin = (s) => {
+    const e = toMin(s.endTime), st = toMin(s.startTime);
+    return e >= st ? e : e + 24 * 60;
+  };
   const groups = [];
   let group = [sorted[0]];
-  let groupEnd = toMin(sorted[0].endTime);
+  let groupEnd = endMin(sorted[0]);
   for (let i = 1; i < sorted.length; i++) {
     const s = sorted[i];
     if (toMin(s.startTime) < groupEnd) {
       group.push(s);
-      groupEnd = Math.max(groupEnd, toMin(s.endTime));
+      groupEnd = Math.max(groupEnd, endMin(s));
     } else {
       groups.push(group);
       group = [s];
-      groupEnd = toMin(s.endTime);
+      groupEnd = endMin(s);
     }
   }
   groups.push(group);

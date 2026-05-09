@@ -163,6 +163,13 @@ sudo systemctl start curriculum-scheduler
 
 所有写接口均使用 express-validator 校验输入，校验失败返回 `400 {error: "提示信息"}`。详细规则见 `GET /api/agent/help` 的 `validationRules` 字段。
 
+### 写接口返回体约定
+
+- **单资源 POST/PUT**：统一返回完整资源对象(含 `id` 与所有派生字段,如 classes 的 `isDeleted`、students 的 `classIds`、schedules 的 `class` 与 `warnings`)
+- **单资源 DELETE**：返回 `{ok: true}`
+- **批量端点**(`POST/PUT/DELETE /api/*/batch`、`POST /api/holidays/batch`):返回 `{count, ids?, ...}`,跨学期过滤时附加 `semesterFiltered` 与 `hint`
+- **错误**:统一 HTTP 状态码 + `{error: "..."}`,前端只看状态码,不依赖 `ok` 字段
+
 ### 端点一览
 
 **系统**
@@ -185,11 +192,15 @@ sudo systemctl start curriculum-scheduler
 | 方法 | 路径 | 说明 |
 |------|------|------|
 | GET | /api/classes | 班级列表（不含已删除） |
+| GET | /api/classes?includeDeleted=true | 全部班级（含已删除） |
 | GET | /api/classes/:id | 获取单个班级详情 |
 | GET | /api/classes/locations/suggest | 获取所有去重地点名称（班级+排课合并去重） |
 | POST | /api/classes | 创建班级 |
 | PUT | /api/classes/:id | 更新班级 |
 | DELETE | /api/classes/:id | 删除班级（软删除） |
+| GET | /api/classes/:classId/students | 获取指定班级的学生列表 |
+| POST | /api/classes/:classId/students | 在指定班级下创建学生并自动关联 |
+| DELETE | /api/classes/:classId/students/:studentId | 从指定班级移除学生（仅解除关联） |
 
 **学生**
 | 方法 | 路径 | 说明 |
@@ -302,7 +313,7 @@ DELETE /api/schedules/batch
 
 ### 批量调整排课
 
-修改同一班级、同一星期几、指定日期起所有课程的时间或地点：
+修改同一班级在指定范围内课程的时间或地点：
 
 ```json
 PUT /api/schedules/batch
@@ -315,10 +326,14 @@ PUT /api/schedules/batch
 }
 ```
 
-- `weekday`：0=周日，1=周一…6=周六
-- `semesterOnly`：默认 `true`，只修改学期范围内的课；设为 `false` 不限制
+- `classId`（必填）：班级 ID
+- `fromDate`（可选）：YYYY-MM-DD，只修改该日期及之后的课
+- `weekday`（可选）：0=周日，1=周一…6=周六；省略时匹配所有星期几
+- `fromDate` 与 `weekday` 至少传一个,防止误改全部
+- `semesterOnly`（默认 `true`）：跨学期保护开关。**仅在候选记录跨学期(部分在内、部分在外)时生效**,过滤掉学期外的部分；全部在学期内或全部在学期外时本参数不影响结果。设为 `false` 强制不过滤
 - `updates` 只允许：`startTime`, `endTime`, `durationBilling`, `locationName`, `locationLat`, `locationLng`
 - 修改时间时自动重算 `durationBilling`
+- 跨学期被过滤时返回体附加 `semesterFiltered`(过滤数量)与 `hint`(提示文案)
 
 ### 导出排课明细
 

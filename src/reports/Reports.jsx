@@ -3,6 +3,7 @@ import { api } from '../api';
 import { getClassColor, getSubjectColor, DarkContext } from '../utils/colors';
 import { SUBJECTS, GRADES } from '../utils/constants';
 import { todayStr, getMonday, addDays, fmt, getMonthRange, getYearRange, toHoursAbs } from '../utils/date';
+import { useToast } from '../components/ToastProvider';
 
 function calcRevenue(cls, durationBilling) {
   const hours = toHoursAbs(durationBilling);
@@ -62,6 +63,7 @@ function BarChart({ data, maxVal }) {
 
 export default function Reports() {
   const dark = useContext(DarkContext);
+  const toast = useToast();
   const [tab, setTab] = useState('week'); // week | month | year | custom
   const [classes, setClasses] = useState([]);
   const [schedules, setSchedules] = useState([]);
@@ -72,7 +74,7 @@ export default function Reports() {
   const [customStart, setCustomStart] = useState(todayStr());
   const [customEnd, setCustomEnd] = useState(todayStr());
 
-  useEffect(() => { api.getClasses().then(setClasses).catch(() => {}); }, []);
+  useEffect(() => { api.getClasses().then(setClasses).catch(e => toast(e.message || '加载班级失败')); }, []);
 
   useEffect(() => {
     let start, end;
@@ -96,7 +98,7 @@ export default function Reports() {
 
     if (!start || !end || start > end) return;
     setPeriod({ start, end });
-    api.getSchedules(start, end).then(setSchedules).catch(() => {});
+    api.getSchedules(start, end).then(setSchedules).catch(e => toast(e.message || '加载课表失败'));
   }, [tab, year, month, customStart, customEnd]);
 
   if (!period) return null;
@@ -175,7 +177,7 @@ export default function Reports() {
   function loadWeek(monday) {
     const end = addDays(monday, 6);
     setPeriod({ start: monday, end });
-    api.getSchedules(monday, end).then(setSchedules).catch(() => {});
+    api.getSchedules(monday, end).then(setSchedules).catch(e => toast(e.message || '加载课表失败'));
   }
 
   return (

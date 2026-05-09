@@ -5,6 +5,7 @@ import { getClassColor, getTextColor, DarkContext } from '../utils/colors';
 import { isHoliday, getHolidayName, isWorkday, getWorkdayReason } from '../utils/holidays';
 import { todayStr, getMonday } from '../utils/date';
 import { useSimpleSwipe } from '../hooks/useSimpleSwipe';
+import { useToast } from '../components/ToastProvider';
 
 function getMonthDates(year, month) {
   const first = new Date(year, month, 1);
@@ -30,6 +31,7 @@ function formatDate(y, m, d) {
 export default function MonthlySchedule() {
   const navigate = useNavigate();
   const dark = useContext(DarkContext);
+  const toast = useToast();
   const [searchParams] = useSearchParams();
   const now = new Date();
   const [year, setYear] = useState(searchParams.get('year') ? +searchParams.get('year') : now.getFullYear());
@@ -44,7 +46,7 @@ export default function MonthlySchedule() {
   const endStr = formatDate(year, month, endDate.getDate());
 
   useEffect(() => {
-    api.getSchedules(startDate, endStr).then(setSchedules).catch(() => {});
+    api.getSchedules(startDate, endStr).then(setSchedules).catch(e => toast(e.message || '加载课表失败'));
   }, [year, month]);
 
   useEffect(() => { containerRef.current?.focus(); }, []);

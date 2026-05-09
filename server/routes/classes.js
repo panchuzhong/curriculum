@@ -49,9 +49,10 @@ router.post('/', validateCreateClass, handle, (req, res) => {
     defaultLocationName, defaultLocationLat, defaultLocationLng,
   }).run();
   const newId = Number(result.lastInsertRowid);
+  const created = drizzleDb.select().from(classes).where(eq(classes.id, newId)).get();
   logAudit({ teacherId: req.teacherId, action: 'CREATE', tableName: 'classes', recordId: newId,
     after: { name, grade, subject, studentCount, unitPrice: price } });
-  res.json({ ok: true, id: newId });
+  res.json({ ...created, isDeleted: !!created.deleted });
 });
 
 router.put('/:id', validateUpdateClass, handle, (req, res) => {
@@ -63,8 +64,9 @@ router.put('/:id', validateUpdateClass, handle, (req, res) => {
   const safeUpdates = Object.fromEntries(Object.entries(req.body).filter(([k]) => allowed.includes(k)));
   if (Object.keys(safeUpdates).length === 0) return res.status(400).json({ error: 'No valid fields' });
   drizzleDb.update(classes).set(safeUpdates).where(eq(classes.id, +id)).run();
+  const updated = drizzleDb.select().from(classes).where(eq(classes.id, +id)).get();
   logAudit({ teacherId: req.teacherId, action: 'UPDATE', tableName: 'classes', recordId: +id, before: existing, after: safeUpdates });
-  res.json({ ok: true });
+  res.json({ ...updated, isDeleted: !!updated.deleted });
 });
 
 router.delete('/:id', (req, res) => {
@@ -107,9 +109,12 @@ classStudentRouter.post('/', validateClassStudent, handle, (req, res) => {
   const result = drizzleDb.insert(students).values({
     teacherId: req.teacherId, name, phone, parentPhone, note,
   }).run();
-  const studentId = result.lastInsertRowid;
+  const studentId = Number(result.lastInsertRowid);
   drizzleDb.insert(classStudents).values({ classId, studentId }).run();
-  res.json({ ok: true, id: studentId });
+  const created = drizzleDb.select().from(students).where(eq(students.id, studentId)).get();
+  const out = { ...created, classIds: [classId] };
+  logAudit({ teacherId: req.teacherId, action: 'CREATE', tableName: 'students', recordId: studentId, after: out });
+  res.json(out);
 });
 
 classStudentRouter.delete('/:studentId', (req, res) => {
@@ -121,6 +126,7 @@ classStudentRouter.delete('/:studentId', (req, res) => {
   drizzleDb.delete(classStudents)
     .where(and(eq(classStudents.classId, +classId), eq(classStudents.studentId, +studentId)))
     .run();
+  logAudit({ teacherId: req.teacherId, action: 'UPDATE', tableName: 'class_students', recordId: +studentId, before: { classId: +classId, studentId: +studentId }, after: null });
   res.json({ ok: true });
 });
 

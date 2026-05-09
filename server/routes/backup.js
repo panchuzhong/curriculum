@@ -114,33 +114,37 @@ router.post('/restore', (req, res) => {
 
   const counts = {};
 
-  db.transaction(() => {
-    const existingClassIds = drizzleDb.select({ id: classes.id })
-      .from(classes).where(eq(classes.teacherId, tid)).all().map(c => c.id);
+  try {
+    db.transaction(() => {
+      const existingClassIds = drizzleDb.select({ id: classes.id })
+        .from(classes).where(eq(classes.teacherId, tid)).all().map(c => c.id);
 
-    if (existingClassIds.length > 0) {
-      drizzleDb.delete(schedules).where(inArray(schedules.classId, existingClassIds)).run();
-      drizzleDb.delete(classStudents).where(inArray(classStudents.classId, existingClassIds)).run();
-    }
-    drizzleDb.delete(classes).where(eq(classes.teacherId, tid)).run();
-    drizzleDb.delete(students).where(eq(students.teacherId, tid)).run();
-    drizzleDb.delete(pricingTiers).where(eq(pricingTiers.teacherId, tid)).run();
-    drizzleDb.delete(semesters).where(eq(semesters.teacherId, tid)).run();
-    drizzleDb.delete(holidays).where(eq(holidays.teacherId, tid)).run();
+      if (existingClassIds.length > 0) {
+        drizzleDb.delete(schedules).where(inArray(schedules.classId, existingClassIds)).run();
+        drizzleDb.delete(classStudents).where(inArray(classStudents.classId, existingClassIds)).run();
+      }
+      drizzleDb.delete(classes).where(eq(classes.teacherId, tid)).run();
+      drizzleDb.delete(students).where(eq(students.teacherId, tid)).run();
+      drizzleDb.delete(pricingTiers).where(eq(pricingTiers.teacherId, tid)).run();
+      drizzleDb.delete(semesters).where(eq(semesters.teacherId, tid)).run();
+      drizzleDb.delete(holidays).where(eq(holidays.teacherId, tid)).run();
 
-    if (restoreData.semesters.length) { drizzleDb.insert(semesters).values(restoreData.semesters).run(); }
-    if (restoreData.pricingTiers.length) { drizzleDb.insert(pricingTiers).values(restoreData.pricingTiers).run(); }
-    if (restoreData.students.length) { drizzleDb.insert(students).values(restoreData.students).run(); }
-    if (restoreData.classes.length) { drizzleDb.insert(classes).values(restoreData.classes).run(); }
-    if (restoreData.classStudents.length) { drizzleDb.insert(classStudents).values(restoreData.classStudents).run(); }
-    if (restoreData.schedules.length) { drizzleDb.insert(schedules).values(restoreData.schedules).run(); }
-    if (restoreData.holidays.length) { drizzleDb.insert(holidays).values(restoreData.holidays).run(); }
+      if (restoreData.semesters.length) { drizzleDb.insert(semesters).values(restoreData.semesters).run(); }
+      if (restoreData.pricingTiers.length) { drizzleDb.insert(pricingTiers).values(restoreData.pricingTiers).run(); }
+      if (restoreData.students.length) { drizzleDb.insert(students).values(restoreData.students).run(); }
+      if (restoreData.classes.length) { drizzleDb.insert(classes).values(restoreData.classes).run(); }
+      if (restoreData.classStudents.length) { drizzleDb.insert(classStudents).values(restoreData.classStudents).run(); }
+      if (restoreData.schedules.length) { drizzleDb.insert(schedules).values(restoreData.schedules).run(); }
+      if (restoreData.holidays.length) { drizzleDb.insert(holidays).values(restoreData.holidays).run(); }
 
-    counts.classes = restoreData.classes.length;
-    counts.students = restoreData.students.length;
-    counts.schedules = restoreData.schedules.length;
-    counts.semesters = restoreData.semesters.length;
-  })();
+      counts.classes = restoreData.classes.length;
+      counts.students = restoreData.students.length;
+      counts.schedules = restoreData.schedules.length;
+      counts.semesters = restoreData.semesters.length;
+    })();
+  } catch (err) {
+    return res.status(500).json({ error: `还原失败: ${err.message || '未知错误'}（事务已回滚，原数据保留）` });
+  }
 
   res.json({ ok: true, restored: counts });
 });

@@ -10,11 +10,15 @@ beforeEach(async () => {
 });
 
 describe('POST /api/semesters', () => {
-  it('creates a semester', async () => {
+  it('creates a semester and returns full object', async () => {
     const res = await request(app).post('/api/semesters').set(auth(token))
       .send({ name: '2026春季', type: 'spring', startDate: '2026-02-01', endDate: '2026-06-30' });
     expect(res.status).toBe(200);
     expect(res.body.id).toBeDefined();
+    expect(res.body.name).toBe('2026春季');
+    expect(res.body.type).toBe('spring');
+    expect(res.body.startDate).toBe('2026-02-01');
+    expect(res.body.endDate).toBe('2026-06-30');
   });
 
   it('rejects invalid type', async () => {
@@ -47,12 +51,15 @@ describe('GET /api/semesters', () => {
 });
 
 describe('PUT /api/semesters/:id', () => {
-  it('updates a semester', async () => {
+  it('updates a semester and returns full object', async () => {
     const { body: { id } } = await request(app).post('/api/semesters').set(auth(token))
       .send({ name: '2026春季', type: 'spring', startDate: '2026-02-01', endDate: '2026-06-30' });
     const res = await request(app).put(`/api/semesters/${id}`).set(auth(token))
       .send({ name: '2026春季学期' });
     expect(res.status).toBe(200);
+    expect(res.body.id).toBe(id);
+    expect(res.body.name).toBe('2026春季学期');
+    expect(res.body.startDate).toBe('2026-02-01');
   });
 
   it('returns 404 for other teacher semester', async () => {

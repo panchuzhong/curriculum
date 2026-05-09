@@ -4,6 +4,7 @@ import { api } from '../api';
 import { getCategoryColor, DarkContext } from '../utils/colors';
 import { toHoursAbs } from '../utils/date';
 import { useSimpleSwipe } from '../hooks/useSimpleSwipe';
+import { useToast } from '../components/ToastProvider';
 
 const COLLAPSE_THRESHOLD_MOBILE = 4;
 const COLLAPSE_THRESHOLD_DESKTOP = 9;
@@ -48,6 +49,7 @@ function resolveColor(label, dominantCategory, dark) {
 
 export default function YearlySchedule() {
   const navigate = useNavigate();
+  const toast = useToast();
   const dark = useContext(DarkContext);
   const [year, setYear] = useState(new Date().getFullYear());
   const [schedules, setSchedules] = useState([]);
@@ -59,8 +61,8 @@ export default function YearlySchedule() {
   const collapseLimit = isMobile ? COLLAPSE_THRESHOLD_MOBILE : COLLAPSE_THRESHOLD_DESKTOP;
 
   useEffect(() => {
-    api.getSchedules(`${year}-01-01`, `${year}-12-31`).then(setSchedules).catch(() => {});
-    api.getClasses().then(setClasses).catch(() => {});
+    api.getSchedules(`${year}-01-01`, `${year}-12-31`).then(setSchedules).catch(e => toast(e.message || '加载课表失败'));
+    api.getClasses().then(setClasses).catch(e => toast(e.message || '加载班级失败'));
   }, [year]);
 
   useEffect(() => { containerRef.current?.focus(); }, []);

@@ -1,20 +1,25 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import request from 'supertest';
 import { setupApp, makeUser, auth } from './route-helpers.js';
+import { logAudit } from '../services/audit.js';
 
 let app, drizzleDb, token;
 
 beforeEach(async () => {
   ({ app, drizzleDb } = await setupApp('/api/holidays', '../routes/holidays.js'));
   ({ token } = await makeUser(drizzleDb));
+  logAudit.mockClear();
 });
 
 describe('POST /api/holidays', () => {
-  it('creates a holiday', async () => {
+  it('creates a holiday and returns full object', async () => {
     const res = await request(app).post('/api/holidays').set(auth(token))
       .send({ date: '2026-01-01', type: 'holiday', name: '元旦' });
     expect(res.status).toBe(200);
     expect(res.body.id).toBeDefined();
+    expect(res.body.date).toBe('2026-01-01');
+    expect(res.body.type).toBe('holiday');
+    expect(res.body.name).toBe('元旦');
   });
 
   it('rejects invalid date', async () => {
@@ -57,11 +62,14 @@ describe('GET /api/holidays', () => {
 });
 
 describe('PUT /api/holidays/:id', () => {
-  it('updates a holiday', async () => {
+  it('updates a holiday and returns full object', async () => {
     const { body: { id } } = await request(app).post('/api/holidays').set(auth(token))
       .send({ date: '2026-01-01', type: 'holiday', name: '元旦' });
     const res = await request(app).put(`/api/holidays/${id}`).set(auth(token)).send({ name: '新年' });
     expect(res.status).toBe(200);
+    expect(res.body.id).toBe(id);
+    expect(res.body.name).toBe('新年');
+    expect(res.body.date).toBe('2026-01-01');
   });
 });
 
@@ -100,6 +108,51 @@ describe('POST /api/holidays/batch', () => {
   it('rejects non-array items', async () => {
     const res = await request(app).post('/api/holidays/batch').set(auth(token))
       .send({ items: 'not-array' });
+    expect(res.status).toBe(400);
+  });
+
+  it('rejects items array > 365', async () => {
+    const items = Array.from({ length: 366 }, (_, i) => ({
+      date: `2026-01-${String((i % 28) + 1).padStart(2, '0')}`, type: 'holiday', name: 'x',
+    }));
+    const res = await request(app).post('/api/holidays/batch').set(auth(token)).send({ items });
+    expect(res.status).toBe(400);
+  });
+});
+
+describe('Audit log + validation gaps', () => {
+  it('logs CREATE on POST /api/holidays', async () => {
+    await request(app).post('/api/holidays').set(auth(token))
+      .send({ date: '2026-01-01', type: 'holiday', name: '元旦' });
+    expect(logAudit).toHaveBeenCalledWith(expect.objectContaining({
+      action: 'CREATE', tableName: 'holidays',
+    }));
+  });
+
+  it('logs UPDATE on PUT /api/holidays/:id', async () => {
+    const { body: { id } } = await request(app).post('/api/holidays').set(auth(token))
+      .send({ date: '2026-01-01', type: 'holiday', name: '元旦' });
+    logAudit.mockClear();
+    await request(app).put(`/api/holidays/${id}`).set(auth(token)).send({ name: '新年' });
+    expect(logAudit).toHaveBeenCalledWith(expect.objectContaining({
+      action: 'UPDATE', tableName: 'holidays', recordId: id,
+    }));
+  });
+
+  it('logs DELETE on DELETE /api/holidays/:id', async () => {
+    const { body: { id } } = await request(app).post('/api/holidays').set(auth(token))
+      .send({ date: '2026-01-01', type: 'holiday', name: '元旦' });
+    logAudit.mockClear();
+    await request(app).delete(`/api/holidays/${id}`).set(auth(token));
+    expect(logAudit).toHaveBeenCalledWith(expect.objectContaining({
+      action: 'DELETE', tableName: 'holidays', recordId: id,
+    }));
+  });
+
+  it('rejects empty name on PUT /api/holidays/:id', async () => {
+    const { body: { id } } = await request(app).post('/api/holidays').set(auth(token))
+      .send({ date: '2026-01-01', type: 'holiday', name: '元旦' });
+    const res = await request(app).put(`/api/holidays/${id}`).set(auth(token)).send({ name: '' });
     expect(res.status).toBe(400);
   });
 });

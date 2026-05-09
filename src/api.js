@@ -25,7 +25,7 @@ async function request(method, path, body, { noAuth = false } = {}) {
   if (!noAuth && res.status === 401) {
     clearToken();
     window.location.href = `${import.meta.env.BASE_URL}login`;
-    return;
+    throw new Error('登录已过期,请重新登录');
   }
   const text = await res.text();
   if (!res.ok) {

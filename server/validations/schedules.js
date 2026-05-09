@@ -14,7 +14,7 @@ export const validateBatchCreate = [
   body('classId').isInt({ min: 1 }).withMessage('classId 须为正整数'),
   body('startTime').matches(TIME_RE).withMessage('开始时间格式须为 HH:MM'),
   body('endTime').matches(TIME_RE).withMessage('结束时间格式须为 HH:MM'),
-  body('dates').optional().isArray().withMessage('dates 须为数组'),
+  body('dates').optional().isArray({ max: 365 }).withMessage('dates 须为数组,最多 365 项'),
   body('dates.*').optional().matches(DATE_RE).withMessage('日期格式须为 YYYY-MM-DD'),
   body('weekday').optional().isInt({ min: 0, max: 6 }).withMessage('weekday 须为0-6'),
   body('semesterId').optional().isInt({ min: 1 }).withMessage('semesterId 须为正整数'),

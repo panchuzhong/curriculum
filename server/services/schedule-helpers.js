@@ -80,10 +80,11 @@ export function detectConflictGroups(daySchedules) {
   return groups;
 }
 
-export function getScheduleWithClass(id) {
+export function getScheduleWithClass(id, teacherId) {
   const s = drizzleDb.select().from(schedules).where(eq(schedules.id, id)).get();
   if (!s) return null;
   const cls = drizzleDb.select().from(classes).where(eq(classes.id, s.classId)).get();
+  if (teacherId != null && cls?.teacherId !== teacherId) return null;
   return { ...s, class: cls || null };
 }
 

@@ -20,7 +20,9 @@ router.post('/', validateCreateTier, handle, (req, res) => {
   const result = drizzleDb.insert(pricingTiers).values({
     teacherId: req.teacherId, minStudents, maxStudents, pricePerStudentPerHour,
   }).run();
-  res.json({ ok: true, id: result.lastInsertRowid });
+  const newId = Number(result.lastInsertRowid);
+  const created = drizzleDb.select().from(pricingTiers).where(eq(pricingTiers.id, newId)).get();
+  res.json(created);
 });
 
 router.put('/:id', validateUpdateTier, handle, (req, res) => {
@@ -32,7 +34,8 @@ router.put('/:id', validateUpdateTier, handle, (req, res) => {
   const safeUpdates = Object.fromEntries(Object.entries(req.body).filter(([k]) => allowed.includes(k)));
   if (Object.keys(safeUpdates).length === 0) return res.status(400).json({ error: 'No valid fields' });
   drizzleDb.update(pricingTiers).set(safeUpdates).where(eq(pricingTiers.id, +id)).run();
-  res.json({ ok: true });
+  const updated = drizzleDb.select().from(pricingTiers).where(eq(pricingTiers.id, +id)).get();
+  res.json(updated);
 });
 
 router.delete('/:id', (req, res) => {

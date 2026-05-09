@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../api';
 import { GRADES } from '../utils/constants';
+import { useToast } from '../components/ToastProvider';
 
 function getDefaultEndTime(start) {
   const [h, m] = start.split(':').map(Number);
@@ -11,6 +12,7 @@ function getDefaultEndTime(start) {
 
 export default function ScheduleDialog({ date, startTime, schedule, onClose, onSaved }) {
   const navigate = useNavigate();
+  const toast = useToast();
   const [classes, setClasses] = useState([]);
   const [subjects, setSubjects] = useState([]);
   const [mode, setMode] = useState('existing');
@@ -30,12 +32,12 @@ export default function ScheduleDialog({ date, startTime, schedule, onClose, onS
   const [error, setError] = useState('');
 
   useEffect(() => {
-    api.getClasses().then(setClasses).catch(() => {});
+    api.getClasses().then(setClasses).catch(e => toast(e.message || '加载班级失败'));
     api.getProfile().then(p => {
       const subs = p.subjects || [];
       setSubjects(subs);
       if (subs.length > 0) setNewClass(nc => ({ ...nc, subject: nc.subject || subs[0] }));
-    }).catch(() => {});
+    }).catch(e => toast(e.message || '加载学科失败'));
   }, []);
 
   useEffect(() => {

@@ -3,6 +3,7 @@ import { drizzleDb } from '../db/index.js';
 import { holidays } from '../db/schema.js';
 import { eq, and } from 'drizzle-orm';
 import { authMiddleware } from '../middleware/auth.js';
+import { logAudit } from '../services/audit.js';
 import handle from '../validations/handle.js';
 import { validateCreateHoliday, validateUpdateHoliday, validateBatchHolidays } from '../validations/holidays.js';
 
@@ -37,7 +38,10 @@ router.post('/', validateCreateHoliday, handle, (req, res) => {
   const result = drizzleDb.insert(holidays).values({
     teacherId: req.teacherId, date, type, name,
   }).run();
-  res.json({ id: result.lastInsertRowid });
+  const newId = Number(result.lastInsertRowid);
+  const created = drizzleDb.select().from(holidays).where(eq(holidays.id, newId)).get();
+  logAudit({ teacherId: req.teacherId, action: 'CREATE', tableName: 'holidays', recordId: newId, after: created });
+  res.json(created);
 });
 
 // Update a holiday
@@ -59,7 +63,9 @@ router.put('/:id', validateUpdateHoliday, handle, (req, res) => {
   }
 
   drizzleDb.update(holidays).set(safeUpdates).where(eq(holidays.id, +id)).run();
-  res.json({ ok: true });
+  const updated = drizzleDb.select().from(holidays).where(eq(holidays.id, +id)).get();
+  logAudit({ teacherId: req.teacherId, action: 'UPDATE', tableName: 'holidays', recordId: +id, before: existing, after: updated });
+  res.json(updated);
 });
 
 // Delete a holiday
@@ -70,6 +76,7 @@ router.delete('/:id', (req, res) => {
   if (!existing) return res.status(404).json({ error: 'Not found' });
 
   drizzleDb.delete(holidays).where(eq(holidays.id, +id)).run();
+  logAudit({ teacherId: req.teacherId, action: 'DELETE', tableName: 'holidays', recordId: +id, before: existing });
   res.json({ ok: true });
 });
 
@@ -88,6 +95,9 @@ router.post('/batch', validateBatchHolidays, handle, (req, res) => {
       }).run();
       count++;
     }
+  }
+  if (count > 0) {
+    logAudit({ teacherId: req.teacherId, action: 'BATCH_CREATE', tableName: 'holidays', after: { count } });
   }
   res.json({ count });
 });

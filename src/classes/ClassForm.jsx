@@ -2,9 +2,11 @@ import { useState, useEffect, useContext } from 'react';
 import { GRADES } from '../utils/constants';
 import { api } from '../api';
 import { getClassColor, getTextColor, DarkContext } from '../utils/colors';
+import { useToast } from '../components/ToastProvider';
 
 export default function ClassForm({ initial, onSubmit, onCancel }) {
   const dark = useContext(DarkContext);
+  const toast = useToast();
   const [subjects, setSubjects] = useState([]);
   const [form, setForm] = useState(initial || {
     name: '', grade: '初三', subject: '', studentCount: 1,
@@ -19,7 +21,7 @@ export default function ClassForm({ initial, onSubmit, onCancel }) {
       if (!initial && subs.length > 0 && !form.subject) {
         setForm(f => ({ ...f, subject: subs[0] }));
       }
-    }).catch(() => {});
+    }).catch(e => toast(e.message || '加载学科失败'));
   }, []);
 
   useEffect(() => { if (initial) setForm(initial); }, [initial]);

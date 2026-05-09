@@ -20,7 +20,9 @@ router.post('/', validateCreateSemester, handle, (req, res) => {
   const result = drizzleDb.insert(semesters).values({
     teacherId: req.teacherId, name, type, startDate, endDate,
   }).run();
-  res.json({ ok: true, id: result.lastInsertRowid });
+  const newId = Number(result.lastInsertRowid);
+  const created = drizzleDb.select().from(semesters).where(eq(semesters.id, newId)).get();
+  res.json(created);
 });
 
 router.put('/:id', validateUpdateSemester, handle, (req, res) => {
@@ -32,7 +34,8 @@ router.put('/:id', validateUpdateSemester, handle, (req, res) => {
   const safeUpdates = Object.fromEntries(Object.entries(req.body).filter(([k]) => allowed.includes(k)));
   if (Object.keys(safeUpdates).length === 0) return res.status(400).json({ error: 'No valid fields' });
   drizzleDb.update(semesters).set(safeUpdates).where(eq(semesters.id, +id)).run();
-  res.json({ ok: true });
+  const updated = drizzleDb.select().from(semesters).where(eq(semesters.id, +id)).get();
+  res.json(updated);
 });
 
 router.delete('/:id', (req, res) => {

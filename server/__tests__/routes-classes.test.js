@@ -10,11 +10,16 @@ beforeEach(async () => {
 });
 
 describe('POST /api/classes', () => {
-  it('creates a class', async () => {
+  it('creates a class and returns full object', async () => {
     const res = await request(app).post('/api/classes').set(auth(token))
       .send({ name: '数学一班', grade: '高一', subject: '数学', studentCount: 5 });
     expect(res.status).toBe(200);
     expect(res.body.id).toBeDefined();
+    expect(res.body.name).toBe('数学一班');
+    expect(res.body.grade).toBe('高一');
+    expect(res.body.subject).toBe('数学');
+    expect(res.body.studentCount).toBe(5);
+    expect(res.body.isDeleted).toBe(false);
   });
 
   it('rejects invalid grade', async () => {
@@ -56,12 +61,16 @@ describe('GET /api/classes', () => {
 });
 
 describe('PUT /api/classes/:id', () => {
-  it('updates a class', async () => {
+  it('updates a class and returns full object', async () => {
     const { body: { id } } = await request(app).post('/api/classes').set(auth(token))
       .send({ name: '旧名', grade: '高一', subject: '数学', studentCount: 5 });
     const res = await request(app).put(`/api/classes/${id}`).set(auth(token))
       .send({ name: '新名' });
     expect(res.status).toBe(200);
+    expect(res.body.id).toBe(id);
+    expect(res.body.name).toBe('新名');
+    expect(res.body.grade).toBe('高一');
+    expect(res.body.isDeleted).toBe(false);
   });
 
   it('rejects negative unitPrice', async () => {
@@ -72,6 +81,27 @@ describe('PUT /api/classes/:id', () => {
     expect(res.status).toBe(400);
   });
 
+  it('accepts unitPrice = 0 (free class) symmetrically with create', async () => {
+    const { body: { id } } = await request(app).post('/api/classes').set(auth(token))
+      .send({ name: '试听班', grade: '高一', subject: '数学', studentCount: 5, unitPrice: 0 });
+    const res = await request(app).put(`/api/classes/${id}`).set(auth(token))
+      .send({ unitPrice: 0 });
+    expect(res.status).toBe(200);
+    expect(res.body.unitPrice).toBe(0);
+  });
+});
+
+describe('POST /api/classes/:classId/students validation', () => {
+  it('rejects invalid phone in sub-router (consistent with /api/students)', async () => {
+    const { body: { id: classId } } = await request(app).post('/api/classes').set(auth(token))
+      .send({ name: '班', grade: '高一', subject: '数学', studentCount: 5 });
+    const res = await request(app).post(`/api/classes/${classId}/students`).set(auth(token))
+      .send({ name: '张三', phone: '123' });
+    expect(res.status).toBe(400);
+  });
+});
+
+describe('PUT /api/classes/:id (cont.)', () => {
   it('returns 404 for other teacher class', async () => {
     const { body: { id } } = await request(app).post('/api/classes').set(auth(token))
       .send({ name: '班', grade: '高一', subject: '数学', studentCount: 5 });
