@@ -37,6 +37,12 @@ describe('POST /api/pricing-tiers', () => {
       .send({ minStudents: 1 });
     expect(res.status).toBe(400);
   });
+
+  it('rejects max < min', async () => {
+    const res = await request(app).post('/api/pricing-tiers').set(auth(token))
+      .send({ minStudents: 5, maxStudents: 3, pricePerStudentPerHour: 100 });
+    expect(res.status).toBe(400);
+  });
 });
 
 describe('GET /api/pricing-tiers', () => {

@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { drizzleDb, db } from '../db/index.js';
-import { classes, pricingTiers, students, classStudents, schedules, holidays, semesters } from '../db/schema.js';
+import { classes, pricingTiers, students, classStudents, schedules, holidays, semesters, auditLog } from '../db/schema.js';
 import { eq, inArray } from 'drizzle-orm';
 import { authMiddleware } from '../middleware/auth.js';
 import { writeFileSync } from 'fs';
@@ -29,6 +29,7 @@ router.get('/', (req, res) => {
       : [],
     holidays: drizzleDb.select().from(holidays).where(eq(holidays.teacherId, tid)).all(),
     semesters: drizzleDb.select().from(semesters).where(eq(semesters.teacherId, tid)).all(),
+    auditLog: drizzleDb.select().from(auditLog).where(eq(auditLog.teacherId, tid)).all(),
   };
 
   const json = JSON.stringify(data);
@@ -37,7 +38,9 @@ router.get('/', (req, res) => {
     return res.status(413).json({ error: `备份数据过大（${sizeMB.toFixed(1)}MB），请清理历史数据后再试` });
   }
 
-  res.setHeader('Content-Disposition', `attachment; filename="backup_${new Date().toISOString().slice(0, 10)}.json"`);
+  const now = new Date();
+  const localDate = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+  res.setHeader('Content-Disposition', `attachment; filename="backup_${localDate}.json"`);
   res.type('json').send(json);
 });
 
@@ -79,6 +82,7 @@ router.post('/restore', (req, res) => {
         : [],
       holidays: drizzleDb.select().from(holidays).where(eq(holidays.teacherId, tid2)).all(),
       semesters: drizzleDb.select().from(semesters).where(eq(semesters.teacherId, tid2)).all(),
+      auditLog: drizzleDb.select().from(auditLog).where(eq(auditLog.teacherId, tid2)).all(),
     };
     const ts = new Date().toISOString().replace(/[:.]/g, '-');
     writeFileSync(`./data/backup_pre_restore_${ts}.json`, JSON.stringify(snapshot));
@@ -96,14 +100,16 @@ router.post('/restore', (req, res) => {
     createdAt: (!r.createdAt || r.createdAt === 'CURRENT_TIMESTAMP') ? now : r.createdAt,
   }));
 
+  const arr = (v) => Array.isArray(v) ? v : [];
   const restoreData = {
-    classes: fixTimestamps(forceOwner(data.classes)),
-    pricingTiers: fixTimestamps(forceOwner(data.pricingTiers || [])),
-    students: fixTimestamps(forceOwner(data.students)),
-    classStudents: data.classStudents || [],
-    schedules: fixTimestamps(data.schedules),
-    holidays: forceOwner(data.holidays || []),
-    semesters: fixTimestamps(forceOwner(data.semesters || [])),
+    classes: fixTimestamps(forceOwner(arr(data.classes))),
+    pricingTiers: fixTimestamps(forceOwner(arr(data.pricingTiers))),
+    students: fixTimestamps(forceOwner(arr(data.students))),
+    classStudents: arr(data.classStudents),
+    schedules: fixTimestamps(arr(data.schedules)),
+    holidays: forceOwner(arr(data.holidays)),
+    semesters: fixTimestamps(forceOwner(arr(data.semesters))),
+    auditLog: forceOwner(arr(data.auditLog)),
   };
 
   // Validate schedule and classStudents references point to restored classes
@@ -128,6 +134,7 @@ router.post('/restore', (req, res) => {
       drizzleDb.delete(pricingTiers).where(eq(pricingTiers.teacherId, tid)).run();
       drizzleDb.delete(semesters).where(eq(semesters.teacherId, tid)).run();
       drizzleDb.delete(holidays).where(eq(holidays.teacherId, tid)).run();
+      drizzleDb.delete(auditLog).where(eq(auditLog.teacherId, tid)).run();
 
       if (restoreData.semesters.length) { drizzleDb.insert(semesters).values(restoreData.semesters).run(); }
       if (restoreData.pricingTiers.length) { drizzleDb.insert(pricingTiers).values(restoreData.pricingTiers).run(); }
@@ -136,11 +143,13 @@ router.post('/restore', (req, res) => {
       if (restoreData.classStudents.length) { drizzleDb.insert(classStudents).values(restoreData.classStudents).run(); }
       if (restoreData.schedules.length) { drizzleDb.insert(schedules).values(restoreData.schedules).run(); }
       if (restoreData.holidays.length) { drizzleDb.insert(holidays).values(restoreData.holidays).run(); }
+      if (restoreData.auditLog.length) { drizzleDb.insert(auditLog).values(restoreData.auditLog).run(); }
 
       counts.classes = restoreData.classes.length;
       counts.students = restoreData.students.length;
       counts.schedules = restoreData.schedules.length;
       counts.semesters = restoreData.semesters.length;
+      counts.auditLog = restoreData.auditLog.length;
     })();
   } catch (err) {
     return res.status(500).json({ error: `还原失败: ${err.message || '未知错误'}（事务已回滚，原数据保留）` });

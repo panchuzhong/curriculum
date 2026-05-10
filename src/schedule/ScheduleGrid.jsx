@@ -105,9 +105,10 @@ export default function ScheduleGrid({ dates, schedules, visibleDays = 7, weekSt
 
   const N = dates.length;
 
+  const safeSchedules = schedules || [];
   const byDate = {};
   dates.forEach(d => byDate[d] = []);
-  schedules.forEach(s => {
+  safeSchedules.forEach(s => {
     if (byDate[s.date] !== undefined) byDate[s.date].push(s);
   });
   Object.values(byDate).forEach(arr => arr.sort((a, b) => a.startTime.localeCompare(b.startTime)));
@@ -118,7 +119,7 @@ export default function ScheduleGrid({ dates, schedules, visibleDays = 7, weekSt
     : new Set(dates);
   let startHour = DEFAULT_START;
   let latestEndMin = DEFAULT_END * 60;
-  schedules.forEach(s => {
+  safeSchedules.forEach(s => {
     if (!visibleDateSet.has(s.date)) return;
     const sh = parseInt(s.startTime.split(':')[0]);
     if (sh < startHour) startHour = sh;

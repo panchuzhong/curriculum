@@ -8,6 +8,7 @@ if (!JWT_SECRET) {
   console.error('FATAL: JWT_SECRET environment variable is not set');
   process.exit(1);
 }
+const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || '7d';
 
 export function authMiddleware(req, res, next) {
   // Try API key first
@@ -35,5 +36,5 @@ export function authMiddleware(req, res, next) {
 }
 
 export function signToken(teacherId) {
-  return jwt.sign({ teacherId }, JWT_SECRET, { expiresIn: '7d' });
+  return jwt.sign({ teacherId }, JWT_SECRET, { expiresIn: JWT_EXPIRES_IN });
 }

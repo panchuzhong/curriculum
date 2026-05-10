@@ -65,4 +65,14 @@ describe('GET /api/audit-log', () => {
     const res = await request(app).get('/api/audit-log');
     expect(res.status).toBe(401);
   });
+
+  it('rejects invalid table value', async () => {
+    const res = await request(app).get('/api/audit-log?table=invalid_table').set(auth(token));
+    expect(res.status).toBe(400);
+  });
+
+  it('rejects invalid action value', async () => {
+    const res = await request(app).get('/api/audit-log?action=HACK').set(auth(token));
+    expect(res.status).toBe(400);
+  });
 });

@@ -7,12 +7,24 @@ export const validateCreateSemester = [
   body('name').notEmpty().withMessage('学期名称不能为空'),
   body('type').isIn(VALID_TYPES).withMessage(`学期类型须为: ${VALID_TYPES.join('/')}`),
   body('startDate').matches(DATE_RE).withMessage('开始日期格式须为 YYYY-MM-DD'),
-  body('endDate').matches(DATE_RE).withMessage('结束日期格式须为 YYYY-MM-DD'),
+  body('endDate').matches(DATE_RE).withMessage('结束日期格式须为 YYYY-MM-DD')
+    .custom((endDate, { req }) => {
+      if (req.body.startDate && endDate < req.body.startDate) {
+        throw new Error('结束日期须不早于开始日期');
+      }
+      return true;
+    }),
 ];
 
 export const validateUpdateSemester = [
   body('name').optional().notEmpty().withMessage('学期名称不能为空'),
   body('type').optional().isIn(VALID_TYPES).withMessage(`学期类型须为: ${VALID_TYPES.join('/')}`),
   body('startDate').optional().matches(DATE_RE).withMessage('开始日期格式须为 YYYY-MM-DD'),
-  body('endDate').optional().matches(DATE_RE).withMessage('结束日期格式须为 YYYY-MM-DD'),
+  body('endDate').optional().matches(DATE_RE).withMessage('结束日期格式须为 YYYY-MM-DD')
+    .custom((endDate, { req }) => {
+      if (req.body.startDate && endDate < req.body.startDate) {
+        throw new Error('结束日期须不早于开始日期');
+      }
+      return true;
+    }),
 ];

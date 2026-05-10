@@ -60,7 +60,7 @@ export default function BatchScheduleDialog({ onClose, onSaved }) {
     let start, end;
     if (mode === 'semester') {
       if (!form.semesterId || !selectedSemester) return null;
-      const today = new Date().toISOString().slice(0, 10);
+      const today = todayStr();
       start = today > selectedSemester.startDate ? today : selectedSemester.startDate;
       end = selectedSemester.endDate;
     } else {
@@ -198,7 +198,7 @@ export default function BatchScheduleDialog({ onClose, onSaved }) {
                 {op === 'delete' && selectedSemester && (
                   <p className="text-xs text-gray-500 dark:text-gray-400">
                     将删除 {(() => {
-                      const today = new Date().toISOString().slice(0, 10);
+                      const today = todayStr();
                       return today > selectedSemester.startDate ? today : selectedSemester.startDate;
                     })()} ~ {selectedSemester.endDate} 范围内该班级的所有排课
                   </p>

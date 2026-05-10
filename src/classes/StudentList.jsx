@@ -5,6 +5,7 @@ import { useToast } from '../components/ToastProvider';
 
 function StudentDialog({ student, classes, onClose, onSaved }) {
   const toast = useToast();
+  const dark = useContext(DarkContext);
   const [saving, setSaving] = useState(false);
   const [form, setForm] = useState({
     name: '', birthDate: '', phone: '', parentName: '', parentPhone: '', note: '', classIds: [],

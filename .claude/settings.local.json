@@ -10,7 +10,12 @@
       "Bash(node *)",
       "Bash(npx vitest *)",
       "Bash(npm test *)",
-      "Bash(git add *)"
+      "Bash(git add *)",
+      "Bash(git commit -m ' *)",
+      "Bash(grep -rn \"\\\\[\\\\s*\\\\]$\" /home/pcz/workspace/curriculum/src/schedule --include=\"*.jsx\")",
+      "Bash(sed -n '1,10p' /home/pcz/workspace/curriculum/src/schedule/useWeekNavigation.js)",
+      "Bash(sed -n '69,71p' /home/pcz/workspace/curriculum/src/schedule/useWeekNavigation.js)",
+      "Bash(grep *)"
     ]
   }
 }

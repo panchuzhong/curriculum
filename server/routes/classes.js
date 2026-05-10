@@ -79,6 +79,19 @@ router.delete('/:id', (req, res) => {
   res.json({ ok: true });
 });
 
+// Restore a soft-deleted class
+router.post('/:id/restore', (req, res) => {
+  const { id } = req.params;
+  const existing = drizzleDb.select().from(classes)
+    .where(and(eq(classes.id, +id), eq(classes.teacherId, req.teacherId))).get();
+  if (!existing) return res.status(404).json({ error: 'Not found' });
+  if (!existing.deleted) return res.status(400).json({ error: '该班级未被删除,无需恢复' });
+  drizzleDb.update(classes).set({ deleted: false }).where(eq(classes.id, +id)).run();
+  const restored = drizzleDb.select().from(classes).where(eq(classes.id, +id)).get();
+  logAudit({ teacherId: req.teacherId, action: 'UPDATE', tableName: 'classes', recordId: +id, before: existing, after: { deleted: false } });
+  res.json({ ...restored, isDeleted: !!restored.deleted });
+});
+
 // ── Sub-resource: students under a class ──
 const classStudentRouter = Router({ mergeParams: true });
 

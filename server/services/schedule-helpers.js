@@ -50,7 +50,13 @@ export function resolveRange(query) {
 
 export function toCSV(rows) {
   return '﻿' + rows.map(r =>
-    r.map(c => `"${String(c ?? '').replace(/"/g, '""')}"`).join(',')
+    r.map(c => {
+      const s = String(c ?? '');
+      // CSV formula-injection guard: prefix cells starting with =,+,-,@ (or tab/CR)
+      // with a single quote so Excel/Sheets treat them as text.
+      const safe = /^[=+\-@\t\r]/.test(s) ? "'" + s : s;
+      return `"${safe.replace(/"/g, '""')}"`;
+    }).join(',')
   ).join('\n');
 }
 

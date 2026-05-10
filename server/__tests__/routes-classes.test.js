@@ -129,6 +129,36 @@ describe('DELETE /api/classes/:id', () => {
   });
 });
 
+describe('POST /api/classes/:id/restore', () => {
+  it('restores a soft-deleted class', async () => {
+    const { body: { id } } = await request(app).post('/api/classes').set(auth(token))
+      .send({ name: '可恢复', grade: '高一', subject: '数学', studentCount: 5 });
+    await request(app).delete(`/api/classes/${id}`).set(auth(token));
+    const res = await request(app).post(`/api/classes/${id}/restore`).set(auth(token));
+    expect(res.status).toBe(200);
+    expect(res.body.id).toBe(id);
+    expect(res.body.isDeleted).toBe(false);
+    const list = await request(app).get('/api/classes').set(auth(token));
+    expect(list.body).toHaveLength(1);
+  });
+
+  it('returns 400 if class not deleted', async () => {
+    const { body: { id } } = await request(app).post('/api/classes').set(auth(token))
+      .send({ name: '正常', grade: '高一', subject: '数学', studentCount: 5 });
+    const res = await request(app).post(`/api/classes/${id}/restore`).set(auth(token));
+    expect(res.status).toBe(400);
+  });
+
+  it('returns 404 for other teacher class', async () => {
+    const { body: { id } } = await request(app).post('/api/classes').set(auth(token))
+      .send({ name: '别人的', grade: '高一', subject: '数学', studentCount: 5 });
+    await request(app).delete(`/api/classes/${id}`).set(auth(token));
+    const { token: token2 } = await makeUser(drizzleDb, 'user2');
+    const res = await request(app).post(`/api/classes/${id}/restore`).set(auth(token2));
+    expect(res.status).toBe(404);
+  });
+});
+
 describe('Data isolation', () => {
   it('does not show other teacher classes', async () => {
     await request(app).post('/api/classes').set(auth(token))

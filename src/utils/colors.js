@@ -21,8 +21,8 @@ function satMod(baseL, dark) {
 }
 
 export function getClassColor(cls, dark = _dark) {
-  const hue = SUBJECT_HUES[cls.subject] || { h: 0, s: 0 };
-  const baseL = GRADE_LIGHTNESS[cls.grade] ?? 50;
+  const hue = (cls && SUBJECT_HUES[cls.subject]) || { h: 0, s: 0 };
+  const baseL = (cls && GRADE_LIGHTNESS[cls.grade]) ?? 50;
   const l = mappedLightness(baseL, dark);
   const s = Math.round(hue.s * satMod(baseL, dark));
   return `hsl(${hue.h}, ${s}%, ${Math.round(l)}%)`;
@@ -30,7 +30,7 @@ export function getClassColor(cls, dark = _dark) {
 
 export function getTextColor(cls, dark = _dark) {
   if (dark) return 'rgba(255,255,255,0.92)';
-  const baseL = GRADE_LIGHTNESS[cls.grade] ?? 50;
+  const baseL = (cls && GRADE_LIGHTNESS[cls.grade]) ?? 50;
   const l = mappedLightness(baseL, false);
   return l < 55 ? '#ffffff' : '#1a1a1a';
 }

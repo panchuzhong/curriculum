@@ -38,6 +38,12 @@ describe('POST /api/semesters', () => {
       .send({ type: 'spring', startDate: '2026-02-01', endDate: '2026-06-30' });
     expect(res.status).toBe(400);
   });
+
+  it('rejects endDate < startDate', async () => {
+    const res = await request(app).post('/api/semesters').set(auth(token))
+      .send({ name: '反向', type: 'spring', startDate: '2026-06-30', endDate: '2026-02-01' });
+    expect(res.status).toBe(400);
+  });
 });
 
 describe('GET /api/semesters', () => {

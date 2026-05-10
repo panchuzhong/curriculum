@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import request from 'supertest';
+import { eq } from 'drizzle-orm';
 import { setupApp, makeUser, auth } from './route-helpers.js';
 vi.mock('../services/holidays.js', () => ({ isHoliday: () => false, getHolidayName: () => '' }));
 
@@ -267,6 +268,23 @@ describe('GET /api/schedules/summary', () => {
 
   it('requires start/end params', async () => {
     const res = await request(app).get('/api/schedules/summary').set(auth(token));
+    expect(res.status).toBe(400);
+  });
+
+  it('CSV export prefixes formula-injection cells with single quote', async () => {
+    const { classes } = await import('../db/schema.js');
+    drizzleDb.update(classes).set({ name: '=cmd|attack' }).where(eq(classes.id, classId)).run();
+    await request(app).post('/api/schedules').set(auth(token))
+      .send({ classId, date: '2026-05-04', startTime: '09:00', endTime: '10:30' });
+    const res = await request(app).get('/api/schedules/summary?start=2026-05-01&end=2026-05-31&format=csv').set(auth(token));
+    expect(res.status).toBe(200);
+    expect(res.text).toContain(`"'=cmd|attack"`);
+  });
+});
+
+describe('GET /api/schedules/free-slots edge cases', () => {
+  it('rejects when after >= before', async () => {
+    const res = await request(app).get('/api/schedules/free-slots?date=2026-05-04&after=20:00&before=10:00').set(auth(token));
     expect(res.status).toBe(400);
   });
 });

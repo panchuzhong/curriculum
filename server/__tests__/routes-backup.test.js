@@ -105,4 +105,24 @@ describe('POST /api/backup/restore', () => {
       .send({ version: 1, classes: [], students: [], schedules: [] });
     expect(res.status).toBe(401);
   });
+
+  it('exports and restores audit log', async () => {
+    const { auditLog } = await import('../db/schema.js');
+    drizzleDb.insert(auditLog).values({
+      teacherId, action: 'CREATE', tableName: 'classes', recordId: 1,
+      timestamp: new Date().toISOString(), afterData: JSON.stringify({ name: 'audited' }),
+    }).run();
+
+    const exported = (await request(app).get('/api/backup').set(auth(token))).body;
+    expect(exported.auditLog).toHaveLength(1);
+    expect(exported.auditLog[0].action).toBe('CREATE');
+
+    // Restore with the audit log preserved
+    const res = await request(app).post('/api/backup/restore').set(auth(token)).send({
+      ...exported,
+      classes: [], students: [], schedules: [],
+    });
+    expect(res.status).toBe(200);
+    expect(res.body.restored.auditLog).toBe(1);
+  });
 });

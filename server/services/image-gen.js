@@ -61,6 +61,16 @@ function getDateRange(startDateStr, endDateStr) {
   return dates;
 }
 
+function localDateStr(d) {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+function escapeHtml(s) {
+  return String(s ?? '').replace(/[&<>"']/g, ch => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
+  })[ch]);
+}
+
 function findConflictGroups(schedules) {
   if (!schedules.length) return [];
   const sorted = [...schedules].sort((a, b) => toMin(a.startTime) - toMin(b.startTime));
@@ -102,7 +112,7 @@ function assignColumns(group) {
 export async function generateScheduleImage(schedulesWithClasses, startDate, endDate, { theme = 'auto', rowH = 30, scale, highlight } = {}) {
   const dates = getDateRange(startDate, endDate);
   const numDays = dates.length;
-  const todayStr = new Date().toISOString().slice(0, 10);
+  const todayStr = localDateStr(new Date());
 
   const byDate = {};
   dates.forEach(d => byDate[d] = []);
@@ -214,7 +224,8 @@ export async function generateScheduleImage(schedulesWithClasses, startDate, end
         const lh = fs * 1.3;
         const maxNameLines = isShort ? 1 : Math.max(1, Math.floor((clippedH - lh * 2) / lh));
 
-        const name = `${item.class.isCompetition ? '★ ' : ''}${item.class.name}`;
+        const name = `${item.class.isCompetition ? '★ ' : ''}${escapeHtml(item.class.name)}`;
+        const safeLoc = item.locationName ? escapeHtml(item.locationName) : '';
         const nameStyle = isShort
           ? 'font-weight:bold;white-space:nowrap;overflow:hidden;text-overflow:ellipsis'
           : `font-weight:bold;overflow:hidden;display:-webkit-box;-webkit-line-clamp:${maxNameLines};-webkit-box-orient:vertical;word-break:break-word`;
@@ -224,7 +235,7 @@ export async function generateScheduleImage(schedulesWithClasses, startDate, end
         blocksHtml += `<div style="position:absolute;top:${clippedTop}px;left:${left}px;width:${width}px;height:${clippedH}px;background:${bg};color:${fg};border:${border};border-radius:4px;overflow:hidden;z-index:10;${isShort ? `display:flex;align-items:center;gap:3px;padding:0 4px` : 'padding:3px 4px'}">
           ${isShort
             ? `<div style="font-size:${fs}px;line-height:1.25;${nameStyle};flex:1;min-width:0">${name}</div><div style="font-size:${timeFs}px;opacity:0.7;white-space:nowrap;flex-shrink:0">${item.startTime}-${item.endTime}</div>`
-            : `<div style="font-size:${fs}px;line-height:${lh}px;${nameStyle}">${name}</div><div style="font-size:${fs}px;line-height:${lh}px;opacity:0.75">${item.startTime}-${item.endTime}</div>${item.locationName ? `<div style="font-size:${locFs}px;opacity:0.65;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">📍${item.locationName}</div>` : ''}`
+            : `<div style="font-size:${fs}px;line-height:${lh}px;${nameStyle}">${name}</div><div style="font-size:${fs}px;line-height:${lh}px;opacity:0.75">${item.startTime}-${item.endTime}</div>${safeLoc ? `<div style="font-size:${locFs}px;opacity:0.65;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">📍${safeLoc}</div>` : ''}`
           }
         </div>`;
       });

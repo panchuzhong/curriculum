@@ -15,6 +15,7 @@ router.get('/agent/help', (req, res) => {
       jwt: {
         header: 'Authorization: Bearer <token>',
         obtain: 'POST /api/auth/login 返回',
+        expiresIn: '默认 7 天,可通过环境变量 JWT_EXPIRES_IN 配置(zeit/ms 格式,如 "1h"/"30d")',
       },
     },
     endpoints: {
@@ -38,6 +39,7 @@ router.get('/agent/help', (req, res) => {
         'POST /api/classes': '创建班级（unitPrice 留空时自动匹配阶梯定价），返回完整班级对象（含 id 和 isDeleted）',
         'PUT /api/classes/:id': '更新班级信息，返回完整班级对象',
         'DELETE /api/classes/:id': '删除班级（软删除，排课记录保留），返回 {ok:true}',
+        'POST /api/classes/:id/restore': '恢复软删除的班级（deleted=true → false），返回完整班级对象;对未删除班级调用返回 400',
         'GET /api/classes/:classId/students': '获取指定班级的学生列表',
         'POST /api/classes/:classId/students': '在指定班级下创建学生并自动关联到该班级，返回完整学生对象（含 classIds:[classId]）',
         'DELETE /api/classes/:classId/students/:studentId': '从指定班级移除学生（仅解除关联，不删除学生实体），返回 {ok:true}',
@@ -62,7 +64,7 @@ router.get('/agent/help', (req, res) => {
         'PUT /api/schedules/batch': '批量更新排课时间/地点（见 batchUpdateMode）',
         'GET /api/schedules/summary?start=YYYY-MM-DD&end=YYYY-MM-DD': '课时与收入汇总统计（见 summaryResponse）；加 &format=csv 返回 CSV 文件（UTF-8 BOM，Excel 兼容）；加 &classId=1 或 &classId=1,2,3 按班级过滤',
         'GET /api/schedules/export?start=YYYY-MM-DD&end=YYYY-MM-DD': '导出排课明细列表（含班级信息）；加 &classId=N 过滤班级；加 &format=csv 返回 CSV',
-        'GET /api/schedules/free-slots?date=YYYY-MM-DD': '查询单日空闲时段（默认 08:00-23:00；可用 after=HH:MM&before=HH:MM 限制时段）',
+        'GET /api/schedules/free-slots?date=YYYY-MM-DD': '查询单日空闲时段（默认 08:00-23:00；可用 after=HH:MM&before=HH:MM 限制时段;不支持跨午夜,after≥before 返回 400）',
         'GET /api/schedules/free-slots?date=&minDuration=60': '只返回连续可用 ≥60 分钟的时段，适合约课筛选',
         'GET /api/schedules/free-slots?start=YYYY-MM-DD&end=YYYY-MM-DD': '查询多日空闲时段（同样支持 after/before/minDuration）',
         'GET /api/schedules/conflicts?start=YYYY-MM-DD&end=YYYY-MM-DD&limit=N': '查询冲突排课分组（默认今天起60天，limit 上限100，默认20）',
@@ -96,14 +98,14 @@ router.get('/agent/help', (req, res) => {
         'GET /api/schedule-image?start=&end=&highlight=YYYY-MM-DD': '高亮指定日期列（黄色边框），适合截给家长看某天课表',
       },
       backup: {
-        'GET /api/backup': '导出教师全量数据为 JSON（classes, students, schedules, semesters, holidays, pricingTiers, classStudents），触发浏览器下载',
-        'POST /api/backup/restore': '从备份 JSON 原子还原（先清空再写入，事务保证）；teacherId 强制覆盖为当前认证教师，防止数据越权；自动校验 classStudents 关联的 classId 和 studentId 是否存在，不存在则跳过',
+        'GET /api/backup': '导出教师全量数据为 JSON（classes, students, schedules, semesters, holidays, pricingTiers, classStudents, auditLog），触发浏览器下载',
+        'POST /api/backup/restore': '从备份 JSON 原子还原（先清空再写入，事务保证）；teacherId 强制覆盖为当前认证教师，防止数据越权；自动校验 classStudents 关联的 classId 和 studentId 是否存在，不存在则跳过;非数组字段按空数组处理;事务失败返回 500 含具体原因(原数据保留);auditLog 也会被清空并按备份还原',
       },
       auditLog: {
-        'GET /api/audit-log': '查询操作日志（默认最新 100 条）',
-        'GET /api/audit-log?limit=N': '最多返回 N 条（上限 500）',
-        'GET /api/audit-log?table=schedules': '按数据表过滤（schedules / classes）',
-        'GET /api/audit-log?action=DELETE': '按操作类型过滤（CREATE / UPDATE / DELETE / BATCH_DELETE / BATCH_UPDATE）',
+        'GET /api/audit-log': '查询操作日志（默认最新 100 条,按 id 倒序;返回的 beforeData/afterData 已 JSON.parse 还原为对象）',
+        'GET /api/audit-log?limit=N': '最多返回 N 条（默认 100,上限 500,负数/NaN 自动 clamp）',
+        'GET /api/audit-log?table=X': '按数据表过滤,枚举: schedules/classes/students/holidays/class_students;非法值返回 400',
+        'GET /api/audit-log?action=X': '按操作类型过滤,枚举: CREATE/UPDATE/DELETE/BATCH_CREATE/BATCH_UPDATE/BATCH_DELETE;非法值返回 400',
       },
     },
     batchScheduleModes: {
@@ -167,7 +169,7 @@ router.get('/agent/help', (req, res) => {
         bySubject: '按学科分组 [{subject, count, hours, revenue}]，按次数降序',
         byGrade: '按年级分组 [{grade, count, hours, revenue}]，按次数降序',
       },
-      revenueFormula: '(unitPrice × studentCount - discountAmount) × (durationBilling 分钟 / 60)',
+      revenueFormula: '(unitPrice × studentCount - discountAmount) × (durationBilling 分钟 / 60); discount 大于课时基价时收入会为负数(教师可手动控制让利场景);unitPrice/studentCount 缺失按 0 处理',
     },
     dataModels: {
       class: {
@@ -228,19 +230,22 @@ router.get('/agent/help', (req, res) => {
     notes: [
       '【写接口返回体约定】单资源 POST/PUT 统一返回完整资源对象（含 id 与所有派生字段，如 classes 的 isDeleted、students 的 classIds、schedules 的 class 与 warnings）；DELETE 单资源返回 {ok:true}；批量端点（POST/PUT/DELETE /api/*/batch、POST /api/holidays/batch）返回 {count, ids?, ...}；前端不依赖 ok 字段，只看 HTTP 状态码',
       '所有 JSON 响应的 Content-Type 均为 application/json; charset=utf-8',
+      '请求体大小限制 50 MB(覆盖备份还原最大场景);超出返回 413',
       '排课冲突不会被服务端阻止，前端并排显示并红色高亮；可用 GET /api/schedules/conflicts 查询已有冲突',
       'GET /api/schedules 支持 range=today|tomorrow|week|month 快捷参数，week=本周周一到周日，与 start/end 互斥',
-      '日期相关接口（range、free-slots、conflicts 的 today 默认值等）基于服务器系统时区；部署时请确认 TZ=Asia/Shanghai 或等值中国时区',
+      '日期相关接口（range、free-slots、conflicts 的 today 默认值等）基于服务器系统时区；部署时请确认 TZ=Asia/Shanghai 或等值中国时区。所有"今天"判断(批量排课、图片高亮、备份文件名)统一使用本地时区,不依赖 UTC',
       'free-slots 支持 after/before 参数限制查询时段（如 after=14:00&before=21:00），优先级高于 dayStart/dayEnd；支持 minDuration=N 过滤（只返回连续可用 ≥N 分钟的时段）',
       'POST/PUT /api/schedules 返回的排课对象可能含 warnings 字段（数组），包含同一时段的冲突排课信息（id/classId/className/startTime/endTime），不阻止创建/更新',
       'conflicts 返回 {total, groups:[{date, schedules:[...]}]}，total = groups.length（冲突组数量,不是涉事排课条数）；schedules 为同一天内互相重叠的排课组（每组至少 2 条）',
       'POST /api/schedules 和 PUT /api/schedules/:id 均返回完整排课对象（含 class 字段），可直接判断是否存在冲突',
       'durationBilling 默认由 endTime - startTime 自动计算，跨午夜时自动处理',
       '法定节假日数据可通过 POST /api/holidays/batch 批量导入，批量排课（学期模式）自动跳过',
+      '批量排课学期模式跳过假期的优先级:用户 workday 调休 > 用户 holiday > 内置法定假期。即:同一日期若同时存在内置 holiday + 用户 workday,则视为上班日(可排课);用户加 holiday 在内置 workday 上则视为节假日(跳过)。',
+      '内置法定假期数据覆盖 2025-2027 三年;2028+ 年份需通过 POST /api/holidays/batch 自行导入或在 GET /api/holidays 中 type=holiday 添加,否则批量排课不会自动跳过',
       '批量端点 dates/items 数组长度上限 365 条,超出返回 400',
-      '图片导出支持任意时间范围，天数越多图片越宽；生成失败时返回 JSON {error}（不含内部 detail）；rowH 范围 16-60，默认 30',
+      '图片导出支持任意时间范围，天数越多图片越宽；生成失败时返回 JSON {error}（不含内部 detail）；rowH 范围 16-60，默认 30；班级名/地点名等用户输入在生成 HTML 时统一 HTML 转义,无 XSS 风险',
       'PUT /api/schedules/batch 只允许修改时间和地点字段，classId/date 等核心字段不可批量篡改',
-      'GET /api/schedules/summary 和 GET /api/schedules/export 均支持 &format=csv，响应含 UTF-8 BOM，Excel 直接打开不乱码',
+      'GET /api/schedules/summary 和 GET /api/schedules/export 均支持 &format=csv，响应含 UTF-8 BOM，Excel 直接打开不乱码;以 = + - @ \\t \\r 开头的单元格自动加单引号前缀防御 CSV 公式注入',
       'GET /api/backup 返回全量 JSON；POST /api/backup/restore 原子还原（事务），恢复过程中 teacherId 强制绑定当前账号；classStudents 关联会校验 classId/studentId 是否存在于恢复数据中，无效关联自动跳过',
       '学生可属于多个班级，通过 classIds 数组关联；DELETE /api/students/:id 删除学生实体并清理所有关联，DELETE /api/classes/:classId/students/:studentId 仅从指定班级移除',
       'PUT /api/students/:id 采用部分更新语义：仅写入请求体中包含且值非 undefined 的字段，未传字段保持原值；classIds 传入时全量替换班级关联',
@@ -275,8 +280,8 @@ router.get('/agent/help', (req, res) => {
         batchDelete: { ids: '整数数组，或 start+end 日期范围' },
       },
       semesters: {
-        create: { name: '必填', type: '枚举：spring/fall/winter/summer（对应 春季/秋季/暑假/寒假）', startDate: 'YYYY-MM-DD 必填', endDate: 'YYYY-MM-DD 必填' },
-        update: { name: '可选', type: '可选枚举', startDate: '可选', endDate: '可选' },
+        create: { name: '必填', type: '枚举：spring/fall/winter/summer（对应 春季/秋季/暑假/寒假）', startDate: 'YYYY-MM-DD 必填', endDate: 'YYYY-MM-DD 必填,须不早于 startDate' },
+        update: { name: '可选', type: '可选枚举', startDate: '可选', endDate: '可选,变更时仍校验不早于 startDate' },
       },
       holidays: {
         create: { date: 'YYYY-MM-DD 必填', type: '枚举：holiday/workday', name: '必填非空' },
@@ -284,8 +289,8 @@ router.get('/agent/help', (req, res) => {
         batch: { items: '数组,最多 365 项;同一 date 仅插入第一条（重复跳过）' },
       },
       pricingTiers: {
-        create: { minStudents: '≥1整数', maxStudents: '≥1整数', pricePerStudentPerHour: '>0 数字' },
-        update: { minStudents: '可选≥1', maxStudents: '可选≥1', pricePerStudentPerHour: '可选>0' },
+        create: { minStudents: '≥1整数', maxStudents: '≥1整数,须不小于 minStudents', pricePerStudentPerHour: '>0 数字' },
+        update: { minStudents: '可选≥1', maxStudents: '可选≥1,变更时仍校验不小于 minStudents', pricePerStudentPerHour: '可选>0' },
       },
     },
     examples: {

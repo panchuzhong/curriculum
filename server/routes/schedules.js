@@ -101,16 +101,17 @@ router.post('/batch', validateBatchCreate, handle, (req, res) => {
     const current = new Date(semesterStart + 'T00:00:00');
     const end = new Date(semester.endDate + 'T00:00:00');
 
-    // Fetch user-added holidays for this teacher
-    const userHolidayDates = new Set(
-      drizzleDb.select({ date: holidays.date }).from(holidays)
-        .where(and(eq(holidays.teacherId, req.teacherId), eq(holidays.type, 'holiday'))).all()
-        .map(h => h.date)
-    );
+    // Fetch user-defined holidays + workdays for this teacher.
+    // workday entries override built-in/user holidays (调休: 上班日).
+    const userHolidays = drizzleDb.select({ date: holidays.date, type: holidays.type })
+      .from(holidays).where(eq(holidays.teacherId, req.teacherId)).all();
+    const userHolidayDates = new Set(userHolidays.filter(h => h.type === 'holiday').map(h => h.date));
+    const userWorkdayDates = new Set(userHolidays.filter(h => h.type === 'workday').map(h => h.date));
 
     while (current <= end) {
       const dateStr = toLocalDateStr(current);
-      if (current.getDay() === weekday && !isHoliday(dateStr) && !userHolidayDates.has(dateStr)) {
+      const isOff = !userWorkdayDates.has(dateStr) && (isHoliday(dateStr) || userHolidayDates.has(dateStr));
+      if (current.getDay() === weekday && !isOff) {
         targetDates.push(dateStr);
       }
       current.setDate(current.getDate() + 1);
@@ -330,9 +331,12 @@ router.get('/summary', (req, res) => {
   const byClass = Object.entries(byClassMap).map(([cid, agg]) => {
     const cls = classMap[+cid];
     const hours = agg.minutes / 60;
-    const revenue = (cls.unitPrice * cls.studentCount - (cls.discountAmount || 0)) * hours;
+    const unit = cls.unitPrice ?? 0;
+    const count = cls.studentCount ?? 0;
+    const discount = cls.discountAmount ?? 0;
+    const revenue = (unit * count - discount) * hours;
     return { classId: +cid, name: cls.name, subject: cls.subject, grade: cls.grade, count: agg.count, hours, revenue };
-  }).sort((a, b) => b.revenue - a.revenue);
+  }).sort((a, b) => b.revenue - a.revenue || a.classId - b.classId);
 
   if (format === 'csv') {
     const rows = [['班级', '年级', '学科', '课次', '课时数(小时)', '收入(元)']];
@@ -445,7 +449,10 @@ router.get('/free-slots', (req, res) => {
   const { date, start, end, dayStart, dayEnd, after, before, minDuration } = req.query;
   const dStart = after || dayStart || '08:00';
   const dEnd = before || dayEnd || '23:00';
-  const minDur = minDuration ? +minDuration : 0;
+  if (dStart >= dEnd) {
+    return res.status(400).json({ error: 'after/dayStart 须早于 before/dayEnd（不支持跨午夜查询）' });
+  }
+  const minDur = minDuration ? Math.max(0, +minDuration) : 0;
 
   function filterSlots(slots) {
     if (!minDur) return slots;
@@ -479,7 +486,7 @@ router.get('/conflicts', (req, res) => {
   const defaultEnd = toLocalDateStr(new Date(Date.now() + 60 * 24 * 60 * 60 * 1000));
   const start = req.query.start || today;
   const end = req.query.end || defaultEnd;
-  const limit = Math.min(parseInt(req.query.limit) || 20, 100);
+  const limit = Math.max(1, Math.min(parseInt(req.query.limit) || 20, 100));
 
   const teacherClasses = drizzleDb.select({ id: classes.id }).from(classes)
     .where(and(eq(classes.teacherId, req.teacherId), eq(classes.deleted, false))).all();
