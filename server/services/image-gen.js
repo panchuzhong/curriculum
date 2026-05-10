@@ -1,4 +1,5 @@
 import puppeteer from 'puppeteer';
+import { isHoliday, isWorkday, getHolidayName } from './holidays.js';
 
 // ── Color system — mirrors frontend src/utils/colors.js ──────────
 const SUBJECT_HUES = {
@@ -120,17 +121,33 @@ export async function generateScheduleImage(schedulesWithClasses, startDate, end
     if (byDate[s.date]) byDate[s.date].push(s);
   });
 
-  const startHour = 7;
-  const endHour = 23;
+  const DEFAULT_START = 7;
+  const DEFAULT_END = 23;
+  const BOTTOM_OFFSET_MIN = 15;
+
+  let startHour = DEFAULT_START;
+  let latestEndMin = DEFAULT_END * 60;
+  schedulesWithClasses.forEach(s => {
+    const sh = parseInt(s.startTime.split(':')[0]);
+    if (sh < startHour) startHour = sh;
+    const eMin = toMin(s.endTime);
+    const sMin = toMin(s.startTime);
+    const actualEnd = eMin < sMin ? eMin + 24 * 60 : eMin;
+    if (actualEnd > latestEndMin) latestEndMin = actualEnd;
+  });
+  startHour = Math.max(0, Math.min(startHour, DEFAULT_START));
+  const bottomMin = Math.max(DEFAULT_END * 60 + BOTTOM_OFFSET_MIN, latestEndMin + BOTTOM_OFFSET_MIN);
+  const endHour = Math.max(DEFAULT_END, Math.floor(bottomMin / 60));
   const rowHSafe = Math.max(16, Math.min(60, +rowH || 30));
   const TOP_GAP = Math.round(0.25 * rowHSafe);
   const firstLabelHour = startHour + 1;
   const numHours = endHour - firstLabelHour + 1;
   const totalH = TOP_GAP + numHours * rowHSafe;
-  const timeColW = Math.round(50 * (rowHSafe / 30));
-  const colW = Math.round(160 * (rowHSafe / 30));
+  const timeColW = 64;
+  const TARGET_TOTAL_WIDTH = Math.min(1800, Math.max(600, numDays * 160));
+  const colW = Math.max(80, Math.floor((TARGET_TOTAL_WIDTH - timeColW) / numDays));
   const totalW = timeColW + numDays * colW;
-  const HEADER_H = Math.round(44 * (rowHSafe / 30));
+  const HEADER_H = 52;
 
   const hour = new Date().getHours();
   const isDark = theme === 'dark' ? true : theme === 'light' ? false : (hour < 7 || hour >= 19);
@@ -140,25 +157,35 @@ export async function generateScheduleImage(schedulesWithClasses, startDate, end
     headerText: '#e5e7eb', gridBorder: '#374151', gridLight: '#1f2937',
     timeText: '#6b7280', todayBg: 'rgba(30,58,138,0.25)', todayHeader: 'rgba(30,64,175,0.3)',
     todayText: '#93c5fd', todayBadge: '#3b82f6',
+    holidayHeader: 'rgba(127,29,29,0.2)', workdayHeader: 'rgba(120,53,15,0.2)',
   } : {
-    bg: '#f9fafb', text: '#111827', headerBg: '#e5e7eb',
+    bg: '#f9fafb', text: '#111827', headerBg: '#f9fafb',
     headerText: '#111827', gridBorder: '#d1d5db', gridLight: '#f3f4f6',
     timeText: '#6b7280', todayBg: 'rgba(219,234,254,0.6)', todayHeader: 'rgba(239,246,255,0.8)',
     todayText: '#1d4ed8', todayBadge: '#3b82f6',
+    holidayHeader: 'rgba(254,242,242,0.8)', workdayHeader: 'rgba(255,247,237,0.8)',
   };
 
   // ── Header row ─────────────────────────────────────────────────
   let headerHtml = `<div style="display:flex;border-bottom:2px solid ${c.gridBorder}">
-    <div style="width:${timeColW}px;height:${HEADER_H}px;padding:6px;background:${c.headerBg};text-align:center;font-size:12px;color:${c.headerText};display:flex;align-items:center;justify-content:center;border-right:1px solid ${c.gridBorder}">时间</div>`;
+    <div style="width:${timeColW}px;height:${HEADER_H}px;padding:6px;background:${isDark ? '#1f2937' : '#f3f4f6'};text-align:center;font-size:12px;color:${c.headerText};display:flex;align-items:center;justify-content:center;border-right:1px solid ${c.gridBorder}">时间</div>`;
   dates.forEach(date => {
     const d = new Date(date + 'T00:00:00');
     const wd = WEEKDAY_LABELS[d.getDay()];
     const isToday = date === todayStr;
-    const bg = isToday ? c.todayHeader : c.headerBg;
+    const holiday = isHoliday(date);
+    const workday = isWorkday(date);
+    let bg;
+    if (isToday) bg = c.todayHeader;
+    else if (workday) bg = c.workdayHeader;
+    else if (holiday) bg = c.holidayHeader;
+    else bg = c.headerBg;
     headerHtml += `<div style="width:${colW}px;height:${HEADER_H}px;padding:6px;background:${bg};text-align:center;border-right:1px solid ${c.gridBorder};display:flex;flex-direction:column;align-items:center;justify-content:center">
       <div style="display:flex;align-items:center;gap:4px">
         <span style="font-size:13px;font-weight:${isToday ? 600 : 400};color:${isToday ? c.todayText : c.text}">${wd}</span>
-        ${isToday ? `<span style="font-size:9px;background:${c.todayBadge};color:#fff;padding:1px 5px;border-radius:8px">今天</span>` : ''}
+        ${isToday ? `<span style="font-size:10px;background:${c.todayBadge};color:#fff;padding:2px 6px;border-radius:9999px;font-weight:500">今天</span>` : ''}
+        ${holiday ? `<span style="font-size:10px;background:#ef4444;color:#fff;padding:2px 6px;border-radius:9999px;font-weight:500">${escapeHtml(getHolidayName(date))}</span>` : ''}
+        ${workday ? `<span style="font-size:10px;background:#f97316;color:#fff;padding:2px 6px;border-radius:9999px;font-weight:500">调休</span>` : ''}
       </div>
       <span style="font-size:11px;color:${c.timeText}">${date.slice(5)}</span>
     </div>`;
@@ -170,7 +197,9 @@ export async function generateScheduleImage(schedulesWithClasses, startDate, end
   for (let h = firstLabelHour; h <= endHour; h++) {
     const top = TOP_GAP + (h - firstLabelHour) * rowHSafe;
     gridHtml += `<div style="position:absolute;top:${top}px;left:0;width:${totalW}px;height:1px;background:${c.gridBorder}"></div>`;
-    gridHtml += `<div style="position:absolute;top:${top}px;left:0;width:${timeColW}px;font-size:11px;color:${c.timeText};text-align:center;transform:translateY(-50%)">${String(h).padStart(2, '0')}:00</div>`;
+    gridHtml += `<div style="position:absolute;top:${top}px;left:0;width:${timeColW}px;pointer-events:none">`;
+    gridHtml +=   `<span style="position:absolute;top:-7px;left:50%;transform:translateX(-50%);font-size:11px;color:${c.timeText};background:${c.bg};padding:0 4px;white-space:nowrap">${String(h).padStart(2, '0')}:00</span>`;
+    gridHtml += `</div>`;
   }
   for (let i = 1; i < numDays; i++) {
     const left = timeColW + i * colW;
@@ -210,10 +239,9 @@ export async function generateScheduleImage(schedulesWithClasses, startDate, end
         const clippedH = Math.min(h, totalH - clippedTop);
         const itemColW = colW / totalCols;
         const left = timeColW + di * colW + item._col * itemColW + 1;
-        const width = itemColW - 3;
-        const bg = hasConflict ? '#dc2626' : getColor(item.class, isDark);
+        const width = itemColW - 2;
+        const bg = hasConflict ? '#ef4444' : getColor(item.class, isDark);
         const fg = hasConflict ? '#ffffff' : getTextColor(item.class, isDark);
-        const border = hasConflict ? '2px solid #ff4444' : 'none';
 
         // Adaptive font — mirrors ScheduleBlock.jsx
         const wp = totalCols > 2 ? 2 : totalCols > 1 ? 1 : 0;
@@ -224,7 +252,7 @@ export async function generateScheduleImage(schedulesWithClasses, startDate, end
         const lh = fs * 1.3;
         const maxNameLines = isShort ? 1 : Math.max(1, Math.floor((clippedH - lh * 2) / lh));
 
-        const name = `${item.class.isCompetition ? '★ ' : ''}${escapeHtml(item.class.name)}`;
+        const name = escapeHtml(item.class.name);
         const safeLoc = item.locationName ? escapeHtml(item.locationName) : '';
         const nameStyle = isShort
           ? 'font-weight:bold;white-space:nowrap;overflow:hidden;text-overflow:ellipsis'
@@ -232,10 +260,11 @@ export async function generateScheduleImage(schedulesWithClasses, startDate, end
         const timeFs = Math.max(8, fs - 1);
         const locFs = Math.max(8, fs - 2);
 
-        blocksHtml += `<div style="position:absolute;top:${clippedTop}px;left:${left}px;width:${width}px;height:${clippedH}px;background:${bg};color:${fg};border:${border};border-radius:4px;overflow:hidden;z-index:10;${isShort ? `display:flex;align-items:center;gap:3px;padding:0 4px` : 'padding:3px 4px'}">
+        const starHtml = item.class.isCompetition ? '<span style="color:#f59e0b">★ </span>' : '';
+        blocksHtml += `<div style="position:absolute;top:${clippedTop}px;left:${left}px;width:${width}px;height:${clippedH}px;background:${bg};color:${fg};border-radius:6px;box-shadow:${hasConflict ? '0 0 0 2px #ef4444' : 'none'};overflow:hidden;z-index:10;${isShort ? `display:flex;align-items:center;gap:4px;padding:0 6px` : 'padding:4px'}">
           ${isShort
-            ? `<div style="font-size:${fs}px;line-height:1.25;${nameStyle};flex:1;min-width:0">${name}</div><div style="font-size:${timeFs}px;opacity:0.7;white-space:nowrap;flex-shrink:0">${item.startTime}-${item.endTime}</div>`
-            : `<div style="font-size:${fs}px;line-height:${lh}px;${nameStyle}">${name}</div><div style="font-size:${fs}px;line-height:${lh}px;opacity:0.75">${item.startTime}-${item.endTime}</div>${safeLoc ? `<div style="font-size:${locFs}px;opacity:0.65;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">📍${safeLoc}</div>` : ''}`
+            ? `<div style="font-size:${fs}px;line-height:1.25;${nameStyle};flex:1;min-width:0">${starHtml}${name}</div><div style="font-size:${timeFs}px;opacity:0.6;white-space:nowrap;flex-shrink:0">${item.startTime}-${item.endTime}</div>`
+            : `<div style="font-size:${fs}px;line-height:${lh}px;${nameStyle}">${starHtml}${name}</div><div style="font-size:${fs}px;line-height:${lh}px;opacity:0.65">${item.startTime}-${item.endTime}</div>${safeLoc ? `<div style="font-size:${locFs}px;opacity:0.55;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">📍${safeLoc}</div>` : ''}`
           }
         </div>`;
       });
