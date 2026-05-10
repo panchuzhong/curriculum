@@ -271,8 +271,8 @@ export async function generateScheduleImage(schedulesWithClasses, startDate, end
         const wp = totalCols > 2 ? 2 : totalCols > 1 ? 1 : 0;
         const isShort = clippedH < 1.5 * rowHSafe;
         const fs = isShort
-          ? Math.max(9, Math.min(15, Math.floor(clippedH * 0.7)) - wp)
-          : Math.max(10, Math.min(16, Math.floor(clippedH / 3)) - wp);
+          ? Math.max(9, Math.min(12, Math.floor(clippedH * 0.7)) - wp)
+          : Math.max(10, Math.min(13, Math.floor(clippedH / 3)) - wp);
         const lh = fs * 1.3;
         const maxNameLines = isShort ? 1 : Math.max(1, Math.floor((clippedH - lh * 2) / lh));
 
@@ -281,14 +281,14 @@ export async function generateScheduleImage(schedulesWithClasses, startDate, end
         const nameStyle = isShort
           ? 'font-weight:bold;white-space:nowrap;overflow:hidden;text-overflow:ellipsis'
           : `font-weight:bold;overflow:hidden;display:-webkit-box;-webkit-line-clamp:${maxNameLines};-webkit-box-orient:vertical;word-break:break-word`;
-        const timeFs = Math.max(8, fs - 1);
-        const locFs = Math.max(8, fs - 2);
+        const timeFs = Math.max(7, fs - 1);
+        const locFs = Math.max(7, fs - 3);
 
         const starHtml = item.class.isCompetition ? '<span style="color:#f59e0b">★ </span>' : '';
         blocksHtml += `<div style="position:absolute;top:${clippedTop}px;left:${left}px;width:${width}px;height:${clippedH}px;background:${bg};color:${fg};border-radius:6px;box-shadow:${hasConflict ? '0 0 0 2px #ef4444' : 'none'};overflow:hidden;z-index:10;${isShort ? `display:flex;align-items:center;gap:4px;padding:0 6px` : 'padding:4px'}">
           ${isShort
             ? `<div style="font-size:${fs}px;line-height:1.25;${nameStyle};flex:1;min-width:0">${starHtml}${name}</div><div style="font-size:${timeFs}px;opacity:0.6;white-space:nowrap;flex-shrink:0">${item.startTime}-${item.endTime}</div>`
-            : `<div style="font-size:${fs}px;line-height:${lh}px;${nameStyle}">${starHtml}${name}</div><div style="font-size:${fs}px;line-height:${lh}px;opacity:0.65">${item.startTime}-${item.endTime}</div>${safeLoc ? `<div style="font-size:${locFs}px;opacity:0.55;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">📍${safeLoc}</div>` : ''}`
+            : `<div style="font-size:${fs}px;line-height:${lh}px;${nameStyle}">${starHtml}${name}</div><div style="font-size:${timeFs}px;line-height:${lh}px;opacity:0.65">${item.startTime}-${item.endTime}</div>${safeLoc ? `<div style="font-size:${locFs}px;opacity:0.55;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">📍${safeLoc}</div>` : ''}`
           }
         </div>`;
       });
