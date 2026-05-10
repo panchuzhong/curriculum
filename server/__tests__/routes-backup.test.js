@@ -106,6 +106,31 @@ describe('POST /api/backup/restore', () => {
     expect(res.status).toBe(401);
   });
 
+  it('skips schedules with invalid classId references', async () => {
+    const backup = {
+      version: 1,
+      classes: [{ id: 1, teacherId, name: '班', grade: '高三', subject: '数学', studentCount: 1, unitPrice: 100 }],
+      students: [],
+      schedules: [
+        { id: 1, classId: 1, date: '2026-05-01', startTime: '09:00', endTime: '11:00', durationBilling: 120 },
+        { id: 2, classId: 999, date: '2026-05-02', startTime: '09:00', endTime: '11:00', durationBilling: 120 },
+      ],
+      classStudents: [],
+      holidays: [],
+      semesters: [],
+      pricingTiers: [],
+    };
+
+    const res = await request(app).post('/api/backup/restore').set(auth(token)).send(backup);
+    expect(res.status).toBe(200);
+    expect(res.body.restored.classes).toBe(1);
+    expect(res.body.restored.schedules).toBe(1);
+
+    const exported = (await request(app).get('/api/backup').set(auth(token))).body;
+    expect(exported.schedules).toHaveLength(1);
+    expect(exported.schedules[0].date).toBe('2026-05-01');
+  });
+
   it('exports and restores audit log', async () => {
     const { auditLog } = await import('../db/schema.js');
     drizzleDb.insert(auditLog).values({

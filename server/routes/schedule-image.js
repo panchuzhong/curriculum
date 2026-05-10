@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { authMiddleware } from '../middleware/auth.js';
 import { drizzleDb } from '../db/index.js';
-import { schedules, classes } from '../db/schema.js';
+import { schedules, classes, holidays } from '../db/schema.js';
 import { eq, and, gte, lte } from 'drizzle-orm';
 import { generateScheduleImage } from '../services/image-gen.js';
 import { resolveRange } from '../services/schedule-helpers.js';
@@ -29,7 +29,10 @@ router.get('/', async (req, res) => {
       .filter(s => classIds.includes(s.classId))
       .map(s => ({ ...s, class: classMap[s.classId] }));
 
-    const buffer = await generateScheduleImage(scheds, start, end, { theme, rowH, scale, highlight });
+    const dbHolidays = drizzleDb.select().from(holidays)
+      .where(eq(holidays.teacherId, req.teacherId)).all();
+
+    const buffer = await generateScheduleImage(scheds, start, end, { theme, rowH, scale, highlight, dbHolidays });
     res.setHeader('Content-Type', 'image/png');
     res.send(buffer);
   } catch (err) {

@@ -39,6 +39,13 @@ describe('POST /api/classes', () => {
       .send({ name: '班', grade: '高一', subject: '数学', studentCount: 0 });
     expect(res.status).toBe(400);
   });
+
+  it('auto-fills unitPrice from pricing tiers when omitted', async () => {
+    const res = await request(app).post('/api/classes').set(auth(token))
+      .send({ name: '定价班', grade: '高一', subject: '数学', studentCount: 5 });
+    expect(res.status).toBe(200);
+    expect(res.body.unitPrice).toBeGreaterThan(0);
+  });
 });
 
 describe('GET /api/classes', () => {
@@ -57,6 +64,15 @@ describe('GET /api/classes', () => {
     await request(app).delete(`/api/classes/${id}`).set(auth(token));
     const res = await request(app).get('/api/classes').set(auth(token));
     expect(res.body).toHaveLength(0);
+  });
+
+  it('includes soft-deleted with includeDeleted=true', async () => {
+    const { body: { id } } = await request(app).post('/api/classes').set(auth(token))
+      .send({ name: '待删班', grade: '高一', subject: '数学', studentCount: 5 });
+    await request(app).delete(`/api/classes/${id}`).set(auth(token));
+    const res = await request(app).get('/api/classes?includeDeleted=true').set(auth(token));
+    expect(res.body).toHaveLength(1);
+    expect(res.body[0].isDeleted).toBe(true);
   });
 });
 

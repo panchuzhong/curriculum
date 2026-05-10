@@ -61,6 +61,14 @@ describe('GET /api/schedules', () => {
     expect(res.body).toHaveLength(1);
   });
 
+  it('filters by classId', async () => {
+    await request(app).post('/api/schedules').set(auth(token))
+      .send({ classId, date: '2026-05-04', startTime: '09:00', endTime: '10:30' });
+    const res = await request(app).get('/api/schedules?start=2026-05-01&end=2026-05-31&classId=99999').set(auth(token));
+    expect(res.status).toBe(200);
+    expect(res.body).toHaveLength(0);
+  });
+
   it('requires start/end params', async () => {
     const res = await request(app).get('/api/schedules').set(auth(token));
     expect(res.status).toBe(400);
@@ -146,6 +154,22 @@ describe('POST /api/schedules/batch', () => {
     });
     const res = await request(app).post('/api/schedules/batch').set(auth(token))
       .send({ classId, startTime: '09:00', endTime: '10:30', dates });
+    expect(res.status).toBe(400);
+  });
+
+  it('rejects when neither dates nor semesterId+weekday provided', async () => {
+    const res = await request(app).post('/api/schedules/batch').set(auth(token))
+      .send({ classId, startTime: '09:00', endTime: '10:30' });
+    expect(res.status).toBe(400);
+  });
+
+  it('rejects semester mode with no valid dates in range', async () => {
+    const { semesters } = await import('../db/schema.js');
+    drizzleDb.insert(semesters).values({
+      teacherId, name: '过去学期', type: 'spring', startDate: '2020-01-01', endDate: '2020-06-30',
+    }).run();
+    const res = await request(app).post('/api/schedules/batch').set(auth(token))
+      .send({ classId, semesterId: Number(drizzleDb.select().from(semesters).all()[0].id), weekday: 1, startTime: '09:00', endTime: '10:30' });
     expect(res.status).toBe(400);
   });
 });
@@ -286,5 +310,142 @@ describe('GET /api/schedules/free-slots edge cases', () => {
   it('rejects when after >= before', async () => {
     const res = await request(app).get('/api/schedules/free-slots?date=2026-05-04&after=20:00&before=10:00').set(auth(token));
     expect(res.status).toBe(400);
+  });
+});
+
+describe('GET /api/schedules/free-slots', () => {
+  it('returns full day free when no schedules', async () => {
+    const res = await request(app).get('/api/schedules/free-slots?date=2026-05-04').set(auth(token));
+    expect(res.status).toBe(200);
+    expect(res.body.date).toBe('2026-05-04');
+    expect(res.body.slots).toEqual([{ start: '08:00', end: '23:00' }]);
+  });
+
+  it('excludes scheduled time from free slots', async () => {
+    await request(app).post('/api/schedules').set(auth(token))
+      .send({ classId, date: '2026-05-04', startTime: '09:00', endTime: '10:30' });
+    const res = await request(app).get('/api/schedules/free-slots?date=2026-05-04').set(auth(token));
+    expect(res.status).toBe(200);
+    expect(res.body.slots).toEqual([
+      { start: '08:00', end: '09:00' },
+      { start: '10:30', end: '23:00' },
+    ]);
+  });
+
+  it('respects after/before parameters', async () => {
+    await request(app).post('/api/schedules').set(auth(token))
+      .send({ classId, date: '2026-05-04', startTime: '14:00', endTime: '16:00' });
+    const res = await request(app).get('/api/schedules/free-slots?date=2026-05-04&after=12:00&before=18:00').set(auth(token));
+    expect(res.status).toBe(200);
+    expect(res.body.slots).toEqual([
+      { start: '12:00', end: '14:00' },
+      { start: '16:00', end: '18:00' },
+    ]);
+  });
+
+  it('filters by minDuration', async () => {
+    await request(app).post('/api/schedules').set(auth(token))
+      .send({ classId, date: '2026-05-04', startTime: '09:00', endTime: '10:00' });
+    // Without minDuration: 08:00-09:00, 10:00-10:30
+    // With minDuration=60: 08:00-09:00 kept, 10:00-10:30 (30min) filtered
+    const res = await request(app).get('/api/schedules/free-slots?date=2026-05-04&after=08:00&before=10:30&minDuration=60').set(auth(token));
+    expect(res.status).toBe(200);
+    expect(res.body.slots).toEqual([
+      { start: '08:00', end: '09:00' },
+    ]);
+  });
+
+  it('supports multi-day query with start+end', async () => {
+    await request(app).post('/api/schedules').set(auth(token))
+      .send({ classId, date: '2026-05-04', startTime: '09:00', endTime: '10:00' });
+    const res = await request(app).get('/api/schedules/free-slots?start=2026-05-04&end=2026-05-05').set(auth(token));
+    expect(res.status).toBe(200);
+    expect(res.body).toHaveLength(2);
+    expect(res.body[0].date).toBe('2026-05-04');
+    expect(res.body[0].slots).toHaveLength(2);
+    expect(res.body[1].date).toBe('2026-05-05');
+    expect(res.body[1].slots).toEqual([{ start: '08:00', end: '23:00' }]);
+  });
+
+  it('requires date or start+end', async () => {
+    const res = await request(app).get('/api/schedules/free-slots').set(auth(token));
+    expect(res.status).toBe(400);
+  });
+});
+
+describe('GET /api/schedules/conflicts', () => {
+  it('returns empty when no schedules', async () => {
+    const res = await request(app).get('/api/schedules/conflicts?start=2026-05-01&end=2026-05-31').set(auth(token));
+    expect(res.status).toBe(200);
+    expect(res.body.total).toBe(0);
+    expect(res.body.groups).toEqual([]);
+  });
+
+  it('returns empty when schedules do not overlap', async () => {
+    await request(app).post('/api/schedules').set(auth(token))
+      .send({ classId, date: '2026-05-04', startTime: '09:00', endTime: '10:00' });
+    await request(app).post('/api/schedules').set(auth(token))
+      .send({ classId, date: '2026-05-04', startTime: '10:00', endTime: '11:00' });
+    const res = await request(app).get('/api/schedules/conflicts?start=2026-05-01&end=2026-05-31').set(auth(token));
+    expect(res.status).toBe(200);
+    expect(res.body.total).toBe(0);
+  });
+
+  it('detects overlapping schedules on same day', async () => {
+    const { classes } = await import('../db/schema.js');
+    const r2 = drizzleDb.insert(classes).values({
+      teacherId, name: '物理班', grade: '高一', subject: '物理', studentCount: 3, unitPrice: 120,
+    }).run();
+    const classId2 = Number(r2.lastInsertRowid);
+
+    await request(app).post('/api/schedules').set(auth(token))
+      .send({ classId, date: '2026-05-04', startTime: '09:00', endTime: '11:00' });
+    await request(app).post('/api/schedules').set(auth(token))
+      .send({ classId: classId2, date: '2026-05-04', startTime: '10:00', endTime: '12:00' });
+
+    const res = await request(app).get('/api/schedules/conflicts?start=2026-05-01&end=2026-05-31').set(auth(token));
+    expect(res.status).toBe(200);
+    expect(res.body.total).toBe(1);
+    expect(res.body.groups).toHaveLength(1);
+    expect(res.body.groups[0].date).toBe('2026-05-04');
+    expect(res.body.groups[0].schedules).toHaveLength(2);
+  });
+
+  it('respects limit parameter', async () => {
+    const { classes } = await import('../db/schema.js');
+    const r2 = drizzleDb.insert(classes).values({
+      teacherId, name: '物理班B', grade: '高二', subject: '物理', studentCount: 2, unitPrice: 100,
+    }).run();
+    const classId2 = Number(r2.lastInsertRowid);
+
+    await request(app).post('/api/schedules').set(auth(token))
+      .send({ classId, date: '2026-05-04', startTime: '09:00', endTime: '11:00' });
+    await request(app).post('/api/schedules').set(auth(token))
+      .send({ classId: classId2, date: '2026-05-04', startTime: '10:00', endTime: '12:00' });
+    await request(app).post('/api/schedules').set(auth(token))
+      .send({ classId, date: '2026-05-05', startTime: '09:00', endTime: '11:00' });
+    await request(app).post('/api/schedules').set(auth(token))
+      .send({ classId: classId2, date: '2026-05-05', startTime: '10:00', endTime: '12:00' });
+
+    const res = await request(app).get('/api/schedules/conflicts?start=2026-05-01&end=2026-05-31&limit=1').set(auth(token));
+    expect(res.status).toBe(200);
+    expect(res.body.total).toBe(1);
+    expect(res.body.groups).toHaveLength(1);
+  });
+
+  it('schedules on different days do not conflict', async () => {
+    const { classes } = await import('../db/schema.js');
+    const r2 = drizzleDb.insert(classes).values({
+      teacherId, name: '英语班', grade: '高一', subject: '英语', studentCount: 4, unitPrice: 90,
+    }).run();
+    const classId2 = Number(r2.lastInsertRowid);
+
+    await request(app).post('/api/schedules').set(auth(token))
+      .send({ classId, date: '2026-05-04', startTime: '09:00', endTime: '11:00' });
+    await request(app).post('/api/schedules').set(auth(token))
+      .send({ classId: classId2, date: '2026-05-05', startTime: '09:00', endTime: '11:00' });
+
+    const res = await request(app).get('/api/schedules/conflicts?start=2026-05-01&end=2026-05-31').set(auth(token));
+    expect(res.body.total).toBe(0);
   });
 });

@@ -110,10 +110,34 @@ function assignColumns(group) {
 }
 
 // ── Image generation ─────────────────────────────────────────────
-export async function generateScheduleImage(schedulesWithClasses, startDate, endDate, { theme = 'auto', rowH = 30, scale, highlight } = {}) {
+export async function generateScheduleImage(schedulesWithClasses, startDate, endDate, { theme = 'auto', rowH = 30, scale, highlight, dbHolidays = [] } = {}) {
   const dates = getDateRange(startDate, endDate);
   const numDays = dates.length;
   const todayStr = localDateStr(new Date());
+
+  // Build lookup from DB holidays (teacher-defined), fall back to built-in
+  const dbHolidayMap = {};
+  const dbWorkdaySet = new Set();
+  for (const h of dbHolidays) {
+    if (h.type === 'holiday') dbHolidayMap[h.date] = h.name || '';
+    else if (h.type === 'workday') dbWorkdaySet.add(h.date);
+  }
+  const hasDbData = dbHolidays.length > 0;
+
+  function checkIsHoliday(dateStr) {
+    if (hasDbData && dbHolidayMap[dateStr] !== undefined) return true;
+    if (hasDbData && dbWorkdaySet.has(dateStr)) return false;
+    return isHoliday(dateStr);
+  }
+  function checkIsWorkday(dateStr) {
+    if (hasDbData && dbWorkdaySet.has(dateStr)) return true;
+    if (hasDbData && dbHolidayMap[dateStr] !== undefined) return false;
+    return isWorkday(dateStr);
+  }
+  function checkHolidayName(dateStr) {
+    if (dbHolidayMap[dateStr]) return dbHolidayMap[dateStr];
+    return getHolidayName(dateStr);
+  }
 
   const byDate = {};
   dates.forEach(d => byDate[d] = []);
@@ -138,7 +162,7 @@ export async function generateScheduleImage(schedulesWithClasses, startDate, end
   startHour = Math.max(0, Math.min(startHour, DEFAULT_START));
   const bottomMin = Math.max(DEFAULT_END * 60 + BOTTOM_OFFSET_MIN, latestEndMin + BOTTOM_OFFSET_MIN);
   const endHour = Math.max(DEFAULT_END, Math.floor(bottomMin / 60));
-  const rowHSafe = Math.max(16, Math.min(60, +rowH || 30));
+  const rowHSafe = Math.max(16, Math.min(60, +rowH || 40));
   const TOP_GAP = Math.round(0.25 * rowHSafe);
   const firstLabelHour = startHour + 1;
   const numHours = endHour - firstLabelHour + 1;
@@ -173,8 +197,8 @@ export async function generateScheduleImage(schedulesWithClasses, startDate, end
     const d = new Date(date + 'T00:00:00');
     const wd = WEEKDAY_LABELS[d.getDay()];
     const isToday = date === todayStr;
-    const holiday = isHoliday(date);
-    const workday = isWorkday(date);
+    const holiday = checkIsHoliday(date);
+    const workday = checkIsWorkday(date);
     let bg;
     if (isToday) bg = c.todayHeader;
     else if (workday) bg = c.workdayHeader;
@@ -184,7 +208,7 @@ export async function generateScheduleImage(schedulesWithClasses, startDate, end
       <div style="display:flex;align-items:center;gap:4px">
         <span style="font-size:13px;font-weight:${isToday ? 600 : 400};color:${isToday ? c.todayText : c.text}">${wd}</span>
         ${isToday ? `<span style="font-size:10px;background:${c.todayBadge};color:#fff;padding:2px 6px;border-radius:9999px;font-weight:500">今天</span>` : ''}
-        ${holiday ? `<span style="font-size:10px;background:#ef4444;color:#fff;padding:2px 6px;border-radius:9999px;font-weight:500">${escapeHtml(getHolidayName(date))}</span>` : ''}
+        ${holiday ? `<span style="font-size:10px;background:#ef4444;color:#fff;padding:2px 6px;border-radius:9999px;font-weight:500">${escapeHtml(checkHolidayName(date))}</span>` : ''}
         ${workday ? `<span style="font-size:10px;background:#f97316;color:#fff;padding:2px 6px;border-radius:9999px;font-weight:500">调休</span>` : ''}
       </div>
       <span style="font-size:11px;color:${c.timeText}">${date.slice(5)}</span>

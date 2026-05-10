@@ -45,6 +45,13 @@ describe('POST /api/auth/register', () => {
       .send({ username: 'testuser' });
     expect(res.status).toBe(400);
   });
+
+  it('rejects when registration is closed', async () => {
+    process.env.ALLOW_REGISTRATION = 'false';
+    const res = await request(app).post('/api/auth/register')
+      .send({ username: 'newuser', password: 'test123', name: 'New' });
+    expect(res.status).toBe(403);
+  });
 });
 
 describe('POST /api/auth/login', () => {

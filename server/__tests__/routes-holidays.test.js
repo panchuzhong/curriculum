@@ -71,6 +71,15 @@ describe('PUT /api/holidays/:id', () => {
     expect(res.body.name).toBe('新年');
     expect(res.body.date).toBe('2026-01-01');
   });
+
+  it('returns 409 when changing date to collide with existing', async () => {
+    await request(app).post('/api/holidays').set(auth(token))
+      .send({ date: '2026-01-01', type: 'holiday', name: '元旦' });
+    const { body: { id } } = await request(app).post('/api/holidays').set(auth(token))
+      .send({ date: '2026-05-01', type: 'holiday', name: '劳动节' });
+    const res = await request(app).put(`/api/holidays/${id}`).set(auth(token)).send({ date: '2026-01-01' });
+    expect(res.status).toBe(409);
+  });
 });
 
 describe('DELETE /api/holidays/:id', () => {
@@ -117,6 +126,12 @@ describe('POST /api/holidays/batch', () => {
     }));
     const res = await request(app).post('/api/holidays/batch').set(auth(token)).send({ items });
     expect(res.status).toBe(400);
+  });
+
+  it('returns count 0 for empty items array', async () => {
+    const res = await request(app).post('/api/holidays/batch').set(auth(token)).send({ items: [] });
+    expect(res.status).toBe(200);
+    expect(res.body.count).toBe(0);
   });
 });
 

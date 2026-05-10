@@ -75,4 +75,32 @@ describe('GET /api/audit-log', () => {
     const res = await request(app).get('/api/audit-log?action=HACK').set(auth(token));
     expect(res.status).toBe(400);
   });
+
+  it('filters with both table and action', async () => {
+    const { auditLog } = await import('../db/schema.js');
+    drizzleDb.insert(auditLog).values({
+      teacherId: 1, action: 'CREATE', tableName: 'classes', recordId: 1, timestamp: new Date().toISOString(),
+    }).run();
+    drizzleDb.insert(auditLog).values({
+      teacherId: 1, action: 'DELETE', tableName: 'classes', recordId: 2, timestamp: new Date().toISOString(),
+    }).run();
+    drizzleDb.insert(auditLog).values({
+      teacherId: 1, action: 'CREATE', tableName: 'schedules', recordId: 3, timestamp: new Date().toISOString(),
+    }).run();
+    const res = await request(app).get('/api/audit-log?table=classes&action=CREATE').set(auth(token));
+    expect(res.status).toBe(200);
+    expect(res.body).toHaveLength(1);
+    expect(res.body[0].tableName).toBe('classes');
+    expect(res.body[0].action).toBe('CREATE');
+  });
+
+  it('handles NaN limit as default', async () => {
+    const res = await request(app).get('/api/audit-log?limit=abc').set(auth(token));
+    expect(res.status).toBe(200);
+  });
+
+  it('clamps negative limit', async () => {
+    const res = await request(app).get('/api/audit-log?limit=-5').set(auth(token));
+    expect(res.status).toBe(200);
+  });
 });
