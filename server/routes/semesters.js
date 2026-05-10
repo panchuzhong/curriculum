@@ -5,6 +5,7 @@ import { eq, and } from 'drizzle-orm';
 import { authMiddleware } from '../middleware/auth.js';
 import handle from '../validations/handle.js';
 import { validateCreateSemester, validateUpdateSemester } from '../validations/semesters.js';
+import { logAudit } from '../services/audit.js';
 
 const router = Router();
 router.use(authMiddleware);
@@ -22,6 +23,7 @@ router.post('/', validateCreateSemester, handle, (req, res) => {
   }).run();
   const newId = Number(result.lastInsertRowid);
   const created = drizzleDb.select().from(semesters).where(eq(semesters.id, newId)).get();
+  logAudit({ teacherId: req.teacherId, action: 'CREATE', tableName: 'semesters', recordId: newId, after: created });
   res.json(created);
 });
 
@@ -35,6 +37,7 @@ router.put('/:id', validateUpdateSemester, handle, (req, res) => {
   if (Object.keys(safeUpdates).length === 0) return res.status(400).json({ error: 'No valid fields' });
   drizzleDb.update(semesters).set(safeUpdates).where(eq(semesters.id, +id)).run();
   const updated = drizzleDb.select().from(semesters).where(eq(semesters.id, +id)).get();
+  logAudit({ teacherId: req.teacherId, action: 'UPDATE', tableName: 'semesters', recordId: +id, before: existing, after: safeUpdates });
   res.json(updated);
 });
 
@@ -44,6 +47,7 @@ router.delete('/:id', (req, res) => {
     .where(and(eq(semesters.id, +id), eq(semesters.teacherId, req.teacherId))).get();
   if (!existing) return res.status(404).json({ error: 'Not found' });
   drizzleDb.delete(semesters).where(eq(semesters.id, +id)).run();
+  logAudit({ teacherId: req.teacherId, action: 'DELETE', tableName: 'semesters', recordId: +id, before: existing });
   res.json({ ok: true });
 });
 

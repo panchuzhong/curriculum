@@ -18,5 +18,5 @@ export const validateChangePassword = [
 
 export const validateUpdateSubjects = [
   body('subjects').isArray().withMessage('subjects 必须是数组'),
-  body('subjects.*').isString().withMessage('科目必须是字符串'),
+  body('subjects.*').isString().isLength({ min: 1, max: 20 }).withMessage('每项科目须为1-20个字符'),
 ];

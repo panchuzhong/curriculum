@@ -198,6 +198,7 @@ sudo systemctl start curriculum-scheduler
 | POST | /api/classes | 创建班级 |
 | PUT | /api/classes/:id | 更新班级 |
 | DELETE | /api/classes/:id | 删除班级（软删除） |
+| POST | /api/classes/:id/restore | 恢复已删除的班级（deleted: true→false） |
 | GET | /api/classes/:classId/students | 获取指定班级的学生列表 |
 | POST | /api/classes/:classId/students | 在指定班级下创建学生并自动关联 |
 | DELETE | /api/classes/:classId/students/:studentId | 从指定班级移除学生（仅解除关联） |
@@ -264,7 +265,7 @@ sudo systemctl start curriculum-scheduler
 **操作日志**
 | 方法 | 路径 | 说明 |
 |------|------|------|
-| GET | /api/audit-log | 查询操作日志，支持 limit / table / action 过滤（action: CREATE/UPDATE/DELETE/BATCH_DELETE/BATCH_UPDATE） |
+| GET | /api/audit-log | 查询操作日志，支持 limit / table / action 过滤（action: CREATE/UPDATE/DELETE/BATCH_CREATE/BATCH_UPDATE/BATCH_DELETE） |
 
 **备份**
 | 方法 | 路径 | 说明 |

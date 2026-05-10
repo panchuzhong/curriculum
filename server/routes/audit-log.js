@@ -7,7 +7,7 @@ import { authMiddleware } from '../middleware/auth.js';
 const router = Router();
 router.use(authMiddleware);
 
-const VALID_TABLES = new Set(['schedules', 'classes', 'students', 'holidays', 'class_students']);
+const VALID_TABLES = new Set(['schedules', 'classes', 'students', 'holidays', 'class_students', 'pricing_tiers', 'semesters']);
 const VALID_ACTIONS = new Set(['CREATE', 'UPDATE', 'DELETE', 'BATCH_CREATE', 'BATCH_UPDATE', 'BATCH_DELETE']);
 
 // GET /api/audit-log?limit=100&table=schedules&action=DELETE

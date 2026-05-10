@@ -1,6 +1,9 @@
 import { Router } from 'express';
 import bcrypt from 'bcryptjs';
 import { v4 as uuidv4 } from 'uuid';
+import { readFileSync, writeFileSync } from 'fs';
+import { resolve, dirname } from 'path';
+import { fileURLToPath } from 'url';
 import rateLimit from 'express-rate-limit';
 import { drizzleDb } from '../db/index.js';
 import { teachers } from '../db/schema.js';
@@ -36,8 +39,18 @@ router.post('/register', authLimiter, validateRegister, handle, async (req, res)
   const result = drizzleDb.insert(teachers).values({ username, passwordHash, name, apiKey, subjects }).run();
   seedPricingTiers(result.lastInsertRowid);
 
-  // Auto-close registration after first user
+  // Auto-close registration after first user (persist to .env so it survives restart)
   process.env.ALLOW_REGISTRATION = 'false';
+  try {
+    const envPath = resolve(dirname(fileURLToPath(import.meta.url)), '../../.env');
+    let envContent = readFileSync(envPath, 'utf-8');
+    if (envContent.includes('ALLOW_REGISTRATION=')) {
+      envContent = envContent.replace(/^ALLOW_REGISTRATION=.*/m, 'ALLOW_REGISTRATION=false');
+    } else {
+      envContent += '\nALLOW_REGISTRATION=false\n';
+    }
+    writeFileSync(envPath, envContent);
+  } catch { /* non-fatal: .env may not exist or be writable */ }
 
   res.json({ token: signToken(result.lastInsertRowid), apiKey });
 });

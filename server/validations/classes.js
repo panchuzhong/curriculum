@@ -2,6 +2,7 @@ import { body } from 'express-validator';
 
 const VALID_GRADES = ['初一', '初二', '初三', '高一', '高二', '高三', '大学'];
 const PHONE_RE = /^1[3-9]\d{9}$/;
+const DATE_RE = /^\d{4}(-\d{2}-\d{2})?$/;
 const optionalPhone = (field, msg) =>
   body(field).optional({ checkFalsy: true }).matches(PHONE_RE).withMessage(msg);
 
@@ -26,6 +27,7 @@ export const validateUpdateClass = [
 
 export const validateClassStudent = [
   body('name').notEmpty().withMessage('学生姓名不能为空'),
+  body('birthDate').optional({ checkFalsy: true }).matches(DATE_RE).withMessage('出生日期格式须为 YYYY 或 YYYY-MM-DD'),
   optionalPhone('phone', '手机号格式不正确'),
   optionalPhone('parentPhone', '家长手机号格式不正确'),
 ];

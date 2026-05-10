@@ -5,6 +5,7 @@ import { eq, and } from 'drizzle-orm';
 import { authMiddleware } from '../middleware/auth.js';
 import handle from '../validations/handle.js';
 import { validateCreateTier, validateUpdateTier } from '../validations/pricing-tiers.js';
+import { logAudit } from '../services/audit.js';
 
 const router = Router();
 router.use(authMiddleware);
@@ -22,6 +23,7 @@ router.post('/', validateCreateTier, handle, (req, res) => {
   }).run();
   const newId = Number(result.lastInsertRowid);
   const created = drizzleDb.select().from(pricingTiers).where(eq(pricingTiers.id, newId)).get();
+  logAudit({ teacherId: req.teacherId, action: 'CREATE', tableName: 'pricing_tiers', recordId: newId, after: created });
   res.json(created);
 });
 
@@ -35,6 +37,7 @@ router.put('/:id', validateUpdateTier, handle, (req, res) => {
   if (Object.keys(safeUpdates).length === 0) return res.status(400).json({ error: 'No valid fields' });
   drizzleDb.update(pricingTiers).set(safeUpdates).where(eq(pricingTiers.id, +id)).run();
   const updated = drizzleDb.select().from(pricingTiers).where(eq(pricingTiers.id, +id)).get();
+  logAudit({ teacherId: req.teacherId, action: 'UPDATE', tableName: 'pricing_tiers', recordId: +id, before: existing, after: safeUpdates });
   res.json(updated);
 });
 
@@ -45,6 +48,7 @@ router.delete('/:id', (req, res) => {
   if (!existing) return res.status(404).json({ error: 'Not found' });
   drizzleDb.delete(pricingTiers)
     .where(and(eq(pricingTiers.id, +id), eq(pricingTiers.teacherId, req.teacherId))).run();
+  logAudit({ teacherId: req.teacherId, action: 'DELETE', tableName: 'pricing_tiers', recordId: +id, before: existing });
   res.json({ ok: true });
 });
 

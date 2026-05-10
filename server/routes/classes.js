@@ -117,10 +117,10 @@ classStudentRouter.post('/', validateClassStudent, handle, (req, res) => {
     .where(and(eq(classes.id, classId), eq(classes.teacherId, req.teacherId), eq(classes.deleted, false))).get();
   if (!cls) return res.status(404).json({ error: 'Class not found' });
 
-  const { name, phone, parentPhone, note } = req.body;
+  const { name, phone, parentPhone, birthDate, parentName, note } = req.body;
 
   const result = drizzleDb.insert(students).values({
-    teacherId: req.teacherId, name, phone, parentPhone, note,
+    teacherId: req.teacherId, name, phone, parentPhone, birthDate, parentName, note,
   }).run();
   const studentId = Number(result.lastInsertRowid);
   drizzleDb.insert(classStudents).values({ classId, studentId }).run();

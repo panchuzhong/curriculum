@@ -8,6 +8,7 @@ export const validateCreateSchedule = [
   body('date').matches(DATE_RE).withMessage('日期格式须为 YYYY-MM-DD'),
   body('startTime').matches(TIME_RE).withMessage('开始时间格式须为 HH:MM'),
   body('endTime').matches(TIME_RE).withMessage('结束时间格式须为 HH:MM'),
+  body('durationBilling').optional().isInt({ min: 0 }).withMessage('durationBilling 须为非负整数'),
 ];
 
 export const validateBatchCreate = [
@@ -18,10 +19,13 @@ export const validateBatchCreate = [
   body('dates.*').optional().matches(DATE_RE).withMessage('日期格式须为 YYYY-MM-DD'),
   body('weekday').optional().isInt({ min: 0, max: 6 }).withMessage('weekday 须为0-6'),
   body('semesterId').optional().isInt({ min: 1 }).withMessage('semesterId 须为正整数'),
+  body('durationBilling').optional().isInt({ min: 0 }).withMessage('durationBilling 须为非负整数'),
 ];
 
 export const validateBatchUpdate = [
   body('classId').isInt({ min: 1 }).withMessage('classId 须为正整数'),
+  body('fromDate').optional().matches(DATE_RE).withMessage('fromDate 格式须为 YYYY-MM-DD'),
+  body('weekday').optional().isInt({ min: 0, max: 6 }).withMessage('weekday 须为0-6'),
   body('updates').isObject().withMessage('updates 须为对象'),
 ];
 
