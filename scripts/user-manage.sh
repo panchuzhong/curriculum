@@ -4,7 +4,9 @@
 
 set -e
 
-DB="${DB_PATH:-./data/data.db}"
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+DB="${DB_PATH:-$PROJECT_ROOT/data/data.db}"
 CMD="${1:-}"
 
 # ── Help ──────────────────────────────────────────────────────────
@@ -45,31 +47,31 @@ if [ "$CMD" = "list" ]; then
   echo "ID  Username        Name                 Created"
   echo "--- --------------- -------------------- -------------------"
   sqlite3 -separator "  " "$DB" \
-    "SELECT printf('%-3s', id), printf('%-15s', username), printf('%-20s', name), createdAt FROM teachers ORDER BY id;"
+    "SELECT printf('%-3s', id), printf('%-15s', username), printf('%-20s', name), created_at FROM teachers ORDER BY id;"
   exit 0
 fi
 
 # ── info ──────────────────────────────────────────────────────────
 if [ "$CMD" = "info" ]; then
   TID="${2:-1}"
-  USER=$(sqlite3 "$DB" "SELECT id, username, name, apiKey, subjects, createdAt FROM teachers WHERE id = $TID;")
+  USER=$(sqlite3 "$DB" "SELECT id, username, name, api_key, subjects, created_at FROM teachers WHERE id = $TID;")
   if [ -z "$USER" ]; then
     echo "Error: Teacher id=$TID not found."
     exit 1
   fi
-  IFS='|' read -r id username name apiKey subjects createdAt <<< "$USER"
+  IFS='|' read -r id username name api_key subjects created_at <<< "$USER"
   CLASS_COUNT=$(sqlite3 "$DB" "SELECT COUNT(*) FROM classes WHERE teacher_id = $TID AND deleted = 0;")
   ALL_CLASS_COUNT=$(sqlite3 "$DB" "SELECT COUNT(*) FROM classes WHERE teacher_id = $TID;")
   STUDENT_COUNT=$(sqlite3 "$DB" "SELECT COUNT(*) FROM students WHERE teacher_id = $TID;")
-  SCHED_COUNT=$(sqlite3 "$DB" "SELECT COUNT(*) FROM schedules WHERE classId IN (SELECT id FROM classes WHERE teacher_id = $TID);")
+  SCHED_COUNT=$(sqlite3 "$DB" "SELECT COUNT(*) FROM schedules WHERE class_id IN (SELECT id FROM classes WHERE teacher_id = $TID);")
 
   cat <<EOF
 ID        : $id
 Username  : $username
 Name      : $name
-API Key   : $apiKey
+API Key   : $api_key
 Subjects  : $subjects
-Created   : $createdAt
+Created   : $created_at
 
 Classes   : $CLASS_COUNT active ($ALL_CLASS_COUNT total including deleted)
 Students  : $STUDENT_COUNT
@@ -95,7 +97,7 @@ if [ "$CMD" = "reset-pw" ]; then
   fi
 
   HASH=$(node -e "const bcrypt=require('bcryptjs');bcrypt.hash(process.argv[1],10).then(h=>console.log(h))" "$PASS")
-  sqlite3 "$DB" "UPDATE teachers SET passwordHash = '$HASH' WHERE id = $TID;"
+  sqlite3 "$DB" "UPDATE teachers SET password_hash = '$HASH' WHERE id = $TID;"
   echo "Password updated for teacher id=$TID."
   exit 0
 fi
@@ -121,7 +123,7 @@ if [ "$CMD" = "delete" ]; then
 
   CLASS_COUNT=$(sqlite3 "$DB" "SELECT COUNT(*) FROM classes WHERE teacher_id = $TID;")
   STUDENT_COUNT=$(sqlite3 "$DB" "SELECT COUNT(*) FROM students WHERE teacher_id = $TID;")
-  SCHED_COUNT=$(sqlite3 "$DB" "SELECT COUNT(*) FROM schedules WHERE classId IN (SELECT id FROM classes WHERE teacher_id = $TID);")
+  SCHED_COUNT=$(sqlite3 "$DB" "SELECT COUNT(*) FROM schedules WHERE class_id IN (SELECT id FROM classes WHERE teacher_id = $TID);")
 
   echo "You are about to DELETE teacher: $USER"
   echo ""
@@ -138,15 +140,15 @@ if [ "$CMD" = "delete" ]; then
 
   sqlite3 "$DB" <<SQL
 BEGIN TRANSACTION;
-  DELETE FROM schedules    WHERE classId IN (SELECT id FROM classes WHERE teacher_id = $TID);
-  DELETE FROM classStudents WHERE classId IN (SELECT id FROM classes WHERE teacher_id = $TID)
-                              OR studentId IN (SELECT id FROM students WHERE teacher_id = $TID);
-  DELETE FROM classes       WHERE teacher_id = $TID;
-  DELETE FROM students      WHERE teacher_id = $TID;
-  DELETE FROM pricingTiers  WHERE teacher_id = $TID;
-  DELETE FROM semesters     WHERE teacher_id = $TID;
-  DELETE FROM holidays      WHERE teacher_id = $TID;
-  DELETE FROM auditLog      WHERE teacher_id = $TID;
+  DELETE FROM schedules    WHERE class_id IN (SELECT id FROM classes WHERE teacher_id = $TID);
+  DELETE FROM class_students WHERE class_id IN (SELECT id FROM classes WHERE teacher_id = $TID)
+                                OR student_id IN (SELECT id FROM students WHERE teacher_id = $TID);
+  DELETE FROM classes        WHERE teacher_id = $TID;
+  DELETE FROM students       WHERE teacher_id = $TID;
+  DELETE FROM pricing_tiers  WHERE teacher_id = $TID;
+  DELETE FROM semesters      WHERE teacher_id = $TID;
+  DELETE FROM holidays       WHERE teacher_id = $TID;
+  DELETE FROM audit_log      WHERE teacher_id = $TID;
   DELETE FROM teachers      WHERE id = $TID;
 COMMIT;
 SQL
