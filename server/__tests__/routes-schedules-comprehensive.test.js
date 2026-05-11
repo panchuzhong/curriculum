@@ -469,4 +469,130 @@ describe('GET /api/schedules/conflicts — edge cases', () => {
     const res = await request(app).get('/api/schedules/conflicts?start=2026-05-01&end=2026-05-31').set(auth(token));
     expect(res.body.total).toBe(0);
   });
+
+  it('DELETE /:id rejects schedule belonging to soft-deleted class', async () => {
+    const { schedules } = await import('../db/schema.js');
+    // Create and soft-delete a class
+    const { classes } = await import('../db/schema.js');
+    const r = drizzleDb.insert(classes).values({
+      teacherId, name: '暂存班', grade: '高一', subject: '数学', studentCount: 1, unitPrice: 100, deleted: true,
+    }).run();
+    const delClassId = Number(r.lastInsertRowid);
+    const r2 = drizzleDb.insert(schedules).values({
+      classId: delClassId, date: '2026-06-01', startTime: '09:00', endTime: '11:00', durationBilling: 120,
+    }).run();
+    const schedId = Number(r2.lastInsertRowid);
+
+    const res = await request(app).delete(`/api/schedules/${schedId}`).set(auth(token));
+    expect(res.status).toBe(403);
+  });
+});
+
+describe('DELETE /api/schedules/batch validation', () => {
+  let bApp, bToken, bClassId;
+
+  beforeEach(async () => {
+    const { app: a, drizzleDb: db } = await setupApp('/api/schedules', '../routes/schedules.js');
+    bApp = a;
+    const user = await makeUser(db);
+    bToken = user.token;
+    const { classes } = await import('../db/schema.js');
+    const r = db.insert(classes).values({
+      teacherId: user.id, name: '验证班', grade: '高三', subject: '物理', studentCount: 3, unitPrice: 200,
+    }).run();
+    bClassId = Number(r.lastInsertRowid);
+  });
+
+  it('rejects invalid start date format in date-range mode', async () => {
+    const res = await request(bApp).delete('/api/schedules/batch').set(auth(bToken))
+      .send({ classId: bClassId, start: 'not-a-date', end: '2026-12-31' });
+    expect(res.status).toBe(400);
+  });
+
+  it('rejects invalid end date format in date-range mode', async () => {
+    const res = await request(bApp).delete('/api/schedules/batch').set(auth(bToken))
+      .send({ classId: bClassId, start: '2026-01-01', end: 'invalid' });
+    expect(res.status).toBe(400);
+  });
+
+  it('accepts date-range mode without classId (all classes)', async () => {
+    const res = await request(bApp).delete('/api/schedules/batch').set(auth(bToken))
+      .send({ start: '2026-01-01', end: '2026-12-31' });
+    expect(res.status).toBe(200);
+    expect(res.body.count).toBeGreaterThanOrEqual(0);
+  });
+});
+
+describe('GET /api/schedules/export', () => {
+  let expApp, expToken, expClassId;
+
+  beforeEach(async () => {
+    const { app: a, drizzleDb: db } = await setupApp('/api/schedules', '../routes/schedules.js');
+    expApp = a;
+    const user = await makeUser(db);
+    expToken = user.token;
+    const { classes } = await import('../db/schema.js');
+    const r = db.insert(classes).values({
+      teacherId: user.id, name: '导出班', grade: '高二', subject: '英语', studentCount: 4, unitPrice: 150,
+    }).run();
+    expClassId = Number(r.lastInsertRowid);
+    const { schedules } = await import('../db/schema.js');
+    db.insert(schedules).values({
+      classId: expClassId, date: '2026-06-01', startTime: '09:00', endTime: '11:00', durationBilling: 120,
+    }).run();
+  });
+
+  it('exports schedules as JSON', async () => {
+    const res = await request(expApp).get('/api/schedules/export?start=2026-06-01&end=2026-06-01').set(auth(expToken));
+    expect(res.status).toBe(200);
+    expect(Array.isArray(res.body)).toBe(true);
+    expect(res.body.length).toBe(1);
+    expect(res.body[0].class.name).toBe('导出班');
+  });
+
+  it('exports schedules as CSV', async () => {
+    const res = await request(expApp).get('/api/schedules/export?start=2026-06-01&end=2026-06-01&format=csv').set(auth(expToken));
+    expect(res.status).toBe(200);
+    expect(res.headers['content-type']).toContain('text/csv');
+    expect(res.text).toContain('导出班');
+  });
+
+  it('returns 400 without start/end', async () => {
+    const res = await request(expApp).get('/api/schedules/export').set(auth(expToken));
+    expect(res.status).toBe(400);
+  });
+});
+
+describe('GET /api/students/by-class/:classId', () => {
+  let stApp, stToken, stClassId, stStudentId;
+
+  beforeEach(async () => {
+    const { app: a, drizzleDb: db } = await setupApp('/api/students', '../routes/students.js');
+    stApp = a;
+    const user = await makeUser(db);
+    stToken = user.token;
+    const { classes, students, classStudents } = await import('../db/schema.js');
+    const cr = db.insert(classes).values({
+      teacherId: user.id, name: '测试班', grade: '初三', subject: '化学', studentCount: 1, unitPrice: 200,
+    }).run();
+    stClassId = Number(cr.lastInsertRowid);
+    const sr = db.insert(students).values({
+      teacherId: user.id, name: '小明', birthDate: '2010-03-15',
+    }).run();
+    stStudentId = Number(sr.lastInsertRowid);
+    db.insert(classStudents).values({ classId: stClassId, studentId: stStudentId }).run();
+  });
+
+  it('returns students for a class', async () => {
+    const res = await request(stApp).get(`/api/students/by-class/${stClassId}`).set(auth(stToken));
+    expect(res.status).toBe(200);
+    expect(Array.isArray(res.body)).toBe(true);
+    expect(res.body.length).toBe(1);
+    expect(res.body[0].name).toBe('小明');
+  });
+
+  it('returns 404 for non-existent class', async () => {
+    const res = await request(stApp).get('/api/students/by-class/99999').set(auth(stToken));
+    expect(res.status).toBe(404);
+  });
 });

@@ -9,6 +9,7 @@ export const validateCreateStudent = [
   body('phone').optional({ checkFalsy: true }).matches(PHONE_RE).withMessage('手机号格式不正确'),
   body('parentPhone').optional({ checkFalsy: true }).matches(PHONE_RE).withMessage('家长手机号格式不正确'),
   body('classIds').optional().isArray().withMessage('classIds 须为数组'),
+  body('classIds.*').optional().isInt({ min: 1 }).withMessage('classIds 元素须为正整数'),
 ];
 
 export const validateUpdateStudent = [
@@ -17,4 +18,5 @@ export const validateUpdateStudent = [
   body('phone').optional({ checkFalsy: true }).matches(PHONE_RE).withMessage('手机号格式不正确'),
   body('parentPhone').optional({ checkFalsy: true }).matches(PHONE_RE).withMessage('家长手机号格式不正确'),
   body('classIds').optional().isArray().withMessage('classIds 须为数组'),
+  body('classIds.*').optional().isInt({ min: 1 }).withMessage('classIds 元素须为正整数'),
 ];

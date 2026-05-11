@@ -39,8 +39,8 @@
 - 排课明细导出 `GET /api/schedules/export`，支持 `format=csv`（Excel 兼容 UTF-8 BOM）
 
 ### 操作日志
-- 排课和班级的增删改自动写入 audit_log
-- 记录操作前后数据，可按表名和操作类型查询
+- 所有资源的增删改自动写入 audit_log（排课、班级、学生、节假日、定价阶梯、学期、教师安全操作）
+- 记录操作前后数据，可按表名和操作类型查询（action: CREATE/UPDATE/DELETE/BATCH_CREATE/BATCH_UPDATE/BATCH_DELETE）
 
 ### 设置
 - 学科管理（自定义学科及顺序）
@@ -260,7 +260,9 @@ sudo systemctl start curriculum-scheduler
 **图片**
 | 方法 | 路径 | 说明 |
 |------|------|------|
-| GET | /api/schedule-image?start=&end= | 生成课表 PNG；theme=light\|dark\|auto（默认 auto）；rowH=16-60（默认 30）；scale=0.25-3（默认 2）；highlight=YYYY-MM-DD |
+| GET | /api/schedule-image?start=&end= | 生成周课表 PNG；theme=light\|dark\|auto（默认 auto）；rowH=16-60（默认 30）；scale=0.25-3（默认 2）；highlight=YYYY-MM-DD |
+| GET | /api/schedule-image/monthly?year=&month= | 生成月课表日历网格 PNG；month=0-11（0=1月）；支持 endYear/endMonth 导出多个月份 |
+| GET | /api/schedule-image/yearly?year= | 生成年课表概览 PNG（12 月卡片 + 年度统计）；支持 endYear 导出多个年份 |
 
 **操作日志**
 | 方法 | 路径 | 说明 |
@@ -413,7 +415,10 @@ new_curriculum/
 │   ├── __tests__/                # vitest 集成测试（supertest HTTP 测试 + 单元测试）
 │   └── services/
 │       ├── holidays.js           # 节假日数据与查询
-│       ├── image-gen.js          # Puppeteer PNG 渲染
+│       ├── browser.js            # Puppeteer 浏览器单例（复用）
+│       ├── image-gen.js          # Puppeteer 周课表 PNG 渲染
+│       ├── image-gen-monthly.js  # Puppeteer 月课表 PNG 渲染
+│       ├── image-gen-yearly.js   # Puppeteer 年课表 PNG 渲染
 │       ├── schedule-helpers.js   # 排课业务逻辑（冲突检测、批量操作）
 │       └── audit.js              # 操作日志写入
 ├── src/                          # React 前端

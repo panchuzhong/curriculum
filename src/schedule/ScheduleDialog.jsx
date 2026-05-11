@@ -1,5 +1,4 @@
 import { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
 import { api } from '../api';
 import { GRADES } from '../utils/constants';
 import { useToast } from '../components/ToastProvider';
@@ -11,7 +10,6 @@ function getDefaultEndTime(start) {
 }
 
 export default function ScheduleDialog({ date, startTime, schedule, onClose, onSaved }) {
-  const navigate = useNavigate();
   const toast = useToast();
   const [classes, setClasses] = useState([]);
   const [subjects, setSubjects] = useState([]);
@@ -139,7 +137,7 @@ export default function ScheduleDialog({ date, startTime, schedule, onClose, onS
             </h3>
             <p className="text-sm text-gray-400 dark:text-gray-500 mt-0.5">{form.date}</p>
           </div>
-          <button onClick={onClose} className="w-7 h-7 rounded-lg bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-600 flex items-center justify-center text-sm transition-colors leading-none shrink-0">✕</button>
+          <button onClick={onClose} aria-label="关闭" className="w-7 h-7 rounded-lg bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-600 flex items-center justify-center text-sm transition-colors leading-none shrink-0">✕</button>
         </div>
 
         {error && (

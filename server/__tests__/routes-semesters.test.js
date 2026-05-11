@@ -95,3 +95,24 @@ describe('Data isolation', () => {
     expect(res.body).toHaveLength(0);
   });
 });
+
+describe('Audit logging', () => {
+  it('logs CREATE on semester creation', async () => {
+    const { logAudit } = await import('../services/audit.js');
+    await request(app).post('/api/semesters').set(auth(token))
+      .send({ name: '审计学期', type: 'fall', startDate: '2026-09-01', endDate: '2026-12-31' });
+    expect(logAudit).toHaveBeenCalledWith(
+      expect.objectContaining({ action: 'CREATE', tableName: 'semesters' })
+    );
+  });
+
+  it('logs DELETE on semester deletion', async () => {
+    const { body: { id } } = await request(app).post('/api/semesters').set(auth(token))
+      .send({ name: '待删学期', type: 'summer', startDate: '2026-07-01', endDate: '2026-08-31' });
+    const { logAudit } = await import('../services/audit.js');
+    await request(app).delete(`/api/semesters/${id}`).set(auth(token));
+    expect(logAudit).toHaveBeenCalledWith(
+      expect.objectContaining({ action: 'DELETE', tableName: 'semesters' })
+    );
+  });
+});

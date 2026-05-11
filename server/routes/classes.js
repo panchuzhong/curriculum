@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { drizzleDb, db } from '../db/index.js';
 import { classes, students, classStudents, schedules } from '../db/schema.js';
-import { eq, and } from 'drizzle-orm';
+import { eq, and, inArray } from 'drizzle-orm';
 import { authMiddleware } from '../middleware/auth.js';
 import { getDefaultPrice } from '../db/seed.js';
 import { logAudit } from '../services/audit.js';
@@ -106,9 +106,9 @@ classStudentRouter.get('/', (req, res) => {
   const studentIds = links.map(l => l.studentId);
   if (studentIds.length === 0) return res.json([]);
 
-  const allStudents = drizzleDb.select().from(students)
-    .where(eq(students.teacherId, req.teacherId)).all();
-  res.json(allStudents.filter(s => studentIds.includes(s.id)));
+  const classStudentsData = drizzleDb.select().from(students)
+    .where(and(eq(students.teacherId, req.teacherId), inArray(students.id, studentIds))).all();
+  res.json(classStudentsData);
 });
 
 classStudentRouter.post('/', validateClassStudent, handle, (req, res) => {

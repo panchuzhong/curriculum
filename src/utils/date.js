@@ -39,5 +39,6 @@ export function toHours(durationBilling) {
 }
 
 export function toHoursAbs(durationBilling) {
+  if (durationBilling == null) return 0;
   return Math.abs(durationBilling) / 60;
 }

@@ -1,11 +1,14 @@
-import { useState, useEffect, useRef, useContext } from 'react';
+import { useState, useEffect, useRef, useContext, useCallback } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { api } from '../api';
 import { getClassColor, getTextColor, DarkContext } from '../utils/colors';
-import { isHoliday, getHolidayName, isWorkday, getWorkdayReason } from '../utils/holidays';
+import { isHoliday, getHolidayName, isWorkday } from '../utils/holidays';
 import { todayStr, getMonday } from '../utils/date';
 import { useSimpleSwipe } from '../hooks/useSimpleSwipe';
 import { useToast } from '../components/ToastProvider';
+import BatchScheduleDialog from './BatchScheduleDialog';
+import ExportDialog from './ExportDialog';
+import useViewExport from './useViewExport';
 
 function getMonthDates(year, month) {
   const first = new Date(year, month, 1);
@@ -40,6 +43,9 @@ export default function MonthlySchedule() {
   const [animKey, setAnimKey] = useState(0);
   const animDir = useRef(1);
   const containerRef = useRef(null);
+  const [showBatch, setShowBatch] = useState(false);
+
+  const exportHook = useViewExport({ view: 'monthly', params: { year, month } });
 
   const startDate = formatDate(year, month, 1);
   const endDate = new Date(year, month + 1, 0);
@@ -82,7 +88,12 @@ export default function MonthlySchedule() {
     setAnimKey(k => k + 1);
   }
 
+  const reload = useCallback(() => {
+    api.getSchedules(startDate, endStr).then(setSchedules).catch(e => toast(e.message || '加载课表失败'));
+  }, [year, month]);
+
   const navBtn = "px-2 sm:px-4 py-1.5 sm:py-2 text-xs sm:text-base bg-gray-200 dark:bg-gray-700 rounded hover:bg-gray-300 dark:hover:bg-gray-600 active:scale-95 transition-transform select-none";
+  const actBtn = "px-2 sm:px-3 py-1.5 sm:py-2 text-white rounded text-xs sm:text-sm select-none active:scale-95 transition-transform";
 
   const swipe = useSimpleSwipe({ onPrev: prevMonth, onNext: nextMonth });
 
@@ -97,6 +108,15 @@ export default function MonthlySchedule() {
           <button onClick={() => { const n = new Date(); setYear(n.getFullYear()); setMonth(n.getMonth()); }}
             className={`${navBtn} px-3 sm:px-4`}>本月</button>
           <button onClick={nextMonth} className={navBtn}><span className="sm:hidden">›</span><span className="hidden sm:inline">下月</span></button>
+          <div className="flex gap-1 ml-1 sm:ml-2">
+            <button onClick={() => setShowBatch(true)} className={actBtn + ' bg-green-600 hover:bg-green-700'}>
+              <span className="sm:hidden">批量</span><span className="hidden sm:inline">批量操作</span>
+            </button>
+            <button disabled={exportHook.exporting} onClick={() => exportHook.openExport(startDate, endStr, { startYear: year, startMonth: month, endYear: year, endMonth: month })}
+              className={actBtn + ' bg-purple-600 hover:bg-purple-700 disabled:opacity-50'}>
+              {exportHook.exporting ? '…' : '导出'}
+            </button>
+          </div>
         </div>
       </div>
       <div key={animKey} className={`flex-1 min-h-0 flex flex-col ${animDir.current > 0 ? 'slide-in-right' : 'slide-in-left'}`}>
@@ -175,6 +195,26 @@ export default function MonthlySchedule() {
         })}
       </div>
       </div>
+
+      {showBatch && (
+        <BatchScheduleDialog
+          onClose={() => setShowBatch(false)}
+          onSaved={() => { setShowBatch(false); reload(); }}
+        />
+      )}
+
+      {exportHook.showExport && exportHook.exportStart && exportHook.exportEnd && (
+        <ExportDialog
+          view="month"
+          defaultYear={year}
+          defaultMonth={month}
+          defaultStart={exportHook.exportStart}
+          defaultEnd={exportHook.exportEnd}
+          onClose={() => exportHook.setShowExport(false)}
+          onExportPNG={exportHook.exportPNG}
+          onExportCSV={exportHook.exportCSV}
+        />
+      )}
     </div>
   );
 }

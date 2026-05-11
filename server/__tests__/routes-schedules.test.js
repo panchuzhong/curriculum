@@ -118,6 +118,9 @@ describe('DELETE /api/schedules/:id', () => {
       .send({ classId, date: '2026-05-04', startTime: '09:00', endTime: '10:30' });
     const res = await request(app).delete(`/api/schedules/${id}`).set(auth(token));
     expect(res.status).toBe(200);
+    // Verify actual deletion
+    const check = await request(app).get(`/api/schedules/${id}`).set(auth(token));
+    expect(check.status).toBe(404);
   });
 
   it('returns 404 for nonexistent id', async () => {

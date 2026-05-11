@@ -91,3 +91,24 @@ describe('Data isolation', () => {
     expect(res.body).toHaveLength(0);
   });
 });
+
+describe('Audit logging', () => {
+  it('logs CREATE on tier creation', async () => {
+    const { logAudit } = await import('../services/audit.js');
+    await request(app).post('/api/pricing-tiers').set(auth(token))
+      .send({ minStudents: 1, maxStudents: 5, pricePerStudentPerHour: 150 });
+    expect(logAudit).toHaveBeenCalledWith(
+      expect.objectContaining({ action: 'CREATE', tableName: 'pricing_tiers' })
+    );
+  });
+
+  it('logs DELETE on tier deletion', async () => {
+    const { body: { id } } = await request(app).post('/api/pricing-tiers').set(auth(token))
+      .send({ minStudents: 6, maxStudents: 10, pricePerStudentPerHour: 200 });
+    const { logAudit } = await import('../services/audit.js');
+    await request(app).delete(`/api/pricing-tiers/${id}`).set(auth(token));
+    expect(logAudit).toHaveBeenCalledWith(
+      expect.objectContaining({ action: 'DELETE', tableName: 'pricing_tiers' })
+    );
+  });
+});

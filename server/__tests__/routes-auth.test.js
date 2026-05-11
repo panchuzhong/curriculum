@@ -144,4 +144,25 @@ describe('PUT /api/auth/api-key', () => {
     expect(res.body.apiKey).toBeDefined();
     expect(res.body.apiKey).not.toBe(oldKey);
   });
+
+  it('writes audit log on api key rotation', async () => {
+    const { logAudit } = await import('../services/audit.js');
+    const { token } = await makeUser(drizzleDb);
+    await request(app).put('/api/auth/api-key').set(auth(token));
+    expect(logAudit).toHaveBeenCalledWith(
+      expect.objectContaining({ action: 'UPDATE', tableName: 'teachers' })
+    );
+  });
+});
+
+describe('PUT /api/auth/password', () => {
+  it('writes audit log on password change', async () => {
+    const { logAudit } = await import('../services/audit.js');
+    const { token } = await makeUser(drizzleDb, 'pwtester');
+    await request(app).put('/api/auth/password').set(auth(token))
+      .send({ oldPassword: 'pass123', newPassword: 'newpass456' });
+    expect(logAudit).toHaveBeenCalledWith(
+      expect.objectContaining({ action: 'UPDATE', tableName: 'teachers' })
+    );
+  });
 });

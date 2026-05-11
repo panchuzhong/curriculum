@@ -131,7 +131,9 @@ router.post('/batch', validateBatchCreate, handle, (req, res) => {
     locationLng: cls.defaultLocationLng,
   }));
   const result = drizzleDb.insert(schedules).values(values).run();
-  res.json({ count: targetDates.length, ids: targetDates.map((_, i) => Number(result.lastInsertRowid) - targetDates.length + 1 + i) });
+  const idList = targetDates.map((_, i) => Number(result.lastInsertRowid) - targetDates.length + 1 + i);
+  logAudit({ teacherId: req.teacherId, action: 'BATCH_CREATE', tableName: 'schedules', after: { count: targetDates.length, ids: idList } });
+  res.json({ count: targetDates.length, ids: idList });
 });
 
 router.put('/batch', validateBatchUpdate, handle, (req, res) => {
@@ -286,7 +288,7 @@ router.delete('/:id', (req, res) => {
   const existing = drizzleDb.select().from(schedules).where(eq(schedules.id, +req.params.id)).get();
   if (!existing) return res.status(404).json({ error: 'Not found' });
   const cls = drizzleDb.select().from(classes)
-    .where(and(eq(classes.id, existing.classId), eq(classes.teacherId, req.teacherId))).get();
+    .where(and(eq(classes.id, existing.classId), eq(classes.teacherId, req.teacherId), eq(classes.deleted, false))).get();
   if (!cls) return res.status(403).json({ error: 'Forbidden' });
   drizzleDb.delete(schedules).where(eq(schedules.id, +req.params.id)).run();
   logAudit({ teacherId: req.teacherId, action: 'DELETE', tableName: 'schedules', recordId: +req.params.id, before: existing });

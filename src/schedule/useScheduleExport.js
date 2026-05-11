@@ -50,10 +50,10 @@ export default function useScheduleExport({ weekStart, visibleDays, addDays }) {
         const d = parseDateStr(s.date);
         rows.push([
           s.date, weekdayNames[d.getDay()],
-          s.class?.name || '', s.class?.grade || '', s.class?.subject || '',
-          s.startTime, s.endTime, s.durationBilling, s.locationName || '',
+          s.class?.name ?? '', s.class?.grade ?? '', s.class?.subject ?? '',
+          s.startTime, s.endTime, s.durationBilling, s.locationName ?? '',
           s.class?.isCompetition ? '是' : '否',
-          s.class?.unitPrice || '', s.class?.studentCount || '', s.class?.discountAmount || '',
+          s.class?.unitPrice ?? '', s.class?.studentCount ?? '', s.class?.discountAmount ?? '',
         ]);
       });
       const csv = rows.map(r => r.map(c => {

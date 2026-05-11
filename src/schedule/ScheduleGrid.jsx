@@ -240,6 +240,7 @@ export default function ScheduleGrid({ dates, schedules, visibleDays = 7, weekSt
           })}
         </div>
       </div>
+
     </div>
   );
 }

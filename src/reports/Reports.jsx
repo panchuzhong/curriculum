@@ -2,7 +2,7 @@ import { useState, useEffect, useContext } from 'react';
 import { api } from '../api';
 import { getClassColor, getSubjectColor, DarkContext } from '../utils/colors';
 import { SUBJECTS, GRADES } from '../utils/constants';
-import { todayStr, getMonday, addDays, fmt, getMonthRange, getYearRange, toHoursAbs } from '../utils/date';
+import { todayStr, getMonday, addDays, getMonthRange, getYearRange, toHoursAbs } from '../utils/date';
 import { useToast } from '../components/ToastProvider';
 
 function calcRevenue(cls, durationBilling) {

@@ -48,7 +48,7 @@ app.get('/api/health', (req, res) => res.json({ status: 'ok' }));
 // Serve static files in production
 if (existsSync('./dist')) {
   app.use(express.static('./dist'));
-  app.get('{*path}', (req, res) => res.sendFile('index.html', { root: './dist' }));
+  app.get('*', (req, res) => res.sendFile('index.html', { root: './dist' }));
 }
 
 // Error handler
@@ -59,4 +59,15 @@ app.use((err, req, res, next) => {
 
 const PORT = process.env.PORT || 8443;
 const HOST = process.env.HOST || '127.0.0.1';
-app.listen(PORT, HOST, () => console.log(`Server running on http://${HOST}:${PORT}`));
+const server = app.listen(PORT, HOST, () => console.log(`Server running on http://${HOST}:${PORT}`));
+
+process.on('SIGTERM', async () => {
+  const { closeBrowser } = await import('./services/browser.js');
+  await closeBrowser();
+  server.close();
+});
+process.on('SIGINT', async () => {
+  const { closeBrowser } = await import('./services/browser.js');
+  await closeBrowser();
+  server.close();
+});

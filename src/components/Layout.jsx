@@ -28,8 +28,8 @@ export default function Layout({ children }) {
   const [isTablet, setIsTablet] = useState(() => window.innerWidth >= 768 && window.innerWidth < 1280);
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
-  setDarkMode(dark);
   useLayoutEffect(() => {
+    setDarkMode(dark);
     document.documentElement.classList.toggle('dark', dark);
     document.documentElement.classList.toggle('light', !dark);
     localStorage.setItem('theme', dark ? 'dark' : 'light');
@@ -147,7 +147,7 @@ export default function Layout({ children }) {
         )}
       </div>
 
-      <div className="flex-1 min-h-0 p-3 space-y-0.5 overflow-auto thin_scroll">
+      <div className="flex-1 min-h-0 p-3 space-y-0.5 overflow-auto thin-scroll">
         {NAV_LINKS.map(l => {
           const active = location.pathname === l.to;
           return (
@@ -243,7 +243,7 @@ export default function Layout({ children }) {
           </div>
         )}
 
-        <main className={`flex-1 min-h-0 overflow-auto thin_scroll bg-gray-50 dark:bg-gray-900 ${isMobile ? 'p-2' : isTablet ? 'p-3' : 'p-6'}`}>
+        <main className={`flex-1 min-h-0 overflow-auto thin-scroll bg-gray-50 dark:bg-gray-900 ${isMobile ? 'p-2' : isTablet ? 'p-3' : 'p-6'}`}>
           {children}
         </main>
       </div>

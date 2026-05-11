@@ -78,6 +78,7 @@ export default function WeeklySchedule() {
       )}
       {showExport && exportStart && exportEnd && (
         <ExportDialog
+          view="week"
           defaultStart={exportStart}
           defaultEnd={exportEnd}
           onClose={() => setShowExport(false)}

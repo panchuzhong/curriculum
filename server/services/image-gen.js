@@ -1,4 +1,4 @@
-import puppeteer from 'puppeteer';
+import { getBrowser } from './browser.js';
 import { isHoliday, isWorkday, getHolidayName } from './holidays.js';
 
 // ── Color system — mirrors frontend src/utils/colors.js ──────────
@@ -309,26 +309,15 @@ export async function generateScheduleImage(schedulesWithClasses, startDate, end
   </div>
 </body></html>`;
 
-  const browser = await puppeteer.launch({
-    headless: 'new',
-    args: [
-      '--no-sandbox',
-      '--disable-setuid-sandbox',
-      '--disable-dev-shm-usage',
-      '--disable-gpu',
-      '--disable-software-rasterizer',
-      '--single-process',
-    ],
-    executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || undefined,
-  });
+  const browser = await getBrowser();
+  const page = await browser.newPage();
   try {
-    const page = await browser.newPage();
     await page.setContent(html, { waitUntil: 'networkidle0' });
     const scaleFactor = scale ? Math.max(0.25, Math.min(3, +scale)) : 2;
     await page.setViewport({ width: totalW + 32, height: totalH + HEADER_H + 100, deviceScaleFactor: scaleFactor });
     const buffer = await page.screenshot({ type: 'png', fullPage: true });
     return buffer;
   } finally {
-    await browser.close();
+    await page.close();
   }
 }

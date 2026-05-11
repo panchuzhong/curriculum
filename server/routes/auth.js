@@ -10,6 +10,7 @@ import { teachers } from '../db/schema.js';
 import { eq } from 'drizzle-orm';
 import { signToken, authMiddleware } from '../middleware/auth.js';
 import { seedPricingTiers } from '../db/seed.js';
+import { logAudit } from '../services/audit.js';
 import handle from '../validations/handle.js';
 import { validateRegister, validateLogin, validateChangePassword, validateUpdateSubjects } from '../validations/auth.js';
 
@@ -74,12 +75,14 @@ router.get('/profile', authMiddleware, (req, res) => {
 router.put('/subjects', authMiddleware, validateUpdateSubjects, handle, (req, res) => {
   const { subjects } = req.body;
   drizzleDb.update(teachers).set({ subjects: JSON.stringify(subjects) }).where(eq(teachers.id, req.teacherId)).run();
+  logAudit({ teacherId: req.teacherId, action: 'UPDATE', tableName: 'teachers', recordId: req.teacherId, after: { subjects } });
   res.json({ subjects });
 });
 
 router.put('/api-key', authMiddleware, (req, res) => {
   const newKey = uuidv4();
   drizzleDb.update(teachers).set({ apiKey: newKey }).where(eq(teachers.id, req.teacherId)).run();
+  logAudit({ teacherId: req.teacherId, action: 'UPDATE', tableName: 'teachers', recordId: req.teacherId, after: { apiKeyRotated: true } });
   res.json({ apiKey: newKey });
 });
 
@@ -91,6 +94,7 @@ router.put('/password', authMiddleware, validateChangePassword, handle, async (r
   }
   const passwordHash = await bcrypt.hash(newPassword, 10);
   drizzleDb.update(teachers).set({ passwordHash }).where(eq(teachers.id, req.teacherId)).run();
+  logAudit({ teacherId: req.teacherId, action: 'UPDATE', tableName: 'teachers', recordId: req.teacherId, after: { passwordChanged: true } });
   res.json({ ok: true });
 });
 

@@ -31,6 +31,10 @@ export const validateBatchUpdate = [
 
 export const validateBatchDelete = [
   body('ids').optional().isArray().withMessage('ids 须为数组'),
+  body('ids.*').optional().isInt({ min: 1 }).withMessage('ids 元素须为正整数'),
+  body('classId').optional().isInt({ min: 1 }).withMessage('classId 须为正整数'),
+  body('start').optional().matches(DATE_RE).withMessage('start 格式须为 YYYY-MM-DD'),
+  body('end').optional().matches(DATE_RE).withMessage('end 格式须为 YYYY-MM-DD'),
 ];
 
 export const validateUpdateSchedule = [
