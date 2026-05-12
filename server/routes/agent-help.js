@@ -4,7 +4,7 @@ const router = Router();
 router.get('/agent/help', (req, res) => {
   res.json({
     name: '课表管理系统 API',
-    version: '1.7.3',
+    version: '1.7.4',
     description: '面向私人教师的课表管理平台 API，供 AI Agent 访问',
     auth: {
       type: 'API Key 或 JWT Token',
