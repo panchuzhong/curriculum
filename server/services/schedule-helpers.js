@@ -1,5 +1,5 @@
 import { drizzleDb } from '../db/index.js';
-import { schedules, classes } from '../db/schema.js';
+import { schedules, classes, semesters } from '../db/schema.js';
 import { eq } from 'drizzle-orm';
 
 export function toLocalDateStr(d) {
@@ -102,3 +102,13 @@ export function calcDurationBilling(startTime, endTime, manual) {
   if (diff <= 0) diff += 24 * 60;
   return diff;
 }
+
+const _semesterCache = new Map();
+export function getTeacherSemesters(db, teacherId) {
+  const cached = _semesterCache.get(teacherId);
+  if (cached) return cached;
+  const result = db.select().from(semesters).where(eq(semesters.teacherId, teacherId)).all();
+  _semesterCache.set(teacherId, result);
+  return result;
+}
+export function clearSemesterCache() { _semesterCache.clear(); }

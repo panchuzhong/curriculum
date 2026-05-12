@@ -3,6 +3,7 @@ import { drizzleDb } from '../db/index.js';
 import { semesters } from '../db/schema.js';
 import { eq, and } from 'drizzle-orm';
 import { authMiddleware } from '../middleware/auth.js';
+import { clearSemesterCache } from '../services/schedule-helpers.js';
 import handle from '../validations/handle.js';
 import { validateCreateSemester, validateUpdateSemester } from '../validations/semesters.js';
 import { logAudit } from '../services/audit.js';
@@ -24,6 +25,7 @@ router.post('/', validateCreateSemester, handle, (req, res) => {
   const newId = Number(result.lastInsertRowid);
   const created = drizzleDb.select().from(semesters).where(eq(semesters.id, newId)).get();
   logAudit({ teacherId: req.teacherId, action: 'CREATE', tableName: 'semesters', recordId: newId, after: created });
+  clearSemesterCache();
   res.json(created);
 });
 
@@ -38,6 +40,7 @@ router.put('/:id', validateUpdateSemester, handle, (req, res) => {
   drizzleDb.update(semesters).set(safeUpdates).where(eq(semesters.id, +id)).run();
   const updated = drizzleDb.select().from(semesters).where(eq(semesters.id, +id)).get();
   logAudit({ teacherId: req.teacherId, action: 'UPDATE', tableName: 'semesters', recordId: +id, before: existing, after: safeUpdates });
+  clearSemesterCache();
   res.json(updated);
 });
 
@@ -48,6 +51,7 @@ router.delete('/:id', (req, res) => {
   if (!existing) return res.status(404).json({ error: 'Not found' });
   drizzleDb.delete(semesters).where(eq(semesters.id, +id)).run();
   logAudit({ teacherId: req.teacherId, action: 'DELETE', tableName: 'semesters', recordId: +id, before: existing });
+  clearSemesterCache();
   res.json({ ok: true });
 });
 

@@ -23,6 +23,7 @@ export const validateUpdateClass = [
   body('unitPrice').optional().isFloat({ min: 0 }).withMessage('单价不能为负'),
   body('discountAmount').optional().isFloat({ min: 0 }).withMessage('优惠金额不能为负'),
   body('studentCount').optional().isInt({ min: 1 }).withMessage('学生人数须为正整数'),
+  body('isCompetition').optional().isBoolean().withMessage('isCompetition 须为布尔值'),
 ];
 
 export const validateClassStudent = [

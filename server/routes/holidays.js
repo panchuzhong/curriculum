@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { drizzleDb } from '../db/index.js';
 import { holidays } from '../db/schema.js';
-import { eq, and } from 'drizzle-orm';
+import { eq, and, gte, lte } from 'drizzle-orm';
 import { authMiddleware } from '../middleware/auth.js';
 import { logAudit } from '../services/audit.js';
 import handle from '../validations/handle.js';
@@ -21,8 +21,11 @@ router.get('/', (req, res) => {
 router.get('/:year', (req, res) => {
   const year = req.params.year;
   const result = drizzleDb.select().from(holidays)
-    .where(and(eq(holidays.teacherId, req.teacherId))).all()
-    .filter(h => h.date.startsWith(year));
+    .where(and(
+      eq(holidays.teacherId, req.teacherId),
+      gte(holidays.date, `${year}-01-01`),
+      lte(holidays.date, `${year}-12-31`),
+    )).all();
   res.json(result);
 });
 

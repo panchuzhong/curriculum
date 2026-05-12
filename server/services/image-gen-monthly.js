@@ -289,14 +289,14 @@ export async function generateMonthlyImage(schedulesWithClasses, year, month, { 
   const browser = await getBrowser();
   const page = await browser.newPage();
   try {
-    await page.setContent(html, { waitUntil: 'networkidle0' });
+    await page.setContent(html, { waitUntil: 'networkidle0', timeout: 30000 });
     await page.setViewport({ width: totalW + 32, height: 800, deviceScaleFactor: 2 });
     const bodyBox = await page.evaluate(() => {
       const r = document.body.getBoundingClientRect();
       return { x: r.x, y: r.y, w: r.width, h: r.height };
     });
     const buffer = await page.screenshot({
-      type: 'png',
+      type: 'png', timeout: 30000,
       clip: { x: bodyBox.x, y: bodyBox.y, width: bodyBox.w, height: bodyBox.h },
     });
     return buffer;

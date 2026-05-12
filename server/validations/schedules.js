@@ -20,12 +20,14 @@ export const validateBatchCreate = [
   body('weekday').optional().isInt({ min: 0, max: 6 }).withMessage('weekday 须为0-6'),
   body('semesterId').optional().isInt({ min: 1 }).withMessage('semesterId 须为正整数'),
   body('durationBilling').optional().isInt({ min: 0 }).withMessage('durationBilling 须为非负整数'),
+  body('preview').optional().isBoolean().withMessage('preview 须为布尔值'),
 ];
 
 export const validateBatchUpdate = [
   body('classId').isInt({ min: 1 }).withMessage('classId 须为正整数'),
   body('fromDate').optional().matches(DATE_RE).withMessage('fromDate 格式须为 YYYY-MM-DD'),
   body('weekday').optional().isInt({ min: 0, max: 6 }).withMessage('weekday 须为0-6'),
+  body('semesterOnly').optional().isBoolean().withMessage('semesterOnly 须为布尔值'),
   body('updates').isObject().withMessage('updates 须为对象'),
 ];
 
@@ -35,6 +37,9 @@ export const validateBatchDelete = [
   body('classId').optional().isInt({ min: 1 }).withMessage('classId 须为正整数'),
   body('start').optional().matches(DATE_RE).withMessage('start 格式须为 YYYY-MM-DD'),
   body('end').optional().matches(DATE_RE).withMessage('end 格式须为 YYYY-MM-DD'),
+  body('fromDate').optional().matches(DATE_RE).withMessage('fromDate 格式须为 YYYY-MM-DD'),
+  body('semesterOnly').optional().isBoolean().withMessage('semesterOnly 须为布尔值'),
+  body('dryRun').optional().isBoolean().withMessage('dryRun 须为布尔值'),
 ];
 
 export const validateUpdateSchedule = [

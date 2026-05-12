@@ -81,8 +81,9 @@ export default function ScheduleDialog({ date, startTime, schedule, onClose, onS
     if (!newClass.name) return;
     setSaving(true);
     setError('');
+    let cls;
     try {
-      const cls = await api.createClass({
+      cls = await api.createClass({
         ...newClass,
         studentCount: newClass.studentCount === '' ? 1 : +newClass.studentCount,
         unitPrice: newClass.unitPrice === '' ? 0 : +newClass.unitPrice,
@@ -99,6 +100,10 @@ export default function ScheduleDialog({ date, startTime, schedule, onClose, onS
       onSaved();
     } catch (err) {
       setError(err.message || '创建失败');
+      // Clean up orphan class if it was created before schedule failed
+      if (cls) {
+        try { await api.deleteClass(cls.id); } catch (_) { /* best effort */ }
+      }
     } finally {
       setSaving(false);
     }

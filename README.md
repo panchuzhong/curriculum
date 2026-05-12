@@ -26,9 +26,9 @@
 
 ### 排课
 - **手动排课**：点击课表空白时段
-- **批量排课**：学期模式（从今天或学期开始日期较晚者起排，按周几自动生成，自动跳过节假日）+ 日期范围模式（自动生成日期列表，支持每天/隔天/每周间隔）
-- **批量调整**：同一班级、同一星期几、指定日期起批量修改时间/地点（`PUT /api/schedules/batch`）
-- **批量删课**：按 ID 数组或日期范围批量删除，删除前预览数量确认
+- **批量排课**：学期模式（从今天或学期开始日期较晚者起排，按周几自动生成，自动跳过节假日）+ 日期范围模式（前端支持每天/隔天/隔两天/每周间隔自动生成日期列表，API 接收显式日期数组）
+- **批量调整**：同一班级、同一星期几、指定日期起批量修改时间/地点（`PUT /api/schedules/batch`），默认跨学期保护
+- **批量删课**：支持三种模式 — 按 ID 数组、按班级+起始日期（默认学期保护）、按日期范围；删除前预览数量确认
 - **单次调整**：每节课可独立修改时间、地点
 
 ### 统计报表
@@ -50,7 +50,7 @@
 - 修改密码
 
 ### 数据备份与还原
-- `GET /api/backup`：导出全量数据为 JSON（班级、学生、排课、学期、节假日、定价阶梯）
+- `GET /api/backup`：导出全量数据为 JSON（班级、学生、班级-学生关联、排课、学期、节假日、定价阶梯、操作日志）
 - `POST /api/backup/restore`：事务原子还原，teacherId 自动绑定当前账号防止越权
 
 ### 主题
@@ -222,7 +222,7 @@ sudo systemctl start curriculum-scheduler
 | POST | /api/schedules | 创建单次排课，返回完整对象 |
 | PUT | /api/schedules/:id | 更新排课，返回完整对象 |
 | DELETE | /api/schedules/:id | 删除单条排课 |
-| DELETE | /api/schedules/batch | 批量删除（ids 数组 或 start+end+classId） |
+| DELETE | /api/schedules/batch | 批量删除（byIds / byClassId+fromDate / byDateRange 三种模式） |
 | POST | /api/schedules/batch | 批量创建（学期模式/日期模式） |
 | PUT | /api/schedules/batch | 批量调整时间/地点（同班级同星期几，指定日期起） |
 | GET | /api/schedules/summary?start=&end= | 课时与收入汇总统计（可加 &classId= &format=csv） |
@@ -307,6 +307,14 @@ POST /api/schedules/batch
 DELETE /api/schedules/batch
 {"ids": [10, 11, 12]}
 ```
+返回 `{"count": 3, "ids": [10, 11, 12]}`
+
+**按班级+起始日期（默认学期保护）**：
+```json
+DELETE /api/schedules/batch
+{"classId": 1, "fromDate": "2026-05-11"}
+```
+仅删除 `date >= fromDate` 的排课；`semesterOnly` 默认 `true`，跨学期时自动过滤并返回 `semesterFiltered` 和 `hint`。设为 `false` 绕过学期限制。
 
 **按日期范围（可附加 classId）**：
 ```json

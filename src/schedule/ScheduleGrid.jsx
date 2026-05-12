@@ -81,14 +81,14 @@ function NowLine({ rowHeight, topGapHeight, firstLabelMin }) {
 
   const dotSize = 10;
   const lineThickness = 2;
+  const halfDot = dotSize / 2;
 
   return (
-    <div className="absolute z-30 pointer-events-none" style={{ top: `${top - dotSize / 2}px`, left: 0, right: 0 }}>
-      <div className="absolute" style={{ left: '-5px', top: 0 }}>
-        <div className="w-2.5 h-2.5 bg-red-500 rounded-full shadow-sm shadow-red-500/50" />
+    <div className="absolute z-30 pointer-events-none" style={{ top: `${top - halfDot}px`, left: 0, right: 0 }}>
+      <div style={{ position: 'absolute', left: `${-halfDot}px`, top: 0, width: `${dotSize}px`, height: `${dotSize}px` }}>
+        <div style={{ width: '100%', height: '100%', backgroundColor: '#ef4444', borderRadius: '50%', boxShadow: '0 1px 3px rgba(239,68,68,0.4)' }} />
       </div>
-      <div className="absolute left-0 right-0 h-[2px] bg-red-500 shadow-sm shadow-red-500/30"
-        style={{ top: `${dotSize / 2 - lineThickness / 2}px` }} />
+      <div style={{ position: 'absolute', left: 0, right: 0, top: `${halfDot - lineThickness / 2}px`, height: `${lineThickness}px`, backgroundColor: '#ef4444', boxShadow: '0 1px 2px rgba(239,68,68,0.25)' }} />
     </div>
   );
 }
@@ -135,7 +135,8 @@ export default function ScheduleGrid({ dates, schedules, visibleDays = 7, weekSt
   const endHour = Math.max(DEFAULT_END, Math.floor(bottomMin / 60));
 
   const displayHours = [];
-  for (let h = startHour + 1; h <= endHour; h++) displayHours.push(h);
+  const labelStart = startHour === 0 ? 0 : startHour + 1;
+  for (let h = labelStart; h <= endHour; h++) displayHours.push(h);
   const numDisplayHours = displayHours.length;
   const topGapFraction = TOP_OFFSET_MIN / 60;
   const lastRowFraction = (bottomMin - endHour * 60) / 60;

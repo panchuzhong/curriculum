@@ -1,13 +1,13 @@
 import { Router } from 'express';
 import { drizzleDb } from '../db/index.js';
-import { schedules, classes, semesters, holidays } from '../db/schema.js';
+import { schedules, classes, semesters, holidays, classStudents } from '../db/schema.js';
 import { eq, and, gte, lte, inArray } from 'drizzle-orm';
 import { authMiddleware } from '../middleware/auth.js';
 import { isHoliday } from '../services/holidays.js';
 import handle from '../validations/handle.js';
 import { validateCreateSchedule, validateBatchCreate, validateBatchUpdate, validateBatchDelete, validateUpdateSchedule } from '../validations/schedules.js';
 import { logAudit } from '../services/audit.js';
-import { toLocalDateStr, toMin, resolveRange, toCSV, detectConflictGroups, getScheduleWithClass, calcDurationBilling } from '../services/schedule-helpers.js';
+import { toLocalDateStr, toMin, resolveRange, toCSV, detectConflictGroups, getScheduleWithClass, calcDurationBilling, getTeacherSemesters } from '../services/schedule-helpers.js';
 
 const router = Router();
 router.use(authMiddleware);
@@ -37,15 +37,26 @@ function getConflictsForSchedule(scheduleId, teacherId) {
 // ── CRUD ──
 
 router.get('/', (req, res) => {
-  const { classId } = req.query;
+  const { classId, studentId, limit, offset } = req.query;
   const { start, end } = resolveRange(req.query);
   if (!start || !end) return res.status(400).json({ error: 'start/end or range required' });
+  const pageLimit = limit ? Math.max(1, Math.min(parseInt(limit) || 100, 1000)) : null;
+  const pageOffset = offset ? Math.max(0, parseInt(offset) || 0) : 0;
 
   const teacherClasses = drizzleDb.select().from(classes)
     .where(and(eq(classes.teacherId, req.teacherId), eq(classes.deleted, false))).all();
   let classIds = teacherClasses.map(c => c.id);
   if (classIds.length === 0) return res.json([]);
-  if (classId) classIds = classIds.filter(id => id === +classId);
+  if (classId) {
+    const queryClassIds = classId.split(',').map(Number).filter(Boolean);
+    if (queryClassIds.length) classIds = classIds.filter(id => queryClassIds.includes(id));
+  }
+  if (studentId) {
+    const studentClasses = drizzleDb.select({ classId: classStudents.classId }).from(classStudents)
+      .where(eq(classStudents.studentId, +studentId)).all();
+    const studentClassIds = new Set(studentClasses.map(c => c.classId));
+    classIds = classIds.filter(id => studentClassIds.has(id));
+  }
 
   const result = drizzleDb.select().from(schedules)
     .where(and(gte(schedules.date, start), lte(schedules.date, end)))
@@ -53,10 +64,12 @@ router.get('/', (req, res) => {
     .filter(s => classIds.includes(s.classId))
     .sort((a, b) => a.date !== b.date ? a.date.localeCompare(b.date) : a.startTime.localeCompare(b.startTime));
 
+  const paged = pageLimit != null ? result.slice(pageOffset, pageOffset + pageLimit) : result;
+
   const classMap = {};
   teacherClasses.forEach(c => classMap[c.id] = c);
 
-  res.json(result.map(s => ({ ...s, class: classMap[s.classId] })));
+  res.json(paged.map(s => ({ ...s, class: classMap[s.classId] })));
 });
 
 router.post('/', validateCreateSchedule, handle, (req, res) => {
@@ -81,7 +94,7 @@ router.post('/', validateCreateSchedule, handle, (req, res) => {
 // ── Batch operations (must be before /:id routes) ──
 
 router.post('/batch', validateBatchCreate, handle, (req, res) => {
-  const { classId, semesterId, weekday, dates: manualDates, startTime, endTime, durationBilling } = req.body;
+  const { classId, semesterId, weekday, dates: manualDates, startTime, endTime, durationBilling, preview } = req.body;
   const cls = drizzleDb.select().from(classes)
     .where(and(eq(classes.id, classId), eq(classes.teacherId, req.teacherId), eq(classes.deleted, false))).get();
   if (!cls) return res.status(404).json({ error: 'Class not found' });
@@ -91,6 +104,16 @@ router.post('/batch', validateBatchCreate, handle, (req, res) => {
 
   if (manualDates && manualDates.length > 0) {
     targetDates = manualDates;
+    // Check that dates mode doesn't cross semester boundaries
+    const teacherSemesters = getTeacherSemesters(drizzleDb, req.teacherId);
+    if (teacherSemesters.length > 0) {
+      const inSemester = targetDates.filter(d =>
+        teacherSemesters.some(sem => d >= sem.startDate && d <= sem.endDate)
+      );
+      if (inSemester.length > 0 && inSemester.length < targetDates.length) {
+        return res.status(400).json({ error: '日期跨学期边界（部分在学期内、部分在学期外），请分批操作' });
+      }
+    }
   } else if (semesterId && weekday != null) {
     const semester = drizzleDb.select().from(semesters)
       .where(and(eq(semesters.id, semesterId), eq(semesters.teacherId, req.teacherId))).get();
@@ -124,6 +147,10 @@ router.post('/batch', validateBatchCreate, handle, (req, res) => {
     return res.status(400).json({ error: 'No valid dates to schedule' });
   }
 
+  if (preview) {
+    return res.json({ count: targetDates.length, dates: targetDates });
+  }
+
   const values = targetDates.map(date => ({
     classId, date, startTime, endTime, durationBilling: billing,
     locationName: cls.defaultLocationName,
@@ -154,7 +181,7 @@ router.put('/batch', validateBatchUpdate, handle, (req, res) => {
   }
 
   const cls = drizzleDb.select().from(classes)
-    .where(and(eq(classes.id, classId), eq(classes.teacherId, req.teacherId))).get();
+    .where(and(eq(classes.id, classId), eq(classes.teacherId, req.teacherId), eq(classes.deleted, false))).get();
   if (!cls) return res.status(404).json({ error: 'Class not found' });
 
   let candidates = drizzleDb.select().from(schedules)
@@ -167,8 +194,7 @@ router.put('/batch', validateBatchUpdate, handle, (req, res) => {
 
   let semesterFiltered = 0;
   if (semesterOnly) {
-    const teacherSemesters = drizzleDb.select().from(semesters)
-      .where(eq(semesters.teacherId, req.teacherId)).all();
+    const teacherSemesters = getTeacherSemesters(drizzleDb, req.teacherId);
     if (teacherSemesters.length > 0) {
       const inSemester = candidates.filter(s =>
         teacherSemesters.some(sem => s.date >= sem.startDate && s.date <= sem.endDate)
@@ -218,35 +244,133 @@ router.put('/batch', validateBatchUpdate, handle, (req, res) => {
 });
 
 router.delete('/batch', validateBatchDelete, handle, (req, res) => {
-  const { ids, start, end, classId } = req.body;
+  const { ids, start, end, classId, fromDate, semesterOnly, dryRun } = req.body;
 
   if (ids && Array.isArray(ids) && ids.length > 0) {
     const teacherClasses = drizzleDb.select({ id: classes.id }).from(classes)
       .where(and(eq(classes.teacherId, req.teacherId), eq(classes.deleted, false))).all();
     const ownedClassIds = new Set(teacherClasses.map(c => c.id));
-    const toDelete = drizzleDb.select({ id: schedules.id, classId: schedules.classId })
+    let candidates = drizzleDb.select({ id: schedules.id, classId: schedules.classId, date: schedules.date })
       .from(schedules).where(inArray(schedules.id, ids.map(Number))).all()
-      .filter(s => ownedClassIds.has(s.classId)).map(s => s.id);
-    if (toDelete.length > 0) drizzleDb.delete(schedules).where(inArray(schedules.id, toDelete)).run();
-    logAudit({ teacherId: req.teacherId, action: 'BATCH_DELETE', tableName: 'schedules', after: { count: toDelete.length, ids: toDelete } });
-    return res.json({ count: toDelete.length });
+      .filter(s => ownedClassIds.has(s.classId));
+
+    let semesterFiltered = 0;
+    if (semesterOnly !== false) {
+      const teacherSemesters = getTeacherSemesters(drizzleDb, req.teacherId);
+      if (teacherSemesters.length > 0) {
+        const inSemester = candidates.filter(s =>
+          teacherSemesters.some(sem => s.date >= sem.startDate && s.date <= sem.endDate)
+        );
+        if (inSemester.length > 0 && inSemester.length < candidates.length) {
+          semesterFiltered = candidates.length - inSemester.length;
+          candidates = inSemester;
+        }
+      }
+    }
+
+    const toDelete = candidates.map(s => s.id);
+    if (!dryRun) {
+      if (toDelete.length > 0) drizzleDb.delete(schedules).where(inArray(schedules.id, toDelete)).run();
+      logAudit({ teacherId: req.teacherId, action: 'BATCH_DELETE', tableName: 'schedules', after: { count: toDelete.length, ids: toDelete } });
+    }
+    const resp = { count: toDelete.length, ids: toDelete };
+    if (semesterFiltered > 0) {
+      resp.semesterFiltered = semesterFiltered;
+      resp.hint = `${semesterFiltered}条记录因不在当前学期内被过滤，如需删除请设置 semesterOnly=false`;
+    }
+    return res.json(resp);
+  }
+
+  if (classId && fromDate) {
+    const cls = drizzleDb.select().from(classes)
+      .where(and(eq(classes.id, classId), eq(classes.teacherId, req.teacherId), eq(classes.deleted, false))).get();
+    if (!cls) return res.status(404).json({ error: 'Class not found' });
+
+    let candidates = drizzleDb.select({ id: schedules.id, date: schedules.date })
+      .from(schedules).where(and(eq(schedules.classId, classId), gte(schedules.date, fromDate))).all();
+
+    let semesterFiltered = 0;
+    if (semesterOnly !== false) {
+      const teacherSemesters = getTeacherSemesters(drizzleDb, req.teacherId);
+      if (teacherSemesters.length > 0) {
+        const inSemester = candidates.filter(s =>
+          teacherSemesters.some(sem => s.date >= sem.startDate && s.date <= sem.endDate)
+        );
+        if (inSemester.length > 0 && inSemester.length < candidates.length) {
+          semesterFiltered = candidates.length - inSemester.length;
+          candidates = inSemester;
+        }
+      }
+    }
+
+    if (candidates.length === 0) {
+      const resp = { count: 0, ids: [] };
+      if (semesterFiltered > 0) {
+        resp.semesterFiltered = semesterFiltered;
+        resp.hint = `${semesterFiltered}条记录因不在当前学期内被过滤，如需删除请设置 semesterOnly=false`;
+      }
+      return res.json(resp);
+    }
+
+    const toDelete = candidates.map(s => s.id);
+    if (!dryRun) {
+      drizzleDb.delete(schedules).where(inArray(schedules.id, toDelete)).run();
+      logAudit({
+        teacherId: req.teacherId, action: 'BATCH_DELETE', tableName: 'schedules',
+        after: { count: toDelete.length, ids: toDelete, classId, fromDate },
+      });
+    }
+    const resp = { count: toDelete.length, ids: toDelete };
+    if (semesterFiltered > 0) {
+      resp.semesterFiltered = semesterFiltered;
+      resp.hint = `${semesterFiltered}条记录因不在当前学期内被过滤，如需删除请设置 semesterOnly=false`;
+    }
+    return res.json(resp);
   }
 
   if (start && end) {
     const teacherClasses = drizzleDb.select({ id: classes.id }).from(classes)
       .where(and(eq(classes.teacherId, req.teacherId), eq(classes.deleted, false))).all();
     let classIds = teacherClasses.map(c => c.id);
-    if (classId) classIds = classIds.filter(id => id === +classId);
-    if (classIds.length === 0) return res.json({ count: 0 });
-    const toDelete = drizzleDb.select({ id: schedules.id, classId: schedules.classId })
+    if (classId) {
+      const queryClassIds = String(classId).split(',').map(Number).filter(Boolean);
+      if (queryClassIds.length) classIds = classIds.filter(id => queryClassIds.includes(id));
+    }
+    if (classIds.length === 0) {
+      return res.json({ count: 0, ids: [] });
+    }
+    let candidates = drizzleDb.select({ id: schedules.id, classId: schedules.classId, date: schedules.date })
       .from(schedules).where(and(gte(schedules.date, start), lte(schedules.date, end))).all()
-      .filter(s => classIds.includes(s.classId)).map(s => s.id);
-    if (toDelete.length > 0) drizzleDb.delete(schedules).where(inArray(schedules.id, toDelete)).run();
-    logAudit({ teacherId: req.teacherId, action: 'BATCH_DELETE', tableName: 'schedules', after: { count: toDelete.length, ids: toDelete, start, end } });
-    return res.json({ count: toDelete.length });
+      .filter(s => classIds.includes(s.classId));
+
+    let semesterFiltered = 0;
+    if (semesterOnly !== false) {
+      const teacherSemesters = getTeacherSemesters(drizzleDb, req.teacherId);
+      if (teacherSemesters.length > 0) {
+        const inSemester = candidates.filter(s =>
+          teacherSemesters.some(sem => s.date >= sem.startDate && s.date <= sem.endDate)
+        );
+        if (inSemester.length > 0 && inSemester.length < candidates.length) {
+          semesterFiltered = candidates.length - inSemester.length;
+          candidates = inSemester;
+        }
+      }
+    }
+
+    const toDelete = candidates.map(s => s.id);
+    if (!dryRun) {
+      if (toDelete.length > 0) drizzleDb.delete(schedules).where(inArray(schedules.id, toDelete)).run();
+      logAudit({ teacherId: req.teacherId, action: 'BATCH_DELETE', tableName: 'schedules', after: { count: toDelete.length, ids: toDelete, start, end } });
+    }
+    const resp = { count: toDelete.length, ids: toDelete };
+    if (semesterFiltered > 0) {
+      resp.semesterFiltered = semesterFiltered;
+      resp.hint = `${semesterFiltered}条记录因不在当前学期内被过滤，如需删除请设置 semesterOnly=false`;
+    }
+    return res.json(resp);
   }
 
-  res.status(400).json({ error: 'Provide ids[] or start+end' });
+  res.status(400).json({ error: 'Provide ids[], start+end, or classId+fromDate' });
 });
 
 // ── Single-item CRUD (:id routes) ──
@@ -381,11 +505,13 @@ router.get('/export', (req, res) => {
   const teacherClasses = drizzleDb.select().from(classes)
     .where(and(eq(classes.teacherId, req.teacherId), eq(classes.deleted, false))).all();
   let cIds = teacherClasses.map(c => c.id);
-  if (classId) cIds = cIds.filter(id => id === +classId);
+  if (classId) {
+    const queryClassIds = classId.split(',').map(Number).filter(Boolean);
+    if (queryClassIds.length) cIds = cIds.filter(id => queryClassIds.includes(id));
+  }
 
   const classMap = {};
   teacherClasses.forEach(c => classMap[c.id] = c);
-
   const scheds = cIds.length === 0 ? [] : drizzleDb.select().from(schedules)
     .where(and(gte(schedules.date, start), lte(schedules.date, end)))
     .all()
@@ -492,7 +618,12 @@ router.get('/conflicts', (req, res) => {
 
   const teacherClasses = drizzleDb.select({ id: classes.id }).from(classes)
     .where(and(eq(classes.teacherId, req.teacherId), eq(classes.deleted, false))).all();
-  const classIds = teacherClasses.map(c => c.id);
+  let classIds = teacherClasses.map(c => c.id);
+  const { classId } = req.query;
+  if (classId) {
+    const queryClassIds = classId.split(',').map(Number).filter(Boolean);
+    if (queryClassIds.length) classIds = classIds.filter(id => queryClassIds.includes(id));
+  }
   if (classIds.length === 0) return res.json({ total: 0, groups: [] });
 
   const classMap = {};

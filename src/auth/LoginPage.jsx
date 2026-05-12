@@ -17,8 +17,8 @@ export default function LoginPage() {
       const { token } = await api.login({ username, password });
       setToken(token);
       navigate('/');
-    } catch {
-      setError('用户名或密码错误');
+    } catch (err) {
+      setError(err.message === 'Failed to fetch' ? '网络连接失败，请检查网络' : '用户名或密码错误');
     } finally {
       setLoading(false);
     }

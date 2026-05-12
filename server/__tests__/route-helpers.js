@@ -30,6 +30,9 @@ export async function setupApp(routePath, routeModuleImport) {
   const t = createTestDb();
   container.drizzleDb = t.drizzleDb;
   container.db = t.db;
+  // Clear module-level caches when a new test DB is created (stale data from prior test DBs)
+  const { clearSemesterCache } = await import('../services/schedule-helpers.js');
+  clearSemesterCache();
   const routes = (await import(routeModuleImport)).default;
   const app = express();
   app.use(express.json());

@@ -312,10 +312,10 @@ export async function generateScheduleImage(schedulesWithClasses, startDate, end
   const browser = await getBrowser();
   const page = await browser.newPage();
   try {
-    await page.setContent(html, { waitUntil: 'networkidle0' });
+    await page.setContent(html, { waitUntil: 'networkidle0', timeout: 30000 });
     const scaleFactor = scale ? Math.max(0.25, Math.min(3, +scale)) : 2;
     await page.setViewport({ width: totalW + 32, height: totalH + HEADER_H + 100, deviceScaleFactor: scaleFactor });
-    const buffer = await page.screenshot({ type: 'png', fullPage: true });
+    const buffer = await page.screenshot({ type: 'png', fullPage: true, timeout: 30000 });
     return buffer;
   } finally {
     await page.close();

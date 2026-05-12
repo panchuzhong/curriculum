@@ -1,4 +1,4 @@
-import { sqliteTable, text, integer, real } from 'drizzle-orm/sqlite-core';
+import { sqliteTable, text, integer, real, primaryKey } from 'drizzle-orm/sqlite-core';
 import { sql } from 'drizzle-orm';
 
 export const teachers = sqliteTable('teachers', {
@@ -53,7 +53,9 @@ export const students = sqliteTable('students', {
 export const classStudents = sqliteTable('class_students', {
   classId: integer('class_id').notNull().references(() => classes.id),
   studentId: integer('student_id').notNull().references(() => students.id),
-});
+}, (table) => ({
+  pk: primaryKey({ columns: [table.classId, table.studentId] }),
+}));
 
 export const schedules = sqliteTable('schedules', {
   id: integer('id').primaryKey({ autoIncrement: true }),

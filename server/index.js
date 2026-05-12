@@ -48,7 +48,7 @@ app.get('/api/health', (req, res) => res.json({ status: 'ok' }));
 // Serve static files in production
 if (existsSync('./dist')) {
   app.use(express.static('./dist'));
-  app.get('*', (req, res) => res.sendFile('index.html', { root: './dist' }));
+  app.get('/{*splat}', (req, res) => res.sendFile('index.html', { root: './dist' }));
 }
 
 // Error handler

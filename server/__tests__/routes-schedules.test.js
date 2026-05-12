@@ -2,11 +2,13 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import request from 'supertest';
 import { eq } from 'drizzle-orm';
 import { setupApp, makeUser, auth } from './route-helpers.js';
+import { clearSemesterCache } from '../services/schedule-helpers.js';
 vi.mock('../services/holidays.js', () => ({ isHoliday: () => false, getHolidayName: () => '' }));
 
 let app, drizzleDb, token, classId, teacherId;
 
 beforeEach(async () => {
+  clearSemesterCache();
   ({ app, drizzleDb } = await setupApp('/api/schedules', '../routes/schedules.js'));
   const user = await makeUser(drizzleDb);
   token = user.token;

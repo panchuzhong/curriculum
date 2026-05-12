@@ -139,12 +139,6 @@ export default function BatchScheduleDialog({ onClose, onSaved }) {
               </button>
             </div>
 
-            {op === 'delete' && (
-              <p className="text-xs text-red-500 dark:text-red-400 bg-red-50 dark:bg-red-900/20 px-3 py-2 rounded">
-                将删除所选班级在学期/日期范围内的全部排课，操作不可撤销。
-              </p>
-            )}
-
             {/* 班级 */}
             <div>
               <label className="block text-sm text-gray-500 dark:text-gray-400 mb-1">选择班级</label>
@@ -195,12 +189,14 @@ export default function BatchScheduleDialog({ onClose, onSaved }) {
                     )}
                   </div>
                 )}
-                {op === 'delete' && selectedSemester && (
-                  <p className="text-xs text-gray-500 dark:text-gray-400">
-                    将删除 {(() => {
-                      const today = todayStr();
-                      return today > selectedSemester.startDate ? today : selectedSemester.startDate;
-                    })()} ~ {selectedSemester.endDate} 范围内该班级的所有排课
+                {op === 'delete' && (
+                  <p className="text-xs text-red-500 dark:text-red-400 bg-red-50 dark:bg-red-900/20 px-3 py-2 rounded">
+                    {selectedSemester
+                      ? `删除「${selectedSemester.name}」学期内，${(() => {
+                          const today = todayStr();
+                          return today > selectedSemester.startDate ? today : selectedSemester.startDate;
+                        })()} 至 ${selectedSemester.endDate} 该班级的全部排课，操作不可撤销。`
+                      : '请选择学期，将删除该学期内从今天起该班级的全部排课，操作不可撤销。'}
                   </p>
                 )}
               </>
@@ -226,6 +222,7 @@ export default function BatchScheduleDialog({ onClose, onSaved }) {
                       <select className={sel} value={rangeStep} onChange={e => setRangeStep(+e.target.value)}>
                         <option value={1}>每天</option>
                         <option value={2}>隔天</option>
+                        <option value={3}>隔两天</option>
                         <option value={7}>每周</option>
                       </select>
                     </div>
@@ -245,16 +242,27 @@ export default function BatchScheduleDialog({ onClose, onSaved }) {
             )}
 
             {mode === 'dates' && op === 'delete' && (
-              <div className="grid grid-cols-2 gap-2">
-                <div>
-                  <label className="block text-sm text-gray-500 dark:text-gray-400 mb-1">开始日期</label>
-                  <input type="date" className={sel} value={delStart} onChange={e => { setDelStart(e.target.value); setPreviewCount(null); }} />
+              <>
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="block text-sm text-gray-500 dark:text-gray-400 mb-1">开始日期</label>
+                    <input type="date" className={sel} value={delStart} onChange={e => { setDelStart(e.target.value); setPreviewCount(null); }} />
+                  </div>
+                  <div>
+                    <label className="block text-sm text-gray-500 dark:text-gray-400 mb-1">结束日期</label>
+                    <input type="date" className={sel} value={delEnd} onChange={e => { setDelEnd(e.target.value); setPreviewCount(null); }} />
+                  </div>
                 </div>
-                <div>
-                  <label className="block text-sm text-gray-500 dark:text-gray-400 mb-1">结束日期</label>
-                  <input type="date" className={sel} value={delEnd} onChange={e => { setDelEnd(e.target.value); setPreviewCount(null); }} />
-                </div>
-              </div>
+                {delStart && delEnd ? (
+                  <p className="text-xs text-red-500 dark:text-red-400 bg-red-50 dark:bg-red-900/20 px-3 py-2 rounded">
+                    删除 {delStart} 至 {delEnd} 日期范围内该班级的全部排课，操作不可撤销。
+                  </p>
+                ) : (
+                  <p className="text-xs text-red-500 dark:text-red-400 bg-red-50 dark:bg-red-900/20 px-3 py-2 rounded">
+                    请设置日期范围，将删除该范围内该班级的全部排课，操作不可撤销。
+                  </p>
+                )}
+              </>
             )}
 
             {op === 'create' && (

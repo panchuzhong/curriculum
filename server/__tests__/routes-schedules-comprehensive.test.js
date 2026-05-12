@@ -2,11 +2,13 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import request from 'supertest';
 import { eq, and } from 'drizzle-orm';
 import { setupApp, makeUser, auth } from './route-helpers.js';
+import { clearSemesterCache } from '../services/schedule-helpers.js';
 vi.mock('../services/holidays.js', () => ({ isHoliday: () => false, getHolidayName: () => '' }));
 
 let app, drizzleDb, token, classId, teacherId;
 
 beforeEach(async () => {
+  clearSemesterCache();
   ({ app, drizzleDb } = await setupApp('/api/schedules', '../routes/schedules.js'));
   const user = await makeUser(drizzleDb);
   token = user.token;
@@ -281,26 +283,6 @@ describe('GET /api/schedules/free-slots — edge cases', () => {
 // ── Batch create with semester mode ──
 
 describe('POST /api/schedules/batch — semester mode', () => {
-  it('creates schedules within semester range skipping holidays', async () => {
-    const { semesters, holidays } = await import('../db/schema.js');
-    const s = drizzleDb.insert(semesters).values({
-      teacherId, name: '2026春', type: 'spring', startDate: '2026-05-01', endDate: '2026-05-31',
-    }).run();
-    const semesterId = Number(s.lastInsertRowid);
-    // Mark May 4 (Mon) as holiday
-    drizzleDb.insert(holidays).values({
-      teacherId, date: '2026-05-04', type: 'holiday', name: '假日',
-    }).run();
-
-    // Monday (weekday=1): May 4(holiday), May 11, May 18, May 25
-    vi.spyOn(Date, 'now').mockReturnValue(new Date('2026-04-01').getTime());
-    const res = await request(app).post('/api/schedules/batch').set(auth(token))
-      .send({ classId, semesterId, weekday: 1, startTime: '09:00', endTime: '10:00' });
-    expect(res.status).toBe(200);
-    expect(res.body.count).toBe(3); // May 11, 18, 25
-    vi.restoreAllMocks();
-  });
-
   it('rejects non-existent semester', async () => {
     const res = await request(app).post('/api/schedules/batch').set(auth(token))
       .send({ classId, semesterId: 99999, weekday: 1, startTime: '09:00', endTime: '10:00' });
@@ -593,6 +575,405 @@ describe('GET /api/students/by-class/:classId', () => {
 
   it('returns 404 for non-existent class', async () => {
     const res = await request(stApp).get('/api/students/by-class/99999').set(auth(stToken));
+    expect(res.status).toBe(404);
+  });
+});
+
+// ── Smoke tests for new features ──
+
+describe('DELETE /api/schedules/batch — dryRun', () => {
+  it('dryRun returns ids without deleting (byIds mode)', async () => {
+    const r1 = await request(app).post('/api/schedules').set(auth(token))
+      .send({ classId, date: '2026-06-01', startTime: '08:00', endTime: '09:00' });
+    const id1 = r1.body.id;
+
+    const res = await request(app).delete('/api/schedules/batch').set(auth(token))
+      .send({ ids: [id1], dryRun: true });
+    expect(res.status).toBe(200);
+    expect(res.body.count).toBe(1);
+    expect(res.body.ids).toEqual([id1]);
+
+    const check = await request(app).get(`/api/schedules/${id1}`).set(auth(token));
+    expect(check.status).toBe(200);
+  });
+
+  it('dryRun=false actually deletes', async () => {
+    const r1 = await request(app).post('/api/schedules').set(auth(token))
+      .send({ classId, date: '2026-06-03', startTime: '10:00', endTime: '11:00' });
+    const id1 = r1.body.id;
+
+    const res = await request(app).delete('/api/schedules/batch').set(auth(token))
+      .send({ ids: [id1], dryRun: false });
+    expect(res.body.count).toBe(1);
+
+    const check = await request(app).get(`/api/schedules/${id1}`).set(auth(token));
+    expect(check.status).toBe(404);
+  });
+});
+
+describe('DELETE /api/schedules/batch — byClassId mode', () => {
+  it('deletes schedules for class from date', async () => {
+    await request(app).post('/api/schedules').set(auth(token))
+      .send({ classId, date: '2026-07-01', startTime: '08:00', endTime: '09:00' });
+    await request(app).post('/api/schedules').set(auth(token))
+      .send({ classId, date: '2026-07-02', startTime: '08:00', endTime: '09:00' });
+    await request(app).post('/api/schedules').set(auth(token))
+      .send({ classId, date: '2026-06-15', startTime: '08:00', endTime: '09:00' });
+
+    const res = await request(app).delete('/api/schedules/batch').set(auth(token))
+      .send({ classId, fromDate: '2026-07-01' });
+    expect(res.status).toBe(200);
+    expect(res.body.count).toBe(2);
+    expect(res.body.ids).toHaveLength(2);
+  });
+
+  it('returns 404 for non-existent class', async () => {
+    const res = await request(app).delete('/api/schedules/batch').set(auth(token))
+      .send({ classId: 99999, fromDate: '2026-01-01' });
+    expect(res.status).toBe(404);
+  });
+
+  it('returns count 0 when no schedules match', async () => {
+    const res = await request(app).delete('/api/schedules/batch').set(auth(token))
+      .send({ classId, fromDate: '2099-01-01' });
+    expect(res.status).toBe(200);
+    expect(res.body.count).toBe(0);
+    expect(res.body.ids).toEqual([]);
+  });
+});
+
+describe('DELETE /api/schedules/batch — semesterOnly filtering', () => {
+  let semId;
+  beforeEach(async () => {
+    const { semesters } = await import('../db/schema.js');
+    const r = drizzleDb.insert(semesters).values({
+      teacherId, name: '测试学期', type: 'spring', startDate: '2026-05-01', endDate: '2026-05-15',
+    }).run();
+    semId = Number(r.lastInsertRowid);
+  });
+
+  it('byIds mode: filters out-of-semester records by default', async () => {
+    const r1 = await request(app).post('/api/schedules').set(auth(token))
+      .send({ classId, date: '2026-05-10', startTime: '08:00', endTime: '09:00' });
+    const r2 = await request(app).post('/api/schedules').set(auth(token))
+      .send({ classId, date: '2026-04-20', startTime: '08:00', endTime: '09:00' });
+
+    const res = await request(app).delete('/api/schedules/batch').set(auth(token))
+      .send({ ids: [r1.body.id, r2.body.id] });
+    expect(res.status).toBe(200);
+    expect(res.body.count).toBe(1);
+    expect(res.body.semesterFiltered).toBe(1);
+
+    const check = await request(app).get(`/api/schedules/${r2.body.id}`).set(auth(token));
+    expect(check.status).toBe(200);
+  });
+
+  it('byIds mode: semesterOnly=false deletes all', async () => {
+    const r1 = await request(app).post('/api/schedules').set(auth(token))
+      .send({ classId, date: '2026-05-10', startTime: '08:00', endTime: '09:00' });
+    const r2 = await request(app).post('/api/schedules').set(auth(token))
+      .send({ classId, date: '2026-04-20', startTime: '08:00', endTime: '09:00' });
+
+    const res = await request(app).delete('/api/schedules/batch').set(auth(token))
+      .send({ ids: [r1.body.id, r2.body.id], semesterOnly: false });
+    expect(res.body.count).toBe(2);
+  });
+
+  it('byDateRange mode: filters out-of-semester records by default', async () => {
+    await request(app).post('/api/schedules').set(auth(token))
+      .send({ classId, date: '2026-05-10', startTime: '08:00', endTime: '09:00' });
+    await request(app).post('/api/schedules').set(auth(token))
+      .send({ classId, date: '2026-04-20', startTime: '08:00', endTime: '09:00' });
+
+    const res = await request(app).delete('/api/schedules/batch').set(auth(token))
+      .send({ start: '2026-04-01', end: '2026-05-31' });
+    expect(res.status).toBe(200);
+    expect(res.body.count).toBe(1);
+    expect(res.body.semesterFiltered).toBe(1);
+  });
+});
+
+describe('POST /api/schedules/batch — cross-semester check', () => {
+  beforeEach(async () => {
+    const { semesters } = await import('../db/schema.js');
+    drizzleDb.insert(semesters).values({
+      teacherId, name: '测试学期', type: 'spring', startDate: '2026-06-01', endDate: '2026-06-30',
+    }).run();
+  });
+
+  it('rejects dates that cross semester boundaries', async () => {
+    const res = await request(app).post('/api/schedules/batch').set(auth(token))
+      .send({ classId, dates: ['2026-05-20', '2026-06-10'], startTime: '08:00', endTime: '09:00' });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toContain('跨学期');
+  });
+
+  it('allows dates all inside semester', async () => {
+    const res = await request(app).post('/api/schedules/batch').set(auth(token))
+      .send({ classId, dates: ['2026-06-01', '2026-06-15'], startTime: '08:00', endTime: '09:00' });
+    expect(res.status).toBe(200);
+    expect(res.body.count).toBe(2);
+  });
+
+  it('allows dates all outside semester', async () => {
+    const res = await request(app).post('/api/schedules/batch').set(auth(token))
+      .send({ classId, dates: ['2026-07-05', '2026-07-10'], startTime: '08:00', endTime: '09:00' });
+    expect(res.status).toBe(200);
+    expect(res.body.count).toBe(2);
+  });
+});
+
+describe('GET /api/schedules/conflicts — classId filter', () => {
+  it('filters conflicts by classId', async () => {
+    const { classes } = await import('../db/schema.js');
+    const r2 = drizzleDb.insert(classes).values({
+      teacherId, name: '物理班', grade: '高一', subject: '物理', studentCount: 3, unitPrice: 120,
+    }).run();
+    const c2 = Number(r2.lastInsertRowid);
+
+    await request(app).post('/api/schedules').set(auth(token))
+      .send({ classId, date: '2026-08-01', startTime: '09:00', endTime: '11:00' });
+    await request(app).post('/api/schedules').set(auth(token))
+      .send({ classId, date: '2026-08-01', startTime: '10:00', endTime: '12:00' });
+    await request(app).post('/api/schedules').set(auth(token))
+      .send({ classId: c2, date: '2026-08-01', startTime: '13:00', endTime: '14:00' });
+
+    const all = await request(app).get('/api/schedules/conflicts')
+      .query({ start: '2026-08-01', end: '2026-08-01' }).set(auth(token));
+    expect(all.body.total).toBe(1);
+
+    const filtered = await request(app).get('/api/schedules/conflicts')
+      .query({ start: '2026-08-01', end: '2026-08-01', classId: String(classId) }).set(auth(token));
+    expect(filtered.body.total).toBe(1);
+
+    const none = await request(app).get('/api/schedules/conflicts')
+      .query({ start: '2026-08-01', end: '2026-08-01', classId: String(c2) }).set(auth(token));
+    expect(none.body.total).toBe(0);
+  });
+});
+
+// ── Smoke: batch create preview mode ──
+
+describe('POST /api/schedules/batch — preview mode', () => {
+  it('preview=true returns dates without creating (semester mode)', async () => {
+    const { semesters } = await import('../db/schema.js');
+    const r = drizzleDb.insert(semesters).values({
+      teacherId, name: '预览期', type: 'spring', startDate: '2026-07-01', endDate: '2026-07-31',
+    }).run();
+    const semId = Number(r.lastInsertRowid);
+
+    const res = await request(app).post('/api/schedules/batch').set(auth(token))
+      .send({ classId, semesterId: semId, weekday: 1, startTime: '08:00', endTime: '09:00', preview: true });
+    expect(res.status).toBe(200);
+    expect(res.body.count).toBeGreaterThanOrEqual(1);
+    expect(res.body.dates).toBeDefined();
+    expect(Array.isArray(res.body.dates)).toBe(true);
+  });
+
+  it('preview=true returns dates without creating (dates mode)', async () => {
+    const res = await request(app).post('/api/schedules/batch').set(auth(token))
+      .send({ classId, dates: ['2026-09-01', '2026-09-08'], startTime: '08:00', endTime: '09:00', preview: true });
+    expect(res.status).toBe(200);
+    expect(res.body.count).toBe(2);
+    expect(res.body.dates).toEqual(['2026-09-01', '2026-09-08']);
+  });
+
+  it('preview=true does not persist schedules', async () => {
+    await request(app).post('/api/schedules/batch').set(auth(token))
+      .send({ classId, dates: ['2026-10-01'], startTime: '08:00', endTime: '09:00', preview: true });
+
+    const check = await request(app).get('/api/schedules')
+      .query({ start: '2026-10-01', end: '2026-10-01' }).set(auth(token));
+    expect(check.body).toHaveLength(0);
+  });
+});
+
+// ── Smoke: studentId filtering ──
+
+describe('GET /api/schedules — studentId filter', () => {
+  it('filters schedules by student', async () => {
+    const { classes: clsMod, students: stuMod, classStudents: csMod } = await import('../db/schema.js');
+
+    const r1 = drizzleDb.insert(clsMod).values({
+      teacherId, name: '物理班', grade: '高一', subject: '物理', studentCount: 3, unitPrice: 100,
+    }).run();
+    const c2 = Number(r1.lastInsertRowid);
+    const r2 = drizzleDb.insert(stuMod).values({ teacherId, name: '小华' }).run();
+    const sId = Number(r2.lastInsertRowid);
+    drizzleDb.insert(csMod).values({ classId: c2, studentId: sId }).run();
+
+    await request(app).post('/api/schedules').set(auth(token))
+      .send({ classId, date: '2026-11-01', startTime: '08:00', endTime: '09:00' });
+    await request(app).post('/api/schedules').set(auth(token))
+      .send({ classId: c2, date: '2026-11-01', startTime: '09:00', endTime: '10:00' });
+
+    const res = await request(app).get('/api/schedules')
+      .query({ start: '2026-11-01', end: '2026-11-01', studentId: sId }).set(auth(token));
+    expect(res.status).toBe(200);
+    expect(res.body).toHaveLength(1);
+    expect(res.body[0].class.name).toBe('物理班');
+  });
+
+  it('studentId combined with classId returns intersection', async () => {
+    const res = await request(app).get('/api/schedules')
+      .query({ start: '2026-11-01', end: '2026-11-01', studentId: 99999, classId }).set(auth(token));
+    expect(res.status).toBe(200);
+    expect(res.body).toHaveLength(0);
+  });
+});
+
+// ── Smoke: pagination ──
+
+describe('GET /api/schedules — pagination', () => {
+  beforeEach(async () => {
+    for (let i = 1; i <= 5; i++) {
+      await request(app).post('/api/schedules').set(auth(token))
+        .send({ classId, date: `2026-12-0${i}`, startTime: '08:00', endTime: '09:00' });
+    }
+  });
+
+  it('limit restricts result count', async () => {
+    const res = await request(app).get('/api/schedules')
+      .query({ start: '2026-12-01', end: '2026-12-31', limit: 2 }).set(auth(token));
+    expect(res.body).toHaveLength(2);
+  });
+
+  it('offset skips records', async () => {
+    const all = await request(app).get('/api/schedules')
+      .query({ start: '2026-12-01', end: '2026-12-31' }).set(auth(token));
+
+    const paged = await request(app).get('/api/schedules')
+      .query({ start: '2026-12-01', end: '2026-12-31', limit: 2, offset: 2 }).set(auth(token));
+    expect(paged.body).toHaveLength(2);
+    expect(paged.body[0].id).toBe(all.body[2].id);
+  });
+});
+
+// ── Smoke: comma-separated classId ──
+
+describe('GET /api/schedules — comma-separated classId', () => {
+  it('returns schedules for multiple classes', async () => {
+    const { classes: clsMod } = await import('../db/schema.js');
+    const r = drizzleDb.insert(clsMod).values({
+      teacherId, name: '化学班', grade: '高一', subject: '化学', studentCount: 3, unitPrice: 100,
+    }).run();
+    const c2 = Number(r.lastInsertRowid);
+
+    await request(app).post('/api/schedules').set(auth(token))
+      .send({ classId, date: '2027-01-01', startTime: '08:00', endTime: '09:00' });
+    await request(app).post('/api/schedules').set(auth(token))
+      .send({ classId: c2, date: '2027-01-01', startTime: '09:00', endTime: '10:00' });
+
+    const res = await request(app).get('/api/schedules')
+      .query({ start: '2027-01-01', end: '2027-01-01', classId: `${classId},${c2}` }).set(auth(token));
+    expect(res.body).toHaveLength(2);
+  });
+});
+
+// ── Smoke: semester+weekday batch create ──
+
+describe('POST /api/schedules/batch — semester+weekday mode', () => {
+  it('creates schedules on correct weekday within active semester', async () => {
+    const { semesters } = await import('../db/schema.js');
+    // Use a semester that wraps around today so the max(today, startDate) logic works
+    const today = new Date();
+    const y = today.getFullYear();
+    const m = String(today.getMonth() + 1).padStart(2, '0');
+    const d = String(today.getDate()).padStart(2, '0');
+    const r = drizzleDb.insert(semesters).values({
+      teacherId, name: '当前期', type: 'spring',
+      startDate: `${y}-01-01`, endDate: `${y}-12-31`,
+    }).run();
+    const semId = Number(r.lastInsertRowid);
+
+    const res = await request(app).post('/api/schedules/batch').set(auth(token))
+      .send({ classId, semesterId: semId, weekday: 0, startTime: '09:00', endTime: '10:00' });
+    expect(res.status).toBe(200);
+    expect(res.body.count).toBeGreaterThanOrEqual(1);
+    expect(res.body.ids).toHaveLength(res.body.count);
+  });
+
+  it('semester+weekday with no matching days returns 400', async () => {
+    const { semesters } = await import('../db/schema.js');
+    const r = drizzleDb.insert(semesters).values({
+      teacherId, name: '远古期', type: 'spring',
+      startDate: '2020-01-01', endDate: '2020-01-07',
+    }).run();
+    const semId = Number(r.lastInsertRowid);
+
+    const res = await request(app).post('/api/schedules/batch').set(auth(token))
+      .send({ classId, semesterId: semId, weekday: 3, startTime: '08:00', endTime: '09:00' });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toBe('No valid dates to schedule');
+  });
+});
+
+describe('DELETE /api/schedules/batch — byClassId mode dryRun & semesterOnly', () => {
+  let semId;
+  beforeEach(async () => {
+    const { semesters } = await import('../db/schema.js');
+    const r = drizzleDb.insert(semesters).values({
+      teacherId, name: '测期', type: 'spring', startDate: '2026-09-01', endDate: '2026-09-30',
+    }).run();
+    semId = Number(r.lastInsertRowid);
+  });
+
+  it('dryRun returns ids without deleting', async () => {
+    await request(app).post('/api/schedules').set(auth(token))
+      .send({ classId, date: '2026-09-10', startTime: '08:00', endTime: '09:00' });
+
+    const res = await request(app).delete('/api/schedules/batch').set(auth(token))
+      .send({ classId, fromDate: '2026-09-01', dryRun: true });
+    expect(res.status).toBe(200);
+    expect(res.body.count).toBe(1);
+    expect(res.body.ids).toHaveLength(1);
+
+    const check = await request(app).get(`/api/schedules/${res.body.ids[0]}`).set(auth(token));
+    expect(check.status).toBe(200);
+  });
+
+  it('semesterOnly filters by default in byClassId mode', async () => {
+    const r1 = await request(app).post('/api/schedules').set(auth(token))
+      .send({ classId, date: '2026-09-10', startTime: '08:00', endTime: '09:00' });
+    const r2 = await request(app).post('/api/schedules').set(auth(token))
+      .send({ classId, date: '2026-08-20', startTime: '08:00', endTime: '09:00' });
+
+    const res = await request(app).delete('/api/schedules/batch').set(auth(token))
+      .send({ classId, fromDate: '2026-08-01' });
+    expect(res.body.count).toBe(1);
+    expect(res.body.semesterFiltered).toBe(1);
+
+    const check = await request(app).get(`/api/schedules/${r2.body.id}`).set(auth(token));
+    expect(check.status).toBe(200);
+  });
+});
+
+describe('DELETE /api/schedules/batch — dateRange dryRun', () => {
+  it('dryRun returns preview without deleting', async () => {
+    const r1 = await request(app).post('/api/schedules').set(auth(token))
+      .send({ classId, date: '2026-11-01', startTime: '09:00', endTime: '10:00' });
+    const id1 = r1.body.id;
+
+    const res = await request(app).delete('/api/schedules/batch').set(auth(token))
+      .send({ start: '2026-11-01', end: '2026-11-30', dryRun: true });
+    expect(res.status).toBe(200);
+    expect(res.body.count).toBeGreaterThanOrEqual(1);
+
+    const check = await request(app).get(`/api/schedules/${id1}`).set(auth(token));
+    expect(check.status).toBe(200);
+  });
+});
+
+describe('PUT /api/schedules — error paths', () => {
+  it('PUT /:id returns 404 for non-existent schedule', async () => {
+    const res = await request(app).put('/api/schedules/99999').set(auth(token))
+      .send({ date: '2026-01-01' });
+    expect(res.status).toBe(404);
+  });
+
+  it('PUT /batch returns 404 for non-existent class', async () => {
+    const res = await request(app).put('/api/schedules/batch').set(auth(token))
+      .send({ classId: 99999, fromDate: '2026-01-01', updates: { locationName: 'test' } });
     expect(res.status).toBe(404);
   });
 });

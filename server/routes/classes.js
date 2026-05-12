@@ -123,7 +123,11 @@ classStudentRouter.post('/', validateClassStudent, handle, (req, res) => {
     teacherId: req.teacherId, name, phone, parentPhone, birthDate, parentName, note,
   }).run();
   const studentId = Number(result.lastInsertRowid);
-  drizzleDb.insert(classStudents).values({ classId, studentId }).run();
+  const existingLink = drizzleDb.select().from(classStudents)
+    .where(and(eq(classStudents.classId, classId), eq(classStudents.studentId, studentId))).get();
+  if (!existingLink) {
+    drizzleDb.insert(classStudents).values({ classId, studentId }).run();
+  }
   const created = drizzleDb.select().from(students).where(eq(students.id, studentId)).get();
   const out = { ...created, classIds: [classId] };
   logAudit({ teacherId: req.teacherId, action: 'CREATE', tableName: 'students', recordId: studentId, after: out });
@@ -132,9 +136,16 @@ classStudentRouter.post('/', validateClassStudent, handle, (req, res) => {
 
 classStudentRouter.delete('/:studentId', (req, res) => {
   const { classId, studentId } = req.params;
+  const cls = drizzleDb.select().from(classes)
+    .where(and(eq(classes.id, +classId), eq(classes.teacherId, req.teacherId), eq(classes.deleted, false))).get();
+  if (!cls) return res.status(404).json({ error: 'Class not found' });
   const existing = drizzleDb.select().from(students)
     .where(and(eq(students.id, +studentId), eq(students.teacherId, req.teacherId))).get();
-  if (!existing) return res.status(404).json({ error: 'Not found' });
+  if (!existing) return res.status(404).json({ error: 'Student not found' });
+
+  const link = drizzleDb.select().from(classStudents)
+    .where(and(eq(classStudents.classId, +classId), eq(classStudents.studentId, +studentId))).get();
+  if (!link) return res.status(404).json({ error: 'Student not in this class' });
 
   drizzleDb.delete(classStudents)
     .where(and(eq(classStudents.classId, +classId), eq(classStudents.studentId, +studentId)))
