@@ -20,8 +20,16 @@ function satMod(baseL, dark) {
   return 0.85 + t * 0.15;           // 0.85–1.00
 }
 
+function subjectHue(name) {
+  const preset = SUBJECT_HUES[name];
+  if (preset) return preset;
+  let hash = 0;
+  for (let i = 0; i < name.length; i++) hash = ((hash << 5) - hash + name.charCodeAt(i)) | 0;
+  return { h: ((hash & 0x7fffffff) % 360), s: 55 + (hash % 30) };
+}
+
 export function getClassColor(cls, dark = _dark) {
-  const hue = (cls && SUBJECT_HUES[cls.subject]) || { h: 0, s: 0 };
+  const hue = cls ? subjectHue(cls.subject) : { h: 0, s: 0 };
   const baseL = (cls && GRADE_LIGHTNESS[cls.grade]) ?? 50;
   const l = mappedLightness(baseL, dark);
   const s = Math.round(hue.s * satMod(baseL, dark));
@@ -36,7 +44,7 @@ export function getTextColor(cls, dark = _dark) {
 }
 
 export function getSubjectColor(subject) {
-  const hue = SUBJECT_HUES[subject] || { h: 0, s: 0 };
+  const hue = subjectHue(subject);
   return `hsl(${hue.h}, ${hue.s}%, 50%)`;
 }
 
@@ -51,7 +59,7 @@ export function getCategoryColor(category, dark = _dark) {
   const subject = gradeLevel ? category.slice(gradeLevel.length) : category;
   if (!subject) return null;
 
-  const hue = SUBJECT_HUES[subject] || { h: 0, s: 0 };
+  const hue = subjectHue(subject);
   const repGrade = gradeLevel ? (GRADE_REPRESENTATIVE[gradeLevel] ?? '高二') : '高二';
   const baseL = GRADE_LIGHTNESS[repGrade] ?? 50;
   const l = mappedLightness(baseL, dark);

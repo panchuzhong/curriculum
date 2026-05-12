@@ -77,7 +77,8 @@ describe('GET /api/schedules', () => {
   });
 
   it('supports range=today', async () => {
-    const today = new Date().toISOString().slice(0, 10);
+    const d = new Date();
+    const today = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
     await request(app).post('/api/schedules').set(auth(token))
       .send({ classId, date: today, startTime: '09:00', endTime: '10:00' });
     const res = await request(app).get('/api/schedules?range=today').set(auth(token));
