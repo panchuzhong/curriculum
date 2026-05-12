@@ -19,7 +19,7 @@ const migrations = [
     version: 1,
     name: 'add_teacher_subjects',
     up(db) {
-      db.exec(`ALTER TABLE teachers ADD COLUMN subjects TEXT`);
+      try { db.exec(`ALTER TABLE teachers ADD COLUMN subjects TEXT`); } catch {}
     },
   },
   {
@@ -82,6 +82,7 @@ export function initDb() {
       password_hash TEXT NOT NULL,
       name TEXT NOT NULL,
       api_key TEXT UNIQUE,
+      subjects TEXT,
       created_at TEXT DEFAULT CURRENT_TIMESTAMP
     );
     CREATE TABLE IF NOT EXISTS classes (
