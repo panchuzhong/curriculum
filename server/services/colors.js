@@ -17,16 +17,6 @@ function subjectHue(name) {
   for (let i = 0; i < name.length; i++) hash = ((hash << 5) - hash + name.charCodeAt(i)) | 0;
   return { h: ((hash & 0x7fffffff) % 360), s: 55 + (hash % 30) };
 }
-  '数学': { h: 210, s: 79 },
-  '物理': { h: 122, s: 50 },
-  '英语': { h: 45, s: 93 },
-  '化学': { h: 280, s: 62 },
-  '语文': { h: 0, s: 68 },
-  '生物': { h: 187, s: 100 },
-  '历史': { h: 20, s: 35 },
-  '地理': { h: 200, s: 20 },
-  '政治': { h: 25, s: 100 },
-};
 
 const GRADE_LIGHTNESS = {
   '初一': 70, '初二': 64, '初三': 58,
