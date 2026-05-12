@@ -18,6 +18,17 @@ router.get('/', (req, res) => {
   const result = drizzleDb.select().from(classes)
     .where(and(...conditions))
     .all();
+
+  if (result.length > 0) {
+    const ids = result.map(c => c.id);
+    const ph = ids.map(() => '?').join(',');
+    const rows = db.prepare(
+      `SELECT class_id, MAX(date || ' ' || start_time) as t FROM schedules WHERE class_id IN (${ph}) GROUP BY class_id`
+    ).all(...ids);
+    const last = Object.fromEntries(rows.map(r => [r.class_id, r.t]));
+    result.sort((a, b) => (last[b.id] || '').localeCompare(last[a.id] || ''));
+  }
+
   res.json(result.map(c => ({ ...c, isDeleted: !!c.deleted })));
 });
 

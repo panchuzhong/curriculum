@@ -260,7 +260,7 @@ sudo systemctl start curriculum-scheduler
 **图片**
 | 方法 | 路径 | 说明 |
 |------|------|------|
-| GET | /api/schedule-image?start=&end= | 生成周课表 PNG；theme=light\|dark\|auto（默认 auto）；rowH=16-60（默认 30）；scale=0.25-3（默认 2）；highlight=YYYY-MM-DD |
+| GET | /api/schedule-image?start=&end= | 生成周课表 PNG；theme=light\|dark\|auto（默认 auto）；rowH=16-60（默认 40）；scale=0.25-3（默认 2）；highlight=YYYY-MM-DD |
 | GET | /api/schedule-image/monthly?year=&month= | 生成月课表日历网格 PNG；month=0-11（0=1月）；支持 endYear/endMonth 导出多个月份 |
 | GET | /api/schedule-image/yearly?year= | 生成年课表概览 PNG（12 月卡片 + 年度统计）；支持 endYear 导出多个年份 |
 

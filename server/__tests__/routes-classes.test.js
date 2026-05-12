@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import request from 'supertest';
 import { setupApp, makeUser, auth } from './route-helpers.js';
+import { schedules } from '../db/schema.js';
 
 let app, drizzleDb, token;
 
@@ -73,6 +74,25 @@ describe('GET /api/classes', () => {
     const res = await request(app).get('/api/classes?includeDeleted=true').set(auth(token));
     expect(res.body).toHaveLength(1);
     expect(res.body[0].isDeleted).toBe(true);
+  });
+
+  it('sorts by last schedule time descending (most recent first)', async () => {
+    const { body: { id: c1 } } = await request(app).post('/api/classes').set(auth(token))
+      .send({ name: '班A', grade: '高一', subject: '数学', studentCount: 5 });
+    const { body: { id: c2 } } = await request(app).post('/api/classes').set(auth(token))
+      .send({ name: '班B', grade: '高二', subject: '物理', studentCount: 3 });
+    const { body: { id: c3 } } = await request(app).post('/api/classes').set(auth(token))
+      .send({ name: '班C', grade: '高三', subject: '英语', studentCount: 2 });
+
+    drizzleDb.insert(schedules).values({ classId: c1, date: '2026-05-01', startTime: '09:00', endTime: '10:00', durationBilling: 60 }).run();
+    drizzleDb.insert(schedules).values({ classId: c2, date: '2026-06-15', startTime: '14:00', endTime: '16:00', durationBilling: 120 }).run();
+
+    const res = await request(app).get('/api/classes').set(auth(token));
+    expect(res.status).toBe(200);
+    const ids = res.body.map(c => c.id);
+    expect(ids[0]).toBe(c2);   // latest schedule (June)
+    expect(ids[1]).toBe(c1);   // earlier schedule (May)
+    expect(ids[2]).toBe(c3);   // no schedule → last
   });
 });
 

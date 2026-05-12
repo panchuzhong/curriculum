@@ -75,6 +75,29 @@ describe('GET /api/schedules', () => {
     const res = await request(app).get('/api/schedules').set(auth(token));
     expect(res.status).toBe(400);
   });
+
+  it('supports range=today', async () => {
+    const today = new Date().toISOString().slice(0, 10);
+    await request(app).post('/api/schedules').set(auth(token))
+      .send({ classId, date: today, startTime: '09:00', endTime: '10:00' });
+    const res = await request(app).get('/api/schedules?range=today').set(auth(token));
+    expect(res.status).toBe(200);
+    expect(res.body).toHaveLength(1);
+  });
+
+  it('supports range=week', async () => {
+    await request(app).post('/api/schedules').set(auth(token))
+      .send({ classId, date: '2026-05-04', startTime: '09:00', endTime: '10:00' });
+    const res = await request(app).get('/api/schedules?range=week').set(auth(token));
+    expect(res.status).toBe(200);
+    expect(res.body.length).toBeGreaterThanOrEqual(0);
+  });
+
+  it('supports range=month', async () => {
+    const res = await request(app).get('/api/schedules?range=month').set(auth(token));
+    expect(res.status).toBe(200);
+    expect(Array.isArray(res.body)).toBe(true);
+  });
 });
 
 describe('PUT /api/schedules/:id', () => {

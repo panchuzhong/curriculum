@@ -18,7 +18,7 @@ function getDateRange(startDateStr, endDateStr) {
 }
 
 // ── Image generation ─────────────────────────────────────────────
-export async function generateScheduleImage(schedulesWithClasses, startDate, endDate, { theme = 'auto', rowH = 30, scale, highlight, dbHolidays = [] } = {}) {
+export async function generateScheduleImage(schedulesWithClasses, startDate, endDate, { theme = 'auto', rowH = 40, scale, highlight, dbHolidays = [] } = {}) {
   const dates = getDateRange(startDate, endDate);
   const numDays = dates.length;
   const todayStr = toLocalDateStr(new Date());

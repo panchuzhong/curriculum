@@ -56,6 +56,23 @@ describe('GET /api/students', () => {
     expect(res.body).toHaveLength(1);
     expect(res.body[0].classIds).toBeDefined();
   });
+
+  it('sorts Chinese names before English, same name by ID desc', async () => {
+    await request(app).post('/api/students').set(auth(token)).send({ name: 'Alice' });
+    await request(app).post('/api/students').set(auth(token)).send({ name: '张三' });
+    await request(app).post('/api/students').set(auth(token)).send({ name: '张三' });
+    await request(app).post('/api/students').set(auth(token)).send({ name: 'Bob' });
+    await request(app).post('/api/students').set(auth(token)).send({ name: '李四' });
+
+    const res = await request(app).get('/api/students').set(auth(token));
+    expect(res.status).toBe(200);
+    const names = res.body.map(s => s.name);
+    // Chinese names first (sorted by pinyin), English last (sorted alphabetically)
+    expect(names).toEqual(['李四', '张三', '张三', 'Alice', 'Bob']);
+    // Same name: newer (higher ID) first
+    const zhangs = res.body.filter(s => s.name === '张三');
+    expect(zhangs[0].id).toBeGreaterThan(zhangs[1].id);
+  });
 });
 
 describe('PUT /api/students/:id', () => {

@@ -31,6 +31,12 @@ router.get('/', (req, res) => {
   for (const l of allLinks) {
     (linksByStudent[l.studentId] ??= []).push(l.classId);
   }
+  const isChinese = s => /[一-鿿]/.test(s.name);
+  result.sort((a, b) => {
+    const aC = isChinese(a), bC = isChinese(b);
+    if (aC !== bC) return aC ? -1 : 1;
+    return a.name.localeCompare(b.name, 'zh') || b.id - a.id;
+  });
   res.json(result.map(s => ({ ...s, classIds: linksByStudent[s.id] || [] })));
 });
 

@@ -1,7 +1,7 @@
 import { useState, useEffect, useContext } from 'react';
 import { api } from '../api';
-import { getClassColor, getSubjectColor, DarkContext } from '../utils/colors';
-import { SUBJECTS, GRADES } from '../utils/constants';
+import { getClassColor, DarkContext } from '../utils/colors';
+import { SUBJECT_HUES, GRADES } from '../utils/constants';
 import { todayStr, getMonday, addDays, getMonthRange, getYearRange, toHoursAbs } from '../utils/date';
 import { useToast } from '../components/ToastProvider';
 
@@ -120,17 +120,21 @@ export default function Reports() {
   const totalHours = filtered.reduce((sum, s) => sum + toHoursAbs(s.durationBilling), 0);
   const totalRevenue = filtered.reduce((sum, s) => sum + calcRevenue(s.class, s.durationBilling), 0);
 
-  // By subject
-  const bySubject = groupBy(filtered, s => s.class.subject);
-  const subjectData = SUBJECTS
-    .filter(sub => bySubject[sub])
-    .map(sub => ({
-      label: sub,
-      value: bySubject[sub].length,
-      hours: bySubject[sub].reduce((sum, s) => sum + toHoursAbs(s.durationBilling), 0),
-      revenue: bySubject[sub].reduce((sum, s) => sum + calcRevenue(s.class, s.durationBilling), 0),
-      color: getSubjectColor(sub),
-    }))
+  // By subject (课内/竞赛自动分类)
+  const byCatKey = groupBy(filtered, s => `${s.class.isCompetition ? '竞赛' : '课内'}${s.class.subject}`);
+  const subjectData = Object.entries(byCatKey)
+    .map(([label, items]) => {
+      const subject = items[0].class.subject;
+      const comp = items[0].class.isCompetition;
+      const hue = SUBJECT_HUES[subject] || { h: 0, s: 0 };
+      return {
+        label,
+        value: items.length,
+        hours: items.reduce((sum, s) => sum + toHoursAbs(s.durationBilling), 0),
+        revenue: items.reduce((sum, s) => sum + calcRevenue(s.class, s.durationBilling), 0),
+        color: `hsl(${hue.h}, ${hue.s}%, ${comp ? 35 : 50}%)`,
+      };
+    })
     .sort((a, b) => b.value - a.value);
 
   // By grade

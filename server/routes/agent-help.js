@@ -32,7 +32,7 @@ router.get('/agent/help', (req, res) => {
         'PUT /api/auth/api-key': '重新生成 API Key，返回 {apiKey: <new-key>}',
       },
       classes: {
-        'GET /api/classes': '获取班级列表（不含已软删除）；返回 isDeleted 布尔字段',
+        'GET /api/classes': '获取班级列表（不含已软删除）；按最后一次排课时间降序排列（无排课的班级排最后）；返回 isDeleted 布尔字段',
         'GET /api/classes?includeDeleted=true': '获取全部班级（含已软删除），isDeleted 字段区分',
         'GET /api/classes/:id': '获取单个班级详情（含 isDeleted），需 ownership 匹配',
         'GET /api/classes/locations/suggest': '获取当前教师所有去重地点名称（从班级默认地点和排课地点合并去重，字母排序）',
@@ -45,7 +45,7 @@ router.get('/agent/help', (req, res) => {
         'DELETE /api/classes/:classId/students/:studentId': '从指定班级移除学生（仅解除关联，不删除学生实体），返回 {ok:true}',
       },
       students: {
-        'GET /api/students': '获取所有学生（含 classIds 数组）',
+        'GET /api/students': '获取所有学生（含 classIds 数组）；按姓名排序（中文名在前按拼音序，英文名在后按字母序，同名按 ID 倒序即新添加的在前）',
         'GET /api/students/by-class/:classId': '获取指定班级的学生列表',
         'POST /api/students': '创建学生（可通过 classIds 数组同时关联多个班级），返回完整学生对象（含 classIds）',
         'PUT /api/students/:id': '更新学生信息（部分更新：仅写入传入的字段，未传字段保持不变；classIds 变更时全量替换班级关联），返回完整学生对象（含 classIds）',
@@ -96,14 +96,14 @@ router.get('/agent/help', (req, res) => {
         'GET /api/schedule-image?start=&end=&rowH=N': '每小时行高像素（16-60，默认 40），增大后文字更清晰，图片更高',
         'GET /api/schedule-image?start=&end=&scale=N': '整体缩放因子（0.25-3，默认 2），scale=1 适合手机查看，scale=0.5 更小体积',
         'GET /api/schedule-image?start=&end=&highlight=YYYY-MM-DD': '高亮指定日期列（黄色边框），适合截给家长看某天课表',
-        'GET /api/schedule-image/monthly?year=Y&month=M': '生成月课表日历网格 PNG 图片（返回 image/png）；month=0-11（0=1月）；参数同周课表',
+        'GET /api/schedule-image/monthly?year=Y&month=M': '生成月课表日历网格 PNG 图片（返回 image/png）；month=0-11（0=1月）；支持 theme 参数（同周课表）',
         'GET /api/schedule-image/monthly?year=Y&month=M&endYear=Y&endMonth=M': '生成多个月份的月课表图片（纵向堆叠），endYear/endMonth 为可选结束范围',
         'GET /api/schedule-image/yearly?year=Y': '生成年课表概览 PNG 图片（返回 image/png），12 个月卡片 + 年度统计',
         'GET /api/schedule-image/yearly?year=Y&endYear=Y': '生成多个年份的年课表图片（纵向堆叠），endYear 为可选结束年份',
       },
       backup: {
         'GET /api/backup': '导出教师全量数据为 JSON，返回 {version:1, timestamp, classes, students, classStudents, schedules, semesters, holidays, pricingTiers, auditLog}，触发浏览器下载',
-        'POST /api/backup/restore': '从备份 JSON 原子还原（先清空再写入，事务保证）；teacherId 强制覆盖为当前认证教师；自动校验 classStudents 关联的 classId 和 studentId 是否存在，不存在则跳过;非数组字段按空数组处理;事务失败返回 500 含具体原因(原数据保留);auditLog 也会被清空并按备份还原；成功返回 {ok:true, restored:{classes,students,schedules,semesters,auditLog}}',
+        'POST /api/backup/restore': '从备份 JSON 原子还原（先清空再写入，事务保证）；校验 version 字段必须为 1；teacherId 强制覆盖为当前认证教师；还原范围包括 classes、pricingTiers、students、classStudents、schedules、holidays、semesters、auditLog；自动校验 classStudents 关联的 classId 和 studentId 是否存在，不存在则跳过;非数组字段按空数组处理;事务失败返回 500 含具体原因(原数据保留);成功返回 {ok:true, restored:{classes,students,schedules,semesters,auditLog}}（restored 仅统计这 5 项，其余表同样已还原但不计数字段中）',
       },
       auditLog: {
         'GET /api/audit-log': '查询操作日志（默认最新 100 条,按 id 倒序;返回的 beforeData/afterData 已 JSON.parse 还原为对象）',
@@ -257,7 +257,7 @@ router.get('/agent/help', (req, res) => {
       '图片导出支持任意时间范围，天数越多图片越宽；生成失败时返回 JSON {error}（不含内部 detail）；rowH 范围 16-60，默认 40；班级名/地点名等用户输入在生成 HTML 时统一 HTML 转义,无 XSS 风险',
       'PUT /api/schedules/batch 只允许修改时间和地点字段，classId/date 等核心字段不可批量篡改',
       'GET /api/schedules/summary 和 GET /api/schedules/export 均支持 &format=csv，响应含 UTF-8 BOM，Excel 直接打开不乱码;以 = + - @ \\t \\r 开头的单元格自动加单引号前缀防御 CSV 公式注入',
-      'GET /api/backup 返回全量 JSON；POST /api/backup/restore 原子还原（事务），恢复前自动保存快照到 ./data/backup_pre_restore_<timestamp>.json（非致命,失败不阻塞还原），恢复过程中 teacherId 强制绑定当前账号；classStudents 关联会校验 classId/studentId 是否存在于恢复数据中，无效关联自动跳过',
+      'GET /api/backup 返回全量 JSON（含 version 字段，当前为 1）；POST /api/backup/restore 校验 version 必须匹配，不匹配返回 400；恢复前自动保存快照到 ./data/backup_pre_restore_<timestamp>.json（非致命,失败不阻塞还原），恢复过程中 teacherId 强制绑定当前账号；classStudents 关联会校验 classId/studentId 是否存在于恢复数据中，无效关联自动跳过',
       '学生可属于多个班级，通过 classIds 数组关联；DELETE /api/students/:id 删除学生实体并清理所有关联，DELETE /api/classes/:classId/students/:studentId 仅从指定班级移除。POST /api/classes/:classId/students 接受 name/birthDate/phone/parentPhone/parentName/note 字段（与 POST /api/students 一致，但不接受 classIds）',
       'PUT /api/students/:id 采用部分更新语义：仅写入请求体中包含且值非 undefined 的字段，未传字段保持原值；classIds 传入时全量替换班级关联',
       'POST/PUT /api/holidays 变更日期时会检查是否与已有节假日记录重复，重复则返回 409 {error:"该日期已有记录"}',

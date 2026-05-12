@@ -67,6 +67,13 @@ describe('GET /api/schedule-image/monthly', () => {
     expect(res.body.error).toContain('year and month');
   });
 
+  it('rejects out-of-range month', async () => {
+    const res = await request(app).get('/api/schedule-image/monthly?year=2026&month=12').set(auth(token));
+    expect(res.status).toBe(400);
+    const res2 = await request(app).get('/api/schedule-image/monthly?year=2026&month=-1').set(auth(token));
+    expect(res2.status).toBe(400);
+  });
+
   it('returns 404 when no classes exist', async () => {
     const res = await request(app).get('/api/schedule-image/monthly?year=2026&month=5').set(auth(token));
     expect(res.status).toBe(404);

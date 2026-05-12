@@ -83,6 +83,13 @@ describe('DELETE /api/semesters/:id', () => {
       .send({ name: '学期', type: 'spring', startDate: '2026-02-01', endDate: '2026-06-30' });
     const res = await request(app).delete(`/api/semesters/${id}`).set(auth(token));
     expect(res.status).toBe(200);
+    const list = await request(app).get('/api/semesters').set(auth(token));
+    expect(list.body).toHaveLength(0);
+  });
+
+  it('returns 404 for nonexistent semester', async () => {
+    const res = await request(app).delete('/api/semesters/999999').set(auth(token));
+    expect(res.status).toBe(404);
   });
 });
 
@@ -113,6 +120,18 @@ describe('Audit logging', () => {
     await request(app).delete(`/api/semesters/${id}`).set(auth(token));
     expect(logAudit).toHaveBeenCalledWith(
       expect.objectContaining({ action: 'DELETE', tableName: 'semesters' })
+    );
+  });
+
+  it('logs UPDATE on semester update', async () => {
+    const { body: { id } } = await request(app).post('/api/semesters').set(auth(token))
+      .send({ name: '更新学期', type: 'spring', startDate: '2026-02-01', endDate: '2026-06-30' });
+    const { logAudit } = await import('../services/audit.js');
+    logAudit.mockClear();
+    await request(app).put(`/api/semesters/${id}`).set(auth(token))
+      .send({ name: '新名称' });
+    expect(logAudit).toHaveBeenCalledWith(
+      expect.objectContaining({ action: 'UPDATE', tableName: 'semesters', recordId: id })
     );
   });
 });

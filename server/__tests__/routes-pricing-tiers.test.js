@@ -111,4 +111,16 @@ describe('Audit logging', () => {
       expect.objectContaining({ action: 'DELETE', tableName: 'pricing_tiers' })
     );
   });
+
+  it('logs UPDATE on tier update', async () => {
+    const { body: { id } } = await request(app).post('/api/pricing-tiers').set(auth(token))
+      .send({ minStudents: 1, maxStudents: 5, pricePerStudentPerHour: 100 });
+    const { logAudit } = await import('../services/audit.js');
+    logAudit.mockClear();
+    await request(app).put(`/api/pricing-tiers/${id}`).set(auth(token))
+      .send({ pricePerStudentPerHour: 120 });
+    expect(logAudit).toHaveBeenCalledWith(
+      expect.objectContaining({ action: 'UPDATE', tableName: 'pricing_tiers', recordId: id })
+    );
+  });
 });
