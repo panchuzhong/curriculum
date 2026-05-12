@@ -127,18 +127,22 @@ describe('toCSV', () => {
 // ── detectConflictGroups ──
 
 describe('detectConflictGroups', () => {
-  it('returns empty for single schedule', () => {
-    expect(detectConflictGroups([
+  it('returns single group for single schedule', () => {
+    const groups = detectConflictGroups([
       { startTime: '09:00', endTime: '10:00' },
-    ])).toEqual([]);
+    ]);
+    expect(groups).toHaveLength(1);
+    expect(groups[0]).toHaveLength(1);
   });
 
-  it('returns empty for non-overlapping schedules', () => {
-    expect(detectConflictGroups([
+  it('returns separate groups for non-overlapping schedules', () => {
+    const groups = detectConflictGroups([
       { startTime: '09:00', endTime: '10:00' },
       { startTime: '10:00', endTime: '11:00' },
       { startTime: '11:00', endTime: '12:00' },
-    ])).toEqual([]);
+    ]);
+    expect(groups).toHaveLength(3);
+    groups.forEach(g => expect(g).toHaveLength(1));
   });
 
   it('detects simple overlap', () => {

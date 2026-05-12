@@ -49,13 +49,13 @@ const migrations = [
         )`);
         const getClassTeacher = db.prepare(`SELECT teacher_id FROM classes WHERE id = ?`);
         const oldStudents = db.prepare(`SELECT * FROM students`).all();
-        const insertNew = db.prepare(`INSERT INTO students_new (id, teacher_id, name, phone, parent_phone, note, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)`);
+        const insertNew = db.prepare(`INSERT INTO students_new (id, teacher_id, name, birth_date, phone, parent_name, parent_phone, note, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`);
         const insertLink = db.prepare(`INSERT OR IGNORE INTO class_students (class_id, student_id) VALUES (?, ?)`);
 
         for (const s of oldStudents) {
           const cls = getClassTeacher.get(s.class_id);
           const teacherId = cls ? cls.teacher_id : 1;
-          insertNew.run(s.id, teacherId, s.name, s.phone, s.parent_phone, s.note, s.created_at);
+          insertNew.run(s.id, teacherId, s.name, s.birth_date, s.phone, s.parent_name, s.parent_phone, s.note, s.created_at);
           if (s.class_id) insertLink.run(s.class_id, s.id);
         }
         db.exec(`DROP TABLE students; ALTER TABLE students_new RENAME TO students;`);

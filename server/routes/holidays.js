@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { drizzleDb } from '../db/index.js';
+import { drizzleDb, db } from '../db/index.js';
 import { holidays } from '../db/schema.js';
 import { eq, and, gte, lte } from 'drizzle-orm';
 import { authMiddleware } from '../middleware/auth.js';
@@ -88,17 +88,19 @@ router.post('/batch', validateBatchHolidays, handle, (req, res) => {
   const { items } = req.body; // [{date, type, name}]
 
   let count = 0;
-  for (const item of items) {
-    if (!item.date || !item.type) continue;
-    const existing = drizzleDb.select().from(holidays)
-      .where(and(eq(holidays.teacherId, req.teacherId), eq(holidays.date, item.date))).get();
-    if (!existing) {
-      drizzleDb.insert(holidays).values({
-        teacherId: req.teacherId, date: item.date, type: item.type, name: item.name,
-      }).run();
-      count++;
+  db.transaction(() => {
+    for (const item of items) {
+      if (!item.date || !item.type) continue;
+      const existing = drizzleDb.select().from(holidays)
+        .where(and(eq(holidays.teacherId, req.teacherId), eq(holidays.date, item.date))).get();
+      if (!existing) {
+        drizzleDb.insert(holidays).values({
+          teacherId: req.teacherId, date: item.date, type: item.type, name: item.name,
+        }).run();
+        count++;
+      }
     }
-  }
+  })();
   if (count > 0) {
     logAudit({ teacherId: req.teacherId, action: 'BATCH_CREATE', tableName: 'holidays', after: { count } });
   }

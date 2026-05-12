@@ -4,6 +4,7 @@ import { api } from '../api';
 import { getClassColor, getTextColor, DarkContext } from '../utils/colors';
 import { isHoliday, getHolidayName, isWorkday } from '../utils/holidays';
 import { todayStr, getMonday } from '../utils/date';
+import { toMin, findConflictGroups, assignColumns } from '../utils/schedule';
 import { useSimpleSwipe } from '../hooks/useSimpleSwipe';
 import { useToast } from '../components/ToastProvider';
 import BatchScheduleDialog from './BatchScheduleDialog';
@@ -18,11 +19,6 @@ function getMonthDates(year, month) {
   for (let i = 1; i < startDay; i++) dates.push(null);
   for (let d = 1; d <= last.getDate(); d++) dates.push(d);
   return dates;
-}
-
-function timeToMin(t) {
-  const [h, m] = t.split(':').map(Number);
-  return h * 60 + (m || 0);
 }
 
 const DAY_END_MIN = 24 * 60;
@@ -153,42 +149,49 @@ export default function MonthlySchedule() {
                 {workday && <span className="text-[8px] sm:text-[9px] bg-orange-500 text-white px-0.5 rounded">班</span>}
               </div>
               {daySchedules.length > 0 && (() => {
-                const maxSlots = Math.floor(100 / 4); // minimum 4% per bar
-                const minBar = daySchedules.length > maxSlots ? Math.floor(100 / daySchedules.length) : 9;
-                const placed = [];
-                const earliest = Math.min(...daySchedules.map(s => timeToMin(s.startTime)));
-                const dayStart = Math.max(0, earliest - 15);
-                const dayTotal = DAY_END_MIN - dayStart;
-                return (
-                <div className="relative flex-1 min-h-0">
-                  {daySchedules.map((s) => {
-                    const startMin = timeToMin(s.startTime);
-                    const endMin = timeToMin(s.endTime);
+                const maxBar = 40;
+                const minBar = 5;
+                const early = Math.min(...daySchedules.map(s => toMin(s.startTime)));
+                const late = Math.max(...daySchedules.map(s => toMin(s.endTime)));
+                const MIN_VISIBLE = 240;
+                const dayStart = Math.max(0, Math.min(early - 30, 8 * 60 - 30));
+                const dayEnd = Math.min(DAY_END_MIN, Math.max(late + 30, dayStart + MIN_VISIBLE));
+                const dayTotal = dayEnd - dayStart;
+                const groups = findConflictGroups(daySchedules);
+                const els = [];
+                for (const group of groups) {
+                  const hasConflict = group.length > 1;
+                  const items = hasConflict ? assignColumns(group) : group.map(s => ({ ...s, _col: 0 }));
+                  const totalCols = Math.max(...items.map(it => (it._col || 0))) + 1;
+                  const groupTop = Math.min(...items.map(s => toMin(s.startTime)));
+                  for (const item of items) {
+                    const startMin = toMin(item.startTime);
+                    const endMin = toMin(item.endTime);
                     const dur = endMin - startMin;
-                    let topPct = Math.max(0, (startMin - dayStart) / dayTotal * 100);
-                    const heightPct = Math.max(minBar, dur / dayTotal * 100);
-                    for (const p of placed) {
-                      if (topPct < p.bottom) topPct = p.bottom;
-                    }
-                    placed.push({ bottom: topPct + heightPct + 0.5 });
-                    return (
-                      <div key={s.id}
-                        className="absolute left-0.5 right-0.5 rounded truncate px-0.5 flex items-center"
+                    const topPct = Math.max(0, (groupTop - dayStart) / dayTotal * 100);
+                    const heightPct = Math.min(maxBar, Math.max(minBar, dur / dayTotal * 100));
+                    const widthPct = hasConflict ? 100 / totalCols : 100;
+                    const leftPct = hasConflict ? (item._col || 0) * widthPct : 0;
+                    els.push(
+                      <div key={item.id}
+                        className={`absolute rounded truncate px-0.5 flex items-center ${hasConflict ? 'ring-1 ring-red-500 z-10' : ''}`}
                         style={{
                           top: `${topPct}%`,
                           height: `${heightPct}%`,
-                          backgroundColor: getClassColor(s.class, dark),
-                          color: getTextColor(s.class, dark),
-                          fontSize: 'clamp(7px, 0.85vw, 10px)',
+                          left: `${leftPct + 0.5}%`,
+                          width: `calc(${widthPct}% - 2px)`,
+                          backgroundColor: hasConflict ? '#ef4444' : getClassColor(item.class, dark),
+                          color: hasConflict ? '#fff' : getTextColor(item.class, dark),
+                          fontSize: 'clamp(9px, 1.2vw, 13px)',
                           overflow: 'hidden',
                         }}
-                        title={`${s.startTime}-${s.endTime} ${s.class?.isCompetition ? '★ ' : ''}${s.class?.name}`}>
-                        {s.class?.isCompetition && '★ '}{s.class?.name}
+                        title={`${item.startTime}-${item.endTime} ${item.class?.isCompetition ? '★ ' : ''}${item.class?.name}${hasConflict ? ' [冲突]' : ''}`}>
+                        {item.class?.isCompetition && '★ '}{item.class?.name}
                       </div>
                     );
-                  })}
-                </div>
-                );
+                  }
+                }
+                return <div className="relative flex-1 min-h-0">{els}</div>;
               })()}
             </div>
           );

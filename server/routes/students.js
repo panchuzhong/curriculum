@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { drizzleDb } from '../db/index.js';
+import { drizzleDb, db } from '../db/index.js';
 import { students, classes, classStudents } from '../db/schema.js';
 import { eq, and, inArray } from 'drizzle-orm';
 import { authMiddleware } from '../middleware/auth.js';
@@ -92,14 +92,16 @@ router.put('/:id', validateUpdateStudent, handle, (req, res) => {
 
   const { classIds } = req.body;
   if (classIds !== undefined) {
-    drizzleDb.delete(classStudents).where(eq(classStudents.studentId, +id)).run();
-    for (const classId of classIds) {
-      const cls = drizzleDb.select().from(classes)
-        .where(and(eq(classes.id, classId), eq(classes.teacherId, req.teacherId), eq(classes.deleted, false))).get();
-      if (cls) {
-        drizzleDb.insert(classStudents).values({ classId, studentId: +id }).run();
+    db.transaction(() => {
+      drizzleDb.delete(classStudents).where(eq(classStudents.studentId, +id)).run();
+      for (const classId of classIds) {
+        const cls = drizzleDb.select().from(classes)
+          .where(and(eq(classes.id, classId), eq(classes.teacherId, req.teacherId), eq(classes.deleted, false))).get();
+        if (cls) {
+          drizzleDb.insert(classStudents).values({ classId, studentId: +id }).run();
+        }
       }
-    }
+    })();
   }
 
   const updated = getStudentWithClassIds(+id);
@@ -114,8 +116,10 @@ router.delete('/:id', (req, res) => {
     .where(and(eq(students.id, +id), eq(students.teacherId, req.teacherId))).get();
   if (!existing) return res.status(404).json({ error: 'Not found' });
 
-  drizzleDb.delete(classStudents).where(eq(classStudents.studentId, +id)).run();
-  drizzleDb.delete(students).where(eq(students.id, +id)).run();
+  db.transaction(() => {
+    drizzleDb.delete(classStudents).where(eq(classStudents.studentId, +id)).run();
+    drizzleDb.delete(students).where(eq(students.id, +id)).run();
+  })();
   logAudit({ teacherId: req.teacherId, action: 'DELETE', tableName: 'students', recordId: +id, before: existing });
   res.json({ ok: true });
 });

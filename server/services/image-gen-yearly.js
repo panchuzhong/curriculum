@@ -1,29 +1,5 @@
 import { getBrowser } from './browser.js';
-
-// ── Color system — mirrors frontend src/utils/colors.js ──────────
-const CATEGORY_COLORS = [
-  'hsla(210,79%,52%,0.85)',
-  'hsla(122,50%,45%,0.85)',
-  'hsla(45,93%,48%,0.85)',
-  'hsla(280,62%,52%,0.85)',
-  'hsla(0,68%,55%,0.85)',
-  'hsla(187,100%,35%,0.85)',
-  'hsla(20,35%,50%,0.85)',
-  'hsla(200,20%,45%,0.85)',
-  'hsla(25,100%,48%,0.85)',
-  'hsla(160,60%,42%,0.85)',
-  'hsla(330,55%,50%,0.85)',
-  'hsla(80,50%,45%,0.85)',
-];
-
-const CATEGORY_COLOR_MAP = {};
-
-function getCategoryColor(label) {
-  if (CATEGORY_COLOR_MAP[label]) return CATEGORY_COLOR_MAP[label];
-  const idx = Object.keys(CATEGORY_COLOR_MAP).length % CATEGORY_COLORS.length;
-  CATEGORY_COLOR_MAP[label] = CATEGORY_COLORS[idx];
-  return CATEGORY_COLOR_MAP[label];
-}
+import { getCategoryColor } from './colors.js';
 
 // ── Category logic — mirrors frontend YearlySchedule ──────────────
 function getCategory(cls) {
@@ -58,8 +34,8 @@ function groupByGrade(entries) {
     .sort((a, b) => b[1] - a[1]);
 }
 
-function resolveColor(label, dominantCategory) {
-  return getCategoryColor(label) || getCategoryColor(dominantCategory) || 'hsl(0,0%,50%)';
+function resolveColor(label, dominantCategory, dark) {
+  return getCategoryColor(label, dark) || getCategoryColor(dominantCategory, dark) || 'hsl(0,0%,50%)';
 }
 
 function toHoursAbs(durationBilling) {
@@ -139,13 +115,13 @@ function renderYearHtml(schedulesWithClasses, year, { theme }) {
 
     let chipsHtml = displayEntries.map(entry => {
       const [label, h, dominantCat] = condensed ? entry : [entry[0], entry[1]];
-      const color = resolveColor(label, dominantCat);
+      const color = resolveColor(label, dominantCat, isDark);
       return `<span style="display:inline-flex;align-items:center;padding:2px 6px;border-radius:4px;background:${color};color:#fff;font-size:10px;margin-right:4px;margin-bottom:3px">${label} ${h.toFixed(1)}h</span>`;
     }).join('');
 
     let barHtml = displayEntries.map(entry => {
       const [label, h, dominantCat] = condensed ? entry : [entry[0], entry[1]];
-      const color = resolveColor(label, dominantCat);
+      const color = resolveColor(label, dominantCat, isDark);
       return `<div style="height:100%;width:${(h / totalHours) * 100}%;background:${color};border-radius:3px" title="${label}"></div>`;
     }).join('');
 
@@ -168,7 +144,7 @@ function renderYearHtml(schedulesWithClasses, year, { theme }) {
   if (yearTotalHours > 0) {
     const barsHtml = yearDisplayEntries.map(entry => {
       const [label, h, dominantCat] = yearCondensed ? entry : [entry[0], entry[1]];
-      const color = resolveColor(label, dominantCat);
+      const color = resolveColor(label, dominantCat, isDark);
       return `<div style="display:flex;align-items:center;gap:8px;margin-bottom:3px">
         <span style="width:80px;text-align:right;font-size:11px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis">${label}</span>
         <div style="flex:1;height:14px;background:${c.barBg};border-radius:4px;overflow:hidden">

@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { drizzleDb, db } from '../db/index.js';
-import { classes, students, classStudents, schedules } from '../db/schema.js';
+import { classes, students, classStudents } from '../db/schema.js';
 import { eq, and, inArray } from 'drizzle-orm';
 import { authMiddleware } from '../middleware/auth.js';
 import { getDefaultPrice } from '../db/seed.js';
@@ -119,16 +119,19 @@ classStudentRouter.post('/', validateClassStudent, handle, (req, res) => {
 
   const { name, phone, parentPhone, birthDate, parentName, note } = req.body;
 
-  const result = drizzleDb.insert(students).values({
-    teacherId: req.teacherId, name, phone, parentPhone, birthDate, parentName, note,
-  }).run();
-  const studentId = Number(result.lastInsertRowid);
-  const existingLink = drizzleDb.select().from(classStudents)
-    .where(and(eq(classStudents.classId, classId), eq(classStudents.studentId, studentId))).get();
-  if (!existingLink) {
-    drizzleDb.insert(classStudents).values({ classId, studentId }).run();
-  }
-  const created = drizzleDb.select().from(students).where(eq(students.id, studentId)).get();
+  let studentId, created;
+  db.transaction(() => {
+    const result = drizzleDb.insert(students).values({
+      teacherId: req.teacherId, name, phone, parentPhone, birthDate, parentName, note,
+    }).run();
+    studentId = Number(result.lastInsertRowid);
+    const existingLink = drizzleDb.select().from(classStudents)
+      .where(and(eq(classStudents.classId, classId), eq(classStudents.studentId, studentId))).get();
+    if (!existingLink) {
+      drizzleDb.insert(classStudents).values({ classId, studentId }).run();
+    }
+    created = drizzleDb.select().from(students).where(eq(students.id, studentId)).get();
+  })();
   const out = { ...created, classIds: [classId] };
   logAudit({ teacherId: req.teacherId, action: 'CREATE', tableName: 'students', recordId: studentId, after: out });
   res.json(out);
@@ -150,7 +153,7 @@ classStudentRouter.delete('/:studentId', (req, res) => {
   drizzleDb.delete(classStudents)
     .where(and(eq(classStudents.classId, +classId), eq(classStudents.studentId, +studentId)))
     .run();
-  logAudit({ teacherId: req.teacherId, action: 'UPDATE', tableName: 'class_students', recordId: +studentId, before: { classId: +classId, studentId: +studentId }, after: null });
+  logAudit({ teacherId: req.teacherId, action: 'DELETE', tableName: 'class_students', recordId: +studentId, before: { classId: +classId, studentId: +studentId }, after: null });
   res.json({ ok: true });
 });
 

@@ -1,63 +1,7 @@
 import { getBrowser } from './browser.js';
 import { isHoliday, isWorkday, getHolidayName } from './holidays.js';
-
-// ── Color system — mirrors frontend src/utils/colors.js ──────────
-const SUBJECT_HUES = {
-  '数学': { h: 210, s: 79 },
-  '物理': { h: 122, s: 50 },
-  '英语': { h: 45, s: 93 },
-  '化学': { h: 280, s: 62 },
-  '语文': { h: 0, s: 68 },
-  '生物': { h: 187, s: 100 },
-  '历史': { h: 20, s: 35 },
-  '地理': { h: 200, s: 20 },
-  '政治': { h: 25, s: 100 },
-};
-
-const GRADE_LIGHTNESS = {
-  '初一': 70, '初二': 64, '初三': 58,
-  '高一': 52, '高二': 46, '高三': 42, '大学': 38,
-};
-
-function mappedLightness(baseL, dark) {
-  const t = (baseL - 38) / 32;
-  return dark ? 35 + t * 23 : 33 + t * 45;
-}
-
-function satMod(baseL, dark) {
-  const t = (baseL - 38) / 32;
-  return dark ? 0.45 + t * 0.15 : 0.85 + t * 0.15;
-}
-
-function getColor(cls, dark) {
-  const hue = SUBJECT_HUES[cls.subject] || { h: 0, s: 0 };
-  const baseL = GRADE_LIGHTNESS[cls.grade] ?? 50;
-  const l = mappedLightness(baseL, dark);
-  const s = Math.round(hue.s * satMod(baseL, dark));
-  return `hsl(${hue.h}, ${s}%, ${Math.round(l)}%)`;
-}
-
-function getTextColor(cls, dark) {
-  if (dark) return 'rgba(255,255,255,0.92)';
-  const baseL = GRADE_LIGHTNESS[cls.grade] ?? 50;
-  return mappedLightness(baseL, false) < 55 ? '#ffffff' : '#1a1a1a';
-}
-
-// ── Helpers ───────────────────────────────────────────────────────
-function timeToMin(t) {
-  const [h, m] = t.split(':').map(Number);
-  return h * 60 + (m || 0);
-}
-
-function localDateStr(d) {
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-}
-
-function escapeHtml(s) {
-  return String(s ?? '').replace(/[&<>"']/g, ch => ({
-    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
-  })[ch]);
-}
+import { getColor, getTextColor } from './colors.js';
+import { toMin, toLocalDateStr, escapeHtml, detectConflictGroups, assignColumns } from './schedule-helpers.js';
 
 function getMonthDates(year, month) {
   const first = new Date(year, month, 1);
@@ -162,10 +106,7 @@ function renderMonthHtml(schedulesWithClasses, year, month, { theme, dbHolidayMa
     else if (workday) cellBg = c.workdayBg;
 
     const borderStyle = isToday ? `border:2px solid ${c.todayBorder};` : '';
-
-    const barCount = daySchedules.length;
-    const extraH = Math.max(0, barCount - 1) * 24;
-    const cellH = CELL_MIN_H + extraH;
+    const cellH = CELL_MIN_H;
 
     let badgesHtml = '';
     if (isToday) badgesHtml += `<span style="font-size:9px;background:${c.badgeBlue};color:#fff;padding:1px 5px;border-radius:999px;font-weight:500;margin-left:2px">今</span>`;
@@ -174,31 +115,43 @@ function renderMonthHtml(schedulesWithClasses, year, month, { theme, dbHolidayMa
 
     let barsHtml = '';
     if (daySchedules.length > 0) {
-      const earliest = Math.min(...daySchedules.map(s => timeToMin(s.startTime)));
-      const dayStart = Math.max(0, earliest - 15);
-      const dayTotal = DAY_END_MIN - dayStart;
-      const minBar = 9;
+      const maxBar = 40;
+      const minBar = 5;
+      const early = Math.min(...daySchedules.map(s => toMin(s.startTime)));
+      const late = Math.max(...daySchedules.map(s => toMin(s.endTime)));
+      const MIN_VISIBLE = 240;
+      const dayStart = Math.max(0, Math.min(early - 30, 8 * 60 - 30));
+      const dayEnd = Math.min(DAY_END_MIN, Math.max(late + 30, dayStart + MIN_VISIBLE));
+      const dayTotal = dayEnd - dayStart;
       const cellContentH = cellH - 28;
+      const groups = detectConflictGroups(daySchedules);
 
-      const placed = [];
-      daySchedules.forEach(s => {
-        const startMin = timeToMin(s.startTime);
-        const endMin = timeToMin(s.endTime);
-        const dur = endMin - startMin;
-        let topPct = Math.max(0, (startMin - dayStart) / dayTotal * 100);
-        const heightPct = Math.max(minBar, dur / dayTotal * 100);
-        for (const p of placed) {
-          if (topPct < p.bottom) topPct = p.bottom;
+      for (const group of groups) {
+        const hasConflict = group.length > 1;
+        const items = hasConflict ? assignColumns(group) : group.map(s => ({ ...s, _col: 0 }));
+        const totalCols = Math.max(...items.map(it => (it._col || 0))) + 1;
+        const groupTop = Math.min(...items.map(s => toMin(s.startTime)));
+        for (const item of items) {
+          const startMin = toMin(item.startTime);
+          const endMin = toMin(item.endTime);
+          const dur = endMin - startMin;
+          const topPct = Math.max(0, (groupTop - dayStart) / dayTotal * 100);
+          const heightPct = Math.min(maxBar, Math.max(minBar, dur / dayTotal * 100));
+          const widthPct = hasConflict ? 100 / totalCols : 100;
+          const leftPct = hasConflict ? (item._col || 0) * widthPct : 0;
+          const fontSize = Math.max(6, Math.floor(heightPct * 0.38));
+          const barH = heightPct / 100 * cellContentH;
+          const barTop = topPct / 100 * cellContentH + 24;
+          const barLeft = leftPct / 100 * (CELL_W - 4);
+          const barW = (widthPct / 100 * (CELL_W - 4)) - 2;
+          const bg = hasConflict ? '#ef4444' : getColor(item.class, isDark);
+          const fg = hasConflict ? '#ffffff' : getTextColor(item.class, isDark);
+          const name = escapeHtml(item.class?.name ?? '');
+          const star = item.class?.isCompetition ? '★ ' : '';
+          const ring = hasConflict ? 'box-shadow:0 0 0 1px #ef4444;z-index:1;' : '';
+          barsHtml += `<div style="position:absolute;left:${2 + barLeft}px;top:${barTop}px;width:${barW}px;height:${Math.max(8, barH)}px;background:${bg};color:${fg};border-radius:4px;display:flex;align-items:center;padding:0 4px;font-size:${fontSize}px;overflow:hidden;white-space:nowrap;${ring}" title="${star}${name} ${item.startTime}-${item.endTime}${hasConflict ? ' [冲突]' : ''}">${star}${name}</div>`;
         }
-        placed.push({ bottom: topPct + heightPct + 2 });
-
-        const barH = heightPct / 100 * cellContentH;
-        const barTop = topPct / 100 * cellContentH + 24;
-
-        const name = escapeHtml(s.class?.name ?? '');
-        const star = s.class?.isCompetition ? '★ ' : '';
-        barsHtml += `<div style="position:absolute;left:2px;right:2px;top:${barTop}px;height:${Math.max(8, barH)}px;background:${getColor(s.class, isDark)};color:${getTextColor(s.class, isDark)};border-radius:4px;display:flex;align-items:center;padding:0 4px;font-size:10px;overflow:hidden;white-space:nowrap" title="${star}${name} ${s.startTime}-${s.endTime}">${star}${name}</div>`;
-      });
+      }
     }
 
     return `<div style="width:${CELL_W}px;height:${cellH}px;background:${cellBg};border-radius:6px;${borderStyle}position:relative;overflow:hidden;padding:4px 6px">
@@ -240,7 +193,7 @@ function renderMonthHtml(schedulesWithClasses, year, month, { theme, dbHolidayMa
 
 // ── Public API ────────────────────────────────────────────────────
 export async function generateMonthlyImage(schedulesWithClasses, year, month, { theme = 'auto', dbHolidays = [], endYear, endMonth } = {}) {
-  const todayStr = localDateStr(new Date());
+  const todayStr = toLocalDateStr(new Date());
 
   // Build DB holiday overrides (shared across all months)
   const dbHolidayMap = {};

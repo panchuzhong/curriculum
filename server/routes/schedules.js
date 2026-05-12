@@ -244,7 +244,7 @@ router.put('/batch', validateBatchUpdate, handle, (req, res) => {
 });
 
 router.delete('/batch', validateBatchDelete, handle, (req, res) => {
-  const { ids, start, end, classId, fromDate, semesterOnly, dryRun } = req.body;
+  const { ids, start, end, classId, fromDate, semesterOnly = true, dryRun } = req.body;
 
   if (ids && Array.isArray(ids) && ids.length > 0) {
     const teacherClasses = drizzleDb.select({ id: classes.id }).from(classes)
@@ -555,16 +555,15 @@ function getFreeSlotsForDate(dateStr, teacherId, dayStart = '08:00', dayEnd = '2
   if (daySchedules.length === 0) return [{ start: dayStart, end: dayEnd }];
 
   const sorted = daySchedules.sort((a, b) => a.startTime.localeCompare(b.startTime));
-  const toMinL = (t) => { const [h, m] = t.split(':').map(Number); return h * 60 + m; };
   const toTime = (mins) => `${String(Math.floor(mins / 60)).padStart(2, '0')}:${String(mins % 60).padStart(2, '0')}`;
-  const startMin = toMinL(dayStart);
-  const endMin = toMinL(dayEnd);
+  const startMin = toMin(dayStart);
+  const endMin = toMin(dayEnd);
   const freeSlots = [];
   let cursor = startMin;
 
   for (const s of sorted) {
-    const sStart = toMinL(s.startTime);
-    const sEndRaw = toMinL(s.endTime);
+    const sStart = toMin(s.startTime);
+    const sEndRaw = toMin(s.endTime);
     const sEnd = sEndRaw > sStart ? sEndRaw : sEndRaw + 24 * 60;
     if (sStart > cursor) freeSlots.push({ start: toTime(cursor), end: toTime(sStart) });
     cursor = Math.max(cursor, sEnd);
@@ -643,7 +642,7 @@ router.get('/conflicts', (req, res) => {
 
   const conflictGroups = [];
   for (const date of Object.keys(byDate).sort()) {
-    const groups = detectConflictGroups(byDate[date]);
+    const groups = detectConflictGroups(byDate[date]).filter(g => g.length > 1);
     for (const group of groups) {
       conflictGroups.push({ date, schedules: group });
       if (conflictGroups.length >= limit) break;

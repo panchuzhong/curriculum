@@ -9,6 +9,12 @@ export function toLocalDateStr(d) {
   return `${y}-${m}-${day}`;
 }
 
+export function escapeHtml(s) {
+  return String(s ?? '').replace(/[&<>"']/g, ch => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
+  })[ch]);
+}
+
 export function toMin(t) {
   const [h, m] = t.split(':').map(Number);
   return h * 60 + m;
@@ -60,30 +66,45 @@ export function toCSV(rows) {
   ).join('\n');
 }
 
+export function duration(startTime, endTime) {
+  const s = toMin(startTime);
+  const e = toMin(endTime);
+  return e > s ? e - s : e + 24 * 60 - s;
+}
+
 export function detectConflictGroups(daySchedules) {
-  if (daySchedules.length < 2) return [];
+  if (!daySchedules.length) return [];
   const sorted = [...daySchedules].sort((a, b) => toMin(a.startTime) - toMin(b.startTime));
   const groups = [];
   let group = [sorted[0]];
-  let groupEnd = toMin(sorted[0].endTime) >= toMin(sorted[0].startTime)
-    ? toMin(sorted[0].endTime)
-    : toMin(sorted[0].endTime) + 24 * 60;
-
+  let groupEnd = toMin(sorted[0].startTime) + duration(sorted[0].startTime, sorted[0].endTime);
   for (let i = 1; i < sorted.length; i++) {
     const s = sorted[i];
     const sStart = toMin(s.startTime);
-    const sEnd = toMin(s.endTime) >= sStart ? toMin(s.endTime) : toMin(s.endTime) + 24 * 60;
     if (sStart < groupEnd) {
       group.push(s);
-      groupEnd = Math.max(groupEnd, sEnd);
+      groupEnd = Math.max(groupEnd, sStart + duration(s.startTime, s.endTime));
     } else {
-      if (group.length > 1) groups.push(group);
+      groups.push(group);
       group = [s];
-      groupEnd = sEnd;
+      groupEnd = sStart + duration(s.startTime, s.endTime);
     }
   }
-  if (group.length > 1) groups.push(group);
+  groups.push(group);
   return groups;
+}
+
+export function assignColumns(group) {
+  const sorted = [...group].sort((a, b) => toMin(a.startTime) - toMin(b.startTime));
+  const colEnds = [];
+  return sorted.map(s => {
+    const start = toMin(s.startTime);
+    const end = start + duration(s.startTime, s.endTime);
+    let col = colEnds.findIndex(ce => ce <= start);
+    if (col === -1) { col = colEnds.length; colEnds.push(0); }
+    colEnds[col] = end;
+    return { ...s, _col: col };
+  });
 }
 
 export function getScheduleWithClass(id, teacherId) {

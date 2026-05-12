@@ -4,6 +4,7 @@ import { classes, pricingTiers, students, classStudents, schedules, holidays, se
 import { eq, inArray } from 'drizzle-orm';
 import { authMiddleware } from '../middleware/auth.js';
 import { writeFileSync } from 'fs';
+import { clearSemesterCache } from '../services/schedule-helpers.js';
 
 const BACKUP_VERSION = 1;
 
@@ -65,24 +66,23 @@ router.post('/restore', (req, res) => {
 
   // Save pre-restore snapshot
   try {
-    const tid2 = tid;
-    const teacherClasses = drizzleDb.select().from(classes).where(eq(classes.teacherId, tid2)).all();
+    const teacherClasses = drizzleDb.select().from(classes).where(eq(classes.teacherId, tid)).all();
     const cids = teacherClasses.map(c => c.id);
     const snapshot = {
       version: BACKUP_VERSION,
       timestamp: new Date().toISOString(),
       classes: teacherClasses,
-      pricingTiers: drizzleDb.select().from(pricingTiers).where(eq(pricingTiers.teacherId, tid2)).all(),
-      students: drizzleDb.select().from(students).where(eq(students.teacherId, tid2)).all(),
+      pricingTiers: drizzleDb.select().from(pricingTiers).where(eq(pricingTiers.teacherId, tid)).all(),
+      students: drizzleDb.select().from(students).where(eq(students.teacherId, tid)).all(),
       classStudents: cids.length > 0
         ? drizzleDb.select().from(classStudents).where(inArray(classStudents.classId, cids)).all()
         : [],
       schedules: cids.length > 0
         ? drizzleDb.select().from(schedules).where(inArray(schedules.classId, cids)).all()
         : [],
-      holidays: drizzleDb.select().from(holidays).where(eq(holidays.teacherId, tid2)).all(),
-      semesters: drizzleDb.select().from(semesters).where(eq(semesters.teacherId, tid2)).all(),
-      auditLog: drizzleDb.select().from(auditLog).where(eq(auditLog.teacherId, tid2)).all(),
+      holidays: drizzleDb.select().from(holidays).where(eq(holidays.teacherId, tid)).all(),
+      semesters: drizzleDb.select().from(semesters).where(eq(semesters.teacherId, tid)).all(),
+      auditLog: drizzleDb.select().from(auditLog).where(eq(auditLog.teacherId, tid)).all(),
     };
     const ts = new Date().toISOString().replace(/[:.]/g, '-');
     writeFileSync(`./data/backup_pre_restore_${ts}.json`, JSON.stringify(snapshot));
@@ -136,7 +136,7 @@ router.post('/restore', (req, res) => {
       drizzleDb.delete(holidays).where(eq(holidays.teacherId, tid)).run();
       drizzleDb.delete(auditLog).where(eq(auditLog.teacherId, tid)).run();
 
-      if (restoreData.semesters.length) { drizzleDb.insert(semesters).values(restoreData.semesters).run(); }
+      if (restoreData.semesters.length) { drizzleDb.insert(semesters).values(restoreData.semesters).run(); clearSemesterCache(); }
       if (restoreData.pricingTiers.length) { drizzleDb.insert(pricingTiers).values(restoreData.pricingTiers).run(); }
       if (restoreData.students.length) { drizzleDb.insert(students).values(restoreData.students).run(); }
       if (restoreData.classes.length) { drizzleDb.insert(classes).values(restoreData.classes).run(); }

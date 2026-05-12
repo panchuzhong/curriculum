@@ -1,5 +1,6 @@
 import { useContext } from 'react';
 import { getClassColor, getTextColor, DarkContext } from '../utils/colors';
+import { toMin, duration } from '../utils/schedule';
 
 export default function ScheduleBlock({ item, hasConflict, totalCols, rowHeight, topGapHeight, firstLabelMin, totalHeight, onScheduleClick, schedLpRef, wasRecentTouch }) {
   const dark = useContext(DarkContext);
@@ -83,15 +84,4 @@ export default function ScheduleBlock({ item, hasConflict, totalCols, rowHeight,
       )}
     </div>
   );
-}
-
-function toMin(t) {
-  const [h, m] = t.split(':').map(Number);
-  return h * 60 + m;
-}
-
-function duration(start, end) {
-  const s = toMin(start);
-  const e = toMin(end);
-  return e > s ? e - s : e + 24 * 60 - s;
 }
