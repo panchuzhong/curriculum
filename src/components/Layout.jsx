@@ -17,13 +17,18 @@ const NAV_LINKS = [
 export default function Layout({ children }) {
   const location = useLocation();
   const navigate = useNavigate();
-  const [dark, setDark] = useState(() => {
+  const [mode, setMode] = useState(() => {
     const saved = localStorage.getItem('theme');
-    if (saved) return saved === 'dark';
-    if (window.matchMedia?.('(prefers-color-scheme: dark)').matches) return true;
+    if (saved === 'dark') return 'dark';
+    if (saved === 'light') return 'light';
+    return 'auto';
+  });
+  const [autoDark, setAutoDark] = useState(() => {
     const hour = new Date().getHours();
     return hour >= 19 || hour < 7;
   });
+
+  const dark = mode === 'auto' ? autoDark : mode === 'dark';
   const [isMobile, setIsMobile] = useState(() => window.innerWidth < 768);
   const [isTablet, setIsTablet] = useState(() => window.innerWidth >= 768 && window.innerWidth < 1280);
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -32,7 +37,6 @@ export default function Layout({ children }) {
     setDarkMode(dark);
     document.documentElement.classList.toggle('dark', dark);
     document.documentElement.classList.toggle('light', !dark);
-    localStorage.setItem('theme', dark ? 'dark' : 'light');
   }, [dark]);
 
   useEffect(() => {
@@ -45,6 +49,14 @@ export default function Layout({ children }) {
     };
     window.addEventListener('resize', onResize);
     return () => window.removeEventListener('resize', onResize);
+  }, []);
+
+  useEffect(() => {
+    const timer = setInterval(() => {
+      const hour = new Date().getHours();
+      setAutoDark(hour >= 19 || hour < 7);
+    }, 60000);
+    return () => clearInterval(timer);
   }, []);
 
   useEffect(() => {
@@ -170,19 +182,25 @@ export default function Layout({ children }) {
       </div>
 
       <div className={`${isTablet ? 'p-2' : 'p-3'} border-t border-gray-100 dark:border-gray-700 space-y-1`}>
-        <button onClick={() => setDark(!dark)}
+        <button onClick={() => {
+            const next = mode === 'auto' ? 'dark' : mode === 'dark' ? 'light' : 'auto';
+            setMode(next);
+            localStorage.setItem('theme', next === 'auto' ? '' : next);
+          }}
           className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition"
-          title={!isMobile && sidebarWidth <= 100 ? (dark ? '日间模式' : '夜间模式') : undefined}>
-          <div className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 ${dark ? 'bg-amber-400' : 'bg-indigo-500'}`}>
+          title={!isMobile && sidebarWidth <= 100 ? (mode === 'auto' ? '自动模式' : mode === 'dark' ? '夜间模式' : '日间模式') : undefined}>
+          <div className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 ${mode === 'auto' ? 'bg-teal-400' : dark ? 'bg-amber-400' : 'bg-indigo-500'}`}>
             <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              {dark ? (
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z" />
-              ) : (
+              {mode === 'auto' ? (
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+              ) : dark ? (
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z" />
+              ) : (
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z" />
               )}
             </svg>
           </div>
-          {(isMobile || sidebarWidth > 100) && (dark ? '日间模式' : '夜间模式')}
+          {(isMobile || sidebarWidth > 100) && (mode === 'auto' ? '自动模式' : mode === 'dark' ? '夜间模式' : '日间模式')}
         </button>
         <button onClick={() => { clearToken(); window.location.href = `${import.meta.env.BASE_URL}login`; }}
           className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700/50 hover:text-red-600 dark:hover:text-red-400 transition"
