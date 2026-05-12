@@ -12,13 +12,10 @@ export default function useViewExport({ view }) {
   const [showExport, setShowExport] = useState(false);
   const [exportStart, setExportStart] = useState(null);
   const [exportEnd, setExportEnd] = useState(null);
-  // Extra context for month/year views
-  const [exportExtra, setExportExtra] = useState(null);
 
   function openExport(start, end, extra) {
     setExportStart(start);
     setExportEnd(end);
-    setExportExtra(extra || null);
     setShowExport(true);
   }
 
@@ -114,7 +111,6 @@ export default function useViewExport({ view }) {
     showExport,
     exportStart,
     exportEnd,
-    exportExtra,
     openExport,
     exportPNG,
     exportCSV,
