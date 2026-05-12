@@ -7,10 +7,10 @@ import ScheduleBlock from './ScheduleBlock';
 import useGridTouch from './useGridTouch';
 
 const DEFAULT_START = 7;
-const DEFAULT_END = 23;
+const DEFAULT_END = 22;
 const MIN_ROW_HEIGHT = 24;
-const TOP_OFFSET_MIN = 15;
-const BOTTOM_OFFSET_MIN = 15;
+const TOP_OFFSET_MIN = 5;
+const BOTTOM_OFFSET_MIN = 30;
 const HEADER_HEIGHT = 52;
 
 // Track recent touch events — suppress click for 300ms after touch to prevent ghost clicks
@@ -131,7 +131,8 @@ export default function ScheduleGrid({ dates, schedules, visibleDays = 7, weekSt
   startHour = Math.max(0, Math.min(startHour, DEFAULT_START));
 
   // Bottom boundary: at least 23:15, or latest end + 15 min
-  const bottomMin = Math.max(DEFAULT_END * 60 + BOTTOM_OFFSET_MIN, latestEndMin + BOTTOM_OFFSET_MIN);
+  const minBottom = DEFAULT_END * 60 + BOTTOM_OFFSET_MIN;
+  const bottomMin = latestEndMin > minBottom ? latestEndMin + BOTTOM_OFFSET_MIN : minBottom;
   const endHour = Math.max(DEFAULT_END, Math.floor(bottomMin / 60));
 
   const displayHours = [];
@@ -146,7 +147,7 @@ export default function ScheduleGrid({ dates, schedules, visibleDays = 7, weekSt
     function calcHeight() {
       if (!timeBodyRef.current) return;
       const available = timeBodyRef.current.clientHeight - HEADER_HEIGHT;
-      const ideal = Math.max(MIN_ROW_HEIGHT, Math.floor(available / totalRowUnits));
+      const ideal = Math.max(MIN_ROW_HEIGHT, available / totalRowUnits);
       setRowHeight(ideal);
     }
     calcHeight();

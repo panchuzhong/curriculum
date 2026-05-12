@@ -146,8 +146,8 @@ export async function generateScheduleImage(schedulesWithClasses, startDate, end
   });
 
   const DEFAULT_START = 7;
-  const DEFAULT_END = 23;
-  const BOTTOM_OFFSET_MIN = 15;
+  const DEFAULT_END = 22;
+  const BOTTOM_OFFSET_MIN = 30;
 
   let startHour = DEFAULT_START;
   let latestEndMin = DEFAULT_END * 60;
@@ -160,10 +160,11 @@ export async function generateScheduleImage(schedulesWithClasses, startDate, end
     if (actualEnd > latestEndMin) latestEndMin = actualEnd;
   });
   startHour = Math.max(0, Math.min(startHour, DEFAULT_START));
-  const bottomMin = Math.max(DEFAULT_END * 60 + BOTTOM_OFFSET_MIN, latestEndMin + BOTTOM_OFFSET_MIN);
+  const minBottom = DEFAULT_END * 60 + BOTTOM_OFFSET_MIN;
+  const bottomMin = latestEndMin > minBottom ? latestEndMin + BOTTOM_OFFSET_MIN : minBottom;
   const endHour = Math.max(DEFAULT_END, Math.floor(bottomMin / 60));
   const rowHSafe = Math.max(16, Math.min(60, +rowH || 40));
-  const TOP_GAP = Math.round(0.25 * rowHSafe);
+  const TOP_GAP = Math.round(5 / 60 * rowHSafe);
   const firstLabelHour = startHour + 1;
   const numHours = endHour - firstLabelHour + 1;
   const totalH = TOP_GAP + numHours * rowHSafe;

@@ -261,7 +261,7 @@ export default function Layout({ children }) {
           </div>
         )}
 
-        <main className={`flex-1 min-h-0 overflow-auto thin-scroll bg-gray-50 dark:bg-gray-900 ${isMobile ? 'p-2' : isTablet ? 'p-3' : 'p-6'}`}>
+        <main className={`flex-1 min-h-0 overflow-auto thin-scroll bg-gray-50 dark:bg-gray-900 ${location.pathname === '/' ? 'pt-6' : isMobile ? 'p-2' : isTablet ? 'p-3' : 'p-6'}`}>
           {children}
         </main>
       </div>
