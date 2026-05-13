@@ -1,4 +1,4 @@
-import { useState, useEffect, useContext } from 'react';
+import { useState, useEffect, useContext, useCallback } from 'react';
 import { api } from '../api';
 import { getClassColor, DarkContext } from '../utils/colors';
 import { SUBJECT_HUES, GRADES } from '../utils/constants';
@@ -178,11 +178,11 @@ export default function Reports() {
     }))
     .sort((a, b) => a.sortKey.localeCompare(b.sortKey));
 
-  function loadWeek(monday) {
+  const loadWeek = useCallback((monday) => {
     const end = addDays(monday, 6);
     setPeriod({ start: monday, end });
     api.getSchedules(monday, end).then(setSchedules).catch(e => toast(e.message || '加载课表失败'));
-  }
+  }, []);
 
   return (
     <div>

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { api } from '../api';
 import { useToast } from '../components/ToastProvider';
 
@@ -56,9 +56,9 @@ export default function SemesterManager() {
     }).catch(e => toast(e.message || '加载学期失败'));
   }, []);
 
-  function reload() {
+  const reload = useCallback(() => {
     api.getSemesters().then(setSemesters).catch(e => toast(e.message || '加载学期失败'));
-  }
+  }, []);
 
   async function handleCreate() {
     if (!form.name || !form.startDate || !form.endDate || saving) return;
