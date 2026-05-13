@@ -109,7 +109,7 @@ router.get('/agent/help', (req, res) => {
       },
       backup: {
         'GET /api/backup': '导出教师全量数据为 JSON，返回 {version:1, timestamp, classes, students, classStudents, schedules, semesters, holidays, pricingTiers, classPricing, auditLog}，触发浏览器下载',
-        'POST /api/backup/restore': '从备份 JSON 原子还原（先清空再写入，事务保证）；校验 version 字段必须为 1；teacherId 强制覆盖为当前认证教师；还原范围包括 classes、pricingTiers、students、classStudents、schedules、holidays、semesters、classPricing、auditLog；自动校验 classStudents 和 classPricing 关联的 classId 是否存在，不存在则跳过;非数组字段按空数组处理;事务失败返回 500 含具体原因(原数据保留);成功返回 {ok:true, restored:{classes,students,schedules,semesters,auditLog}}（restored 仅统计这 5 项，其余表同样已还原但不计数字段中）',
+        'POST /api/backup/restore': '从备份 JSON 原子还原（先清空再写入，事务保证）；校验 version 字段必须为 1；teacherId 强制覆盖为当前认证教师；还原范围包括 classes、pricingTiers、students、classStudents、schedules、holidays、semesters、classPricing、auditLog；自动校验 schedules、classStudents、classPricing 关联的 classId 是否存在于恢复后的班级中，classStudents 同时校验 studentId 是否存在，无效关联自动跳过;非数组字段按空数组处理;事务失败返回 500 含具体原因(原数据保留);成功返回 {ok:true, restored:{classes,students,schedules,semesters,auditLog}}（restored 仅统计这 5 项，其余表同样已还原但不计数字段中）',
       },
       auditLog: {
         'GET /api/audit-log': '查询操作日志（默认最新 100 条,按 id 倒序;返回的 beforeData/afterData 已 JSON.parse 还原为对象）',
@@ -271,7 +271,7 @@ router.get('/agent/help', (req, res) => {
       '图片导出支持任意时间范围，天数越多图片越宽；生成失败时返回 JSON {error}（不含内部 detail）；rowH 范围 16-60，默认 40；班级名/地点名等用户输入在生成 HTML 时统一 HTML 转义,无 XSS 风险',
       'PUT /api/schedules/batch 只允许修改时间和地点字段，classId/date 等核心字段不可批量篡改',
       'GET /api/schedules/summary 和 GET /api/schedules/export 均支持 &format=csv，响应含 UTF-8 BOM，Excel 直接打开不乱码;以 = + - @ \\t \\r 开头的单元格自动加单引号前缀防御 CSV 公式注入',
-      'GET /api/backup 返回全量 JSON（含 version 字段，当前为 1）；POST /api/backup/restore 校验 version 必须匹配，不匹配返回 400；恢复前自动保存快照到 ./data/backup_pre_restore_<timestamp>.json（非致命,失败不阻塞还原），恢复过程中 teacherId 强制绑定当前账号；classStudents 关联会校验 classId/studentId 是否存在于恢复数据中，无效关联自动跳过',
+      'GET /api/backup 返回全量 JSON（含 version 字段，当前为 1）；POST /api/backup/restore 校验 version 必须匹配，不匹配返回 400；恢复前自动保存快照到 ./data/backup_pre_restore_<timestamp>.json（非致命,失败不阻塞还原），恢复过程中 teacherId 强制绑定当前账号；schedules、classStudents、classPricing 关联会校验 classId 是否存在于恢复数据中，classStudents 额外校验 studentId，无效关联自动跳过',
       '学生可属于多个班级，通过 classIds 数组关联；DELETE /api/students/:id 删除学生实体并清理所有关联，DELETE /api/classes/:classId/students/:studentId 仅从指定班级移除。POST /api/classes/:classId/students 接受 name/birthDate/phone/parentPhone/parentName/note 字段（与 POST /api/students 一致，但不接受 classIds）',
       'PUT /api/students/:id 采用部分更新语义：仅写入请求体中包含且值非 undefined 的字段，未传字段保持原值；classIds 传入时全量替换班级关联',
       'POST/PUT /api/holidays 变更日期时会检查是否与已有节假日记录重复，重复则返回 409 {error:"该日期已有记录"}',
