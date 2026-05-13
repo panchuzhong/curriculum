@@ -39,6 +39,8 @@ cp README.md "$RELEASE_DIR/"
 # Create start script
 cat > "$RELEASE_DIR/start.sh" << 'EOF'
 #!/bin/bash
+cd "$(dirname "$0")"
+
 echo "Starting 课表管理系统..."
 echo "首次启动请设置 ALLOW_REGISTRATION=true 以注册第一个账号"
 echo ""
