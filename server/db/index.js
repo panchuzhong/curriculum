@@ -219,6 +219,7 @@ export function initDb() {
   db.exec(`
     CREATE INDEX IF NOT EXISTS idx_schedules_date ON schedules(date);
     CREATE INDEX IF NOT EXISTS idx_schedules_classId ON schedules(class_id);
+    CREATE INDEX IF NOT EXISTS idx_schedules_date_classId ON schedules(date, class_id);
     CREATE INDEX IF NOT EXISTS idx_classes_teacherId_deleted ON classes(teacher_id, deleted);
     CREATE INDEX IF NOT EXISTS idx_students_teacherId ON students(teacher_id);
     CREATE INDEX IF NOT EXISTS idx_holidays_teacherId_date ON holidays(teacher_id, date);

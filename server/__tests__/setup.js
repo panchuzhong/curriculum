@@ -97,6 +97,7 @@ export function createTestDb() {
       created_at TEXT DEFAULT CURRENT_TIMESTAMP
     );
     CREATE UNIQUE INDEX IF NOT EXISTS idx_cp_class_eff ON class_pricing(class_id, effective_from);
+    CREATE INDEX IF NOT EXISTS idx_schedules_date_class ON schedules(date, class_id);
     CREATE TABLE audit_log (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       teacher_id INTEGER NOT NULL,
