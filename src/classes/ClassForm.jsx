@@ -4,7 +4,7 @@ import { api } from '../api';
 import { getClassColor, getTextColor, DarkContext } from '../utils/colors';
 import { useToast } from '../components/ToastProvider';
 
-export default function ClassForm({ initial, onSubmit, onCancel }) {
+export default function ClassForm({ initial, onSubmit, onCancel, compact, actions }) {
   const dark = useContext(DarkContext);
   const toast = useToast();
   const [subjects, setSubjects] = useState([]);
@@ -62,29 +62,29 @@ export default function ClassForm({ initial, onSubmit, onCancel }) {
             </div>
           </div>
         </div>
-        <div>
+        {!compact && <div>
           <label className="block text-sm text-gray-500 dark:text-gray-400 mb-1">学生人数</label>
           <input type="number" min="1" className="w-full p-2 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded"
             value={form.studentCount}
             onChange={e => setForm({...form, studentCount: e.target.value === '' ? '' : +e.target.value})} />
-        </div>
-        <div>
+        </div>}
+        {!compact && <div>
           <label className="block text-sm text-gray-500 dark:text-gray-400 mb-1">单价 (元/人/小时)</label>
           <input type="number" step="0.01" className="w-full p-2 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded"
             value={form.unitPrice}
             onChange={e => setForm({...form, unitPrice: e.target.value === '' ? '' : +e.target.value})} />
-        </div>
-        <div>
+        </div>}
+        {!compact && <div>
           <label className="block text-sm text-gray-500 dark:text-gray-400 mb-1">优惠金额</label>
           <input type="number" step="0.01" className="w-full p-2 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded"
             value={form.discountAmount}
             onChange={e => setForm({...form, discountAmount: e.target.value === '' ? '' : +e.target.value})} />
-        </div>
-        <div className="sm:col-span-2">
+        </div>}
+        {!compact && <div className="sm:col-span-2">
           <label className="block text-sm text-gray-500 dark:text-gray-400 mb-1">优惠原因</label>
           <input className="w-full p-2 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded" value={form.discountReason || ''}
             onChange={e => setForm({...form, discountReason: e.target.value})} />
-        </div>
+        </div>}
         <div>
           <label className="block text-sm text-gray-500 dark:text-gray-400 mb-1">默认上课地点</label>
           <input className="w-full p-2 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded" value={form.defaultLocationName || ''}
@@ -99,8 +99,10 @@ export default function ClassForm({ initial, onSubmit, onCancel }) {
         </div>
       </div>
       <div className="flex gap-2 mt-4">
-        <button type="submit" className="px-4 py-2 bg-blue-600 rounded hover:bg-blue-700">保存</button>
-        <button type="button" onClick={onCancel} className="px-4 py-2 bg-gray-300 dark:bg-gray-600 rounded">取消</button>
+        <button type="submit" className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 text-sm">保存</button>
+        <button type="button" onClick={onCancel} className="px-4 py-2 bg-gray-300 dark:bg-gray-600 rounded text-sm">取消</button>
+        {actions && <div className="flex-1" />}
+        {actions}
       </div>
     </form>
   );

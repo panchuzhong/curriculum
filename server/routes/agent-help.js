@@ -108,13 +108,13 @@ router.get('/agent/help', (req, res) => {
         'GET /api/schedule-image/yearly?year=Y&endYear=Y': '生成多个年份的年课表图片（纵向堆叠），endYear 为可选结束年份',
       },
       backup: {
-        'GET /api/backup': '导出教师全量数据为 JSON，返回 {version:1, timestamp, classes, students, classStudents, schedules, semesters, holidays, pricingTiers, auditLog}，触发浏览器下载',
-        'POST /api/backup/restore': '从备份 JSON 原子还原（先清空再写入，事务保证）；校验 version 字段必须为 1；teacherId 强制覆盖为当前认证教师；还原范围包括 classes、pricingTiers、students、classStudents、schedules、holidays、semesters、auditLog；自动校验 classStudents 关联的 classId 和 studentId 是否存在，不存在则跳过;非数组字段按空数组处理;事务失败返回 500 含具体原因(原数据保留);成功返回 {ok:true, restored:{classes,students,schedules,semesters,auditLog}}（restored 仅统计这 5 项，其余表同样已还原但不计数字段中）',
+        'GET /api/backup': '导出教师全量数据为 JSON，返回 {version:1, timestamp, classes, students, classStudents, schedules, semesters, holidays, pricingTiers, classPricing, auditLog}，触发浏览器下载',
+        'POST /api/backup/restore': '从备份 JSON 原子还原（先清空再写入，事务保证）；校验 version 字段必须为 1；teacherId 强制覆盖为当前认证教师；还原范围包括 classes、pricingTiers、students、classStudents、schedules、holidays、semesters、classPricing、auditLog；自动校验 classStudents 和 classPricing 关联的 classId 是否存在，不存在则跳过;非数组字段按空数组处理;事务失败返回 500 含具体原因(原数据保留);成功返回 {ok:true, restored:{classes,students,schedules,semesters,auditLog}}（restored 仅统计这 5 项，其余表同样已还原但不计数字段中）',
       },
       auditLog: {
         'GET /api/audit-log': '查询操作日志（默认最新 100 条,按 id 倒序;返回的 beforeData/afterData 已 JSON.parse 还原为对象）',
         'GET /api/audit-log?limit=N': '最多返回 N 条（默认 100,上限 500,负数/NaN 自动 clamp）',
-        'GET /api/audit-log?table=X': '按数据表过滤,枚举: schedules/classes/students/holidays/class_students/pricing_tiers/semesters/teachers;非法值返回 400',
+        'GET /api/audit-log?table=X': '按数据表过滤,枚举: schedules/classes/students/holidays/class_students/pricing_tiers/semesters/teachers/class_pricing;非法值返回 400',
         'GET /api/audit-log?action=X': '按操作类型过滤,枚举: CREATE/UPDATE/DELETE/BATCH_CREATE/BATCH_UPDATE/BATCH_DELETE;非法值返回 400',
       },
     },
@@ -246,7 +246,7 @@ router.get('/agent/help', (req, res) => {
         teacherId: '教师 ID',
         timestamp: '操作时间（ISO 8601）',
         action: 'CREATE / UPDATE / DELETE / BATCH_CREATE / BATCH_UPDATE / BATCH_DELETE',
-        tableName: '操作的数据表（schedules / classes / students / holidays / class_students / pricing_tiers / semesters / teachers）',
+        tableName: '操作的数据表（schedules / classes / students / holidays / class_students / pricing_tiers / semesters / teachers / class_pricing）',
         recordId: '被操作记录的 ID（批量操作时为 null）',
         beforeData: '操作前数据对象（CREATE / BATCH_CREATE 时为 null）',
         afterData: '操作后数据对象（DELETE 时为 null；BATCH_DELETE 含 count 和 ids；BATCH_UPDATE 含 count, ids, classId, updates）',
@@ -275,7 +275,7 @@ router.get('/agent/help', (req, res) => {
       '学生可属于多个班级，通过 classIds 数组关联；DELETE /api/students/:id 删除学生实体并清理所有关联，DELETE /api/classes/:classId/students/:studentId 仅从指定班级移除。POST /api/classes/:classId/students 接受 name/birthDate/phone/parentPhone/parentName/note 字段（与 POST /api/students 一致，但不接受 classIds）',
       'PUT /api/students/:id 采用部分更新语义：仅写入请求体中包含且值非 undefined 的字段，未传字段保持原值；classIds 传入时全量替换班级关联',
       'POST/PUT /api/holidays 变更日期时会检查是否与已有节假日记录重复，重复则返回 409 {error:"该日期已有记录"}',
-      '审计日志（audit_log）覆盖：排课 CREATE/UPDATE/DELETE/BATCH_CREATE/BATCH_UPDATE/BATCH_DELETE；班级 CREATE/UPDATE/DELETE（含恢复操作）；学生 CREATE/UPDATE/DELETE（含子路由 POST/DELETE /api/classes/:cid/students）；节假日 CREATE/UPDATE/DELETE/BATCH_CREATE；定价阶梯 CREATE/UPDATE/DELETE；学期 CREATE/UPDATE/DELETE；教师（teachers）API Key 轮换/密码修改/学科更新。日志超过 10000 条时自动删除最旧记录',
+      '审计日志（audit_log）覆盖：排课 CREATE/UPDATE/DELETE/BATCH_CREATE/BATCH_UPDATE/BATCH_DELETE；班级 CREATE/UPDATE/DELETE（含恢复操作）；学生 CREATE/UPDATE/DELETE（含子路由 POST/DELETE /api/classes/:cid/students）；节假日 CREATE/UPDATE/DELETE/BATCH_CREATE；定价阶梯 CREATE/UPDATE/DELETE；学期 CREATE/UPDATE/DELETE；班级定价（class_pricing）CREATE/UPDATE/DELETE；教师（teachers）API Key 轮换/密码修改/学科更新。日志超过 10000 条时自动删除最旧记录',
       '注册成功后系统自动将 ALLOW_REGISTRATION 设为 false，单用户设计',
       'rate limiting：仅 POST /api/auth/register 与 POST /api/auth/login 启用 60 次/分钟限速；其它认证后端点（含 PUT /api/auth/api-key、PUT /api/auth/password 与各资源 CRUD）不受 rate limit 保护',
       '所有写接口均使用 express-validator 校验输入（POST /api/backup/restore 和 PUT /api/auth/api-key 因无标准字段或 payload 特殊，采用手动校验），校验失败返回 400 {error: "提示信息"}，详见下方 validationRules',
@@ -287,7 +287,7 @@ router.get('/agent/help', (req, res) => {
       '批量排课学期模式起始日：max(今天, 学期开始日期)，确保不会生成历史排课',
       '学生创建/更新接口的可选字符串字段（phone、parentPhone、birthDate）接受空字符串 ""，等同于不传',
       '班级创建时自动生成一条 class_pricing 初始记录（effectiveFrom=当天）；定价版本按 effectiveFrom 日期匹配排课收入计算，支持班级定价随时间分段变更；修改定价不会影响历史收入',
-      'class_pricing 与 classes 表双向同步：新增/修改/删除定价记录时自动更新班级表的当前定价字段；班级表字段仅作展示和默认值使用，收入计算以 class_pricing 为准',
+      'class_pricing 变更时自动同步到 classes 表：新增/修改/删除定价记录时自动更新班级表的当前定价字段；班级表字段仅作展示和默认值使用，收入计算以 class_pricing 为准',
     ],
     validationRules: {
       auth: {

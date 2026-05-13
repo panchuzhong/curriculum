@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { drizzleDb } from '../db/index.js';
 import { schedules, classes, semesters, holidays, classStudents, classPricing } from '../db/schema.js';
-import { eq, and, gte, lte, inArray, desc } from 'drizzle-orm';
+import { eq, and, gte, lte, inArray } from 'drizzle-orm';
 import { authMiddleware } from '../middleware/auth.js';
 import { isHoliday } from '../services/holidays.js';
 import handle from '../validations/handle.js';
@@ -11,15 +11,6 @@ import { toLocalDateStr, toMin, resolveRange, toCSV, detectConflictGroups, getSc
 
 const router = Router();
 router.use(authMiddleware);
-
-// Get the applicable pricing for a class on a given date
-function getApplicablePricing(classId, date) {
-  const records = drizzleDb.select().from(classPricing)
-    .where(eq(classPricing.classId, classId))
-    .orderBy(desc(classPricing.effectiveFrom))
-    .all();
-  return records.find(p => p.effectiveFrom <= date) || records[records.length - 1];
-}
 
 function getConflictsForSchedule(scheduleId, teacherId) {
   const s = drizzleDb.select().from(schedules).where(eq(schedules.id, scheduleId)).get();

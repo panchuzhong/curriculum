@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { drizzleDb, db } from '../db/index.js';
-import { classes, pricingTiers, students, classStudents, schedules, holidays, semesters, auditLog } from '../db/schema.js';
+import { classes, pricingTiers, students, classStudents, schedules, holidays, semesters, auditLog, classPricing } from '../db/schema.js';
 import { eq, inArray } from 'drizzle-orm';
 import { authMiddleware } from '../middleware/auth.js';
 import { writeFileSync } from 'fs';
@@ -30,6 +30,9 @@ router.get('/', (req, res) => {
       : [],
     holidays: drizzleDb.select().from(holidays).where(eq(holidays.teacherId, tid)).all(),
     semesters: drizzleDb.select().from(semesters).where(eq(semesters.teacherId, tid)).all(),
+    classPricing: classIds.length > 0
+      ? drizzleDb.select().from(classPricing).where(inArray(classPricing.classId, classIds)).all()
+      : [],
     auditLog: drizzleDb.select().from(auditLog).where(eq(auditLog.teacherId, tid)).all(),
   };
 
@@ -82,6 +85,9 @@ router.post('/restore', (req, res) => {
         : [],
       holidays: drizzleDb.select().from(holidays).where(eq(holidays.teacherId, tid)).all(),
       semesters: drizzleDb.select().from(semesters).where(eq(semesters.teacherId, tid)).all(),
+      classPricing: cids.length > 0
+        ? drizzleDb.select().from(classPricing).where(inArray(classPricing.classId, cids)).all()
+        : [],
       auditLog: drizzleDb.select().from(auditLog).where(eq(auditLog.teacherId, tid)).all(),
     };
     const ts = new Date().toISOString().replace(/[:.]/g, '-');
@@ -109,14 +115,16 @@ router.post('/restore', (req, res) => {
     schedules: fixTimestamps(arr(data.schedules)),
     holidays: forceOwner(arr(data.holidays)),
     semesters: fixTimestamps(forceOwner(arr(data.semesters))),
+    classPricing: arr(data.classPricing),
     auditLog: forceOwner(arr(data.auditLog)),
   };
 
-  // Validate schedule and classStudents references point to restored classes
+  // Validate schedule, classStudents, classPricing references point to restored classes
   const classIds = new Set(restoreData.classes.map(c => c.id));
   const studentIds = new Set(restoreData.students.map(s => s.id));
   restoreData.schedules = restoreData.schedules.filter(s => classIds.has(s.classId));
   restoreData.classStudents = restoreData.classStudents.filter(l => classIds.has(l.classId) && studentIds.has(l.studentId));
+  restoreData.classPricing = restoreData.classPricing.filter(p => classIds.has(p.classId));
 
   const counts = {};
 
@@ -134,6 +142,10 @@ router.post('/restore', (req, res) => {
       drizzleDb.delete(pricingTiers).where(eq(pricingTiers.teacherId, tid)).run();
       drizzleDb.delete(semesters).where(eq(semesters.teacherId, tid)).run();
       drizzleDb.delete(holidays).where(eq(holidays.teacherId, tid)).run();
+      // Delete class_pricing for classes owned by this teacher
+      if (existingClassIds.length > 0) {
+        drizzleDb.delete(classPricing).where(inArray(classPricing.classId, existingClassIds)).run();
+      }
       drizzleDb.delete(auditLog).where(eq(auditLog.teacherId, tid)).run();
 
       if (restoreData.semesters.length) { drizzleDb.insert(semesters).values(restoreData.semesters).run(); clearSemesterCache(); }
@@ -142,6 +154,7 @@ router.post('/restore', (req, res) => {
       if (restoreData.classes.length) { drizzleDb.insert(classes).values(restoreData.classes).run(); }
       if (restoreData.classStudents.length) { drizzleDb.insert(classStudents).values(restoreData.classStudents).run(); }
       if (restoreData.schedules.length) { drizzleDb.insert(schedules).values(restoreData.schedules).run(); }
+      if (restoreData.classPricing.length) { drizzleDb.insert(classPricing).values(restoreData.classPricing).run(); }
       if (restoreData.holidays.length) { drizzleDb.insert(holidays).values(restoreData.holidays).run(); }
       if (restoreData.auditLog.length) { drizzleDb.insert(auditLog).values(restoreData.auditLog).run(); }
 
