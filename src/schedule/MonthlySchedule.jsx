@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useContext, useCallback } from 'react';
+import { useState, useEffect, useRef, useContext, useCallback, useMemo } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { api } from '../api';
 import { getClassColor, getTextColor, DarkContext } from '../utils/colors';
@@ -62,13 +62,16 @@ export default function MonthlySchedule() {
     return () => window.removeEventListener('keydown', onKey);
   }, [year, month]);
 
-  const dates = getMonthDates(year, month);
-  const byDate = {};
-  schedules.forEach(s => {
-    if (!byDate[s.date]) byDate[s.date] = [];
-    byDate[s.date].push(s);
-  });
-  Object.values(byDate).forEach(arr => arr.sort((a, b) => a.startTime.localeCompare(b.startTime)));
+  const { dates, byDate } = useMemo(() => {
+    const d = getMonthDates(year, month);
+    const bd = {};
+    schedules.forEach(s => {
+      if (!bd[s.date]) bd[s.date] = [];
+      bd[s.date].push(s);
+    });
+    Object.values(bd).forEach(arr => arr.sort((a, b) => a.startTime.localeCompare(b.startTime)));
+    return { dates: d, byDate: bd };
+  }, [year, month, schedules]);
 
   function prevMonth() {
     animDir.current = -1;

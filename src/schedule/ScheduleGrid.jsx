@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import { todayStr, addDays } from '../utils/date';
 import { isHoliday, isWorkday } from '../utils/holidays';
 import TimeColumn from './TimeColumn';
@@ -64,34 +64,34 @@ export default function ScheduleGrid({ dates, schedules, visibleDays = 7, weekSt
 
   const N = dates.length;
 
-  const safeSchedules = schedules || [];
-  const byDate = {};
-  dates.forEach(d => byDate[d] = []);
-  safeSchedules.forEach(s => {
-    if (byDate[s.date] !== undefined) byDate[s.date].push(s);
-  });
-  Object.values(byDate).forEach(arr => arr.sort((a, b) => a.startTime.localeCompare(b.startTime)));
+  const { byDate, startHour, bottomMin } = useMemo(() => {
+    const ss = schedules || [];
+    const bd = {};
+    dates.forEach(d => bd[d] = []);
+    ss.forEach(s => {
+      if (bd[s.date] !== undefined) bd[s.date].push(s);
+    });
+    Object.values(bd).forEach(arr => arr.sort((a, b) => a.startTime.localeCompare(b.startTime)));
 
-  // Only consider schedules in currently visible days for range calculation
-  const visibleDateSet = weekStart
-    ? new Set(Array.from({ length: visibleDays }, (_, i) => addDays(weekStart, i)))
-    : new Set(dates);
-  let startHour = DEFAULT_START;
-  let latestEndMin = DEFAULT_END * 60;
-  safeSchedules.forEach(s => {
-    if (!visibleDateSet.has(s.date)) return;
-    const sh = parseInt(s.startTime.split(':')[0]);
-    if (sh < startHour) startHour = sh;
-    const eMin = toMin(s.endTime);
-    const sMin = toMin(s.startTime);
-    const actualEnd = eMin < sMin ? eMin + 24 * 60 : eMin;
-    if (actualEnd > latestEndMin) latestEndMin = actualEnd;
-  });
-  startHour = Math.max(0, Math.min(startHour, DEFAULT_START));
-
-  // Bottom boundary: at least 23:15, or latest end + 15 min
-  const minBottom = DEFAULT_END * 60 + BOTTOM_OFFSET_MIN;
-  const bottomMin = latestEndMin > minBottom ? latestEndMin + BOTTOM_OFFSET_MIN : minBottom;
+    const visibleDateSet = weekStart
+      ? new Set(Array.from({ length: visibleDays }, (_, i) => addDays(weekStart, i)))
+      : new Set(dates);
+    let sh = DEFAULT_START;
+    let latest = DEFAULT_END * 60;
+    ss.forEach(s => {
+      if (!visibleDateSet.has(s.date)) return;
+      const sh2 = parseInt(s.startTime.split(':')[0]);
+      if (sh2 < sh) sh = sh2;
+      const eMin = toMin(s.endTime);
+      const sMin = toMin(s.startTime);
+      const actualEnd = eMin < sMin ? eMin + 24 * 60 : eMin;
+      if (actualEnd > latest) latest = actualEnd;
+    });
+    sh = Math.max(0, Math.min(sh, DEFAULT_START));
+    const minBottom = DEFAULT_END * 60 + BOTTOM_OFFSET_MIN;
+    const bm = latest > minBottom ? latest + BOTTOM_OFFSET_MIN : minBottom;
+    return { byDate: bd, startHour: sh, bottomMin: bm };
+  }, [schedules, dates, weekStart, visibleDays]);
   const endHour = Math.max(DEFAULT_END, Math.floor(bottomMin / 60));
 
   const displayHours = [];

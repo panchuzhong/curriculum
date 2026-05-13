@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useContext, useCallback } from 'react';
+import { useState, useEffect, useRef, useContext, useCallback, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../api';
 import { getCategoryColor, DarkContext } from '../utils/colors';
@@ -88,17 +88,33 @@ export default function YearlySchedule() {
     return () => window.removeEventListener('keydown', onKey);
   }, [year]);
 
-  const classMap = {};
-  classes.forEach(c => classMap[c.id] = c);
+  const { classMap, byMonth, yearDisplayEntries, yearMaxHours, yearCondensed, yearTotalHours, yearDates } = useMemo(() => {
+    const cm = {};
+    classes.forEach(c => cm[c.id] = c);
 
-  const byMonth = {};
-  for (let m = 0; m < 12; m++) byMonth[m] = { dates: new Set(), schedules: [] };
-  schedules.forEach(s => {
-    const m = parseInt(s.date.split('-')[1]) - 1;
-    const cls = classMap[s.classId];
-    byMonth[m].dates.add(s.date);
-    byMonth[m].schedules.push({ ...s, class: cls });
-  });
+    const bm = {};
+    for (let m = 0; m < 12; m++) bm[m] = { dates: new Set(), schedules: [] };
+    const yCat = {};
+    let yTotal = 0;
+    const yDates = new Set();
+    schedules.forEach(s => {
+      const m = parseInt(s.date.split('-')[1]) - 1;
+      const cls = cm[s.classId];
+      bm[m].dates.add(s.date);
+      bm[m].schedules.push({ ...s, class: cls });
+      const cat = getCategory(cls);
+      if (!yCat[cat]) yCat[cat] = 0;
+      const h = toHoursAbs(s.durationBilling);
+      yCat[cat] += h;
+      yTotal += h;
+      yDates.add(s.date);
+    });
+    const entries = Object.entries(yCat).sort((a, b) => b[1] - a[1]);
+    const condensed = entries.length > collapseLimit;
+    const displayEntries = condensed ? groupByGrade(entries) : entries;
+    const maxH = displayEntries.length > 0 ? displayEntries[0][1] : 1;
+    return { classMap: cm, byMonth: bm, yearDisplayEntries: displayEntries, yearMaxHours: maxH, yearCondensed: condensed, yearTotalHours: yTotal, yearDates: yDates };
+  }, [schedules, classes, collapseLimit]);
 
   const cols = isMobile ? 2 : 3;
   const mobileRows = isMobile ? Array.from({ length: Math.ceil(12 / cols) }, (_, row) => {
@@ -108,23 +124,6 @@ export default function YearlySchedule() {
     }).some(Boolean);
     return hasData ? '1fr' : 'auto';
   }).join(' ') : undefined;
-
-  const yearByCategory = {};
-  let yearTotalHours = 0;
-  const yearDates = new Set();
-  schedules.forEach(s => {
-    const cls = classMap[s.classId];
-    const cat = getCategory(cls);
-    if (!yearByCategory[cat]) yearByCategory[cat] = 0;
-    const h = toHoursAbs(s.durationBilling);
-    yearByCategory[cat] += h;
-    yearTotalHours += h;
-    yearDates.add(s.date);
-  });
-  const yearCategoryEntries = Object.entries(yearByCategory).sort((a, b) => b[1] - a[1]);
-  const yearCondensed = yearCategoryEntries.length > collapseLimit;
-  const yearDisplayEntries = yearCondensed ? groupByGrade(yearCategoryEntries) : yearCategoryEntries;
-  const yearMaxHours = yearDisplayEntries.length > 0 ? yearDisplayEntries[0][1] : 1;
 
   function changeYear(delta) {
     animDir.current = delta;

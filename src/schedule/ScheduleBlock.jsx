@@ -1,8 +1,8 @@
-import { useContext } from 'react';
+import { useContext, memo } from 'react';
 import { getClassColor, getTextColor, DarkContext } from '../utils/colors';
 import { toMin, duration } from '../utils/schedule';
 
-export default function ScheduleBlock({ item, hasConflict, totalCols, rowHeight, topGapHeight, firstLabelMin, totalHeight, onScheduleClick, schedLpRef, wasRecentTouch }) {
+export default memo(function ScheduleBlock({ item, hasConflict, totalCols, rowHeight, topGapHeight, firstLabelMin, totalHeight, onScheduleClick, schedLpRef, wasRecentTouch }) {
   const dark = useContext(DarkContext);
   if (!item?.startTime || !item?.endTime) return null;
   const topPx = topGapHeight + (toMin(item.startTime) - firstLabelMin) / 60 * rowHeight;
@@ -84,4 +84,4 @@ export default function ScheduleBlock({ item, hasConflict, totalCols, rowHeight,
       )}
     </div>
   );
-}
+});
