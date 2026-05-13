@@ -26,13 +26,14 @@ export const validateBatchCreate = [
 export const validateBatchUpdate = [
   body('classId').isInt({ min: 1 }).withMessage('classId 须为正整数'),
   body('fromDate').optional().matches(DATE_RE).withMessage('fromDate 格式须为 YYYY-MM-DD'),
+  body('toDate').optional().matches(DATE_RE).withMessage('toDate 格式须为 YYYY-MM-DD'),
   body('weekday').optional().isInt({ min: 0, max: 6 }).withMessage('weekday 须为0-6'),
   body('semesterOnly').optional().isBoolean().withMessage('semesterOnly 须为布尔值'),
   body('updates').isObject().withMessage('updates 须为对象'),
 ];
 
 export const validateBatchDelete = [
-  body('ids').optional().isArray().withMessage('ids 须为数组'),
+  body('ids').optional().isArray({ max: 500 }).withMessage('ids 最多 500 项'),
   body('ids.*').optional().isInt({ min: 1 }).withMessage('ids 元素须为正整数'),
   body('classId').optional().isInt({ min: 1 }).withMessage('classId 须为正整数'),
   body('start').optional().matches(DATE_RE).withMessage('start 格式须为 YYYY-MM-DD'),

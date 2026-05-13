@@ -70,11 +70,8 @@ router.post('/', validateCreateStudent, handle, (req, res) => {
     const valid = new Set(drizzleDb.select({ id: classes.id }).from(classes)
       .where(and(eq(classes.teacherId, req.teacherId), eq(classes.deleted, false), inArray(classes.id, classIds)))
       .all().map(c => c.id));
-    for (const classId of classIds) {
-      if (valid.has(classId)) {
-        drizzleDb.insert(classStudents).values({ classId, studentId }).run();
-      }
-    }
+    const inserts = classIds.filter(cid => valid.has(cid)).map(classId => ({ classId, studentId }));
+    if (inserts.length) drizzleDb.insert(classStudents).values(inserts).run();
   }
 
   const created = getStudentWithClassIds(studentId);
@@ -104,11 +101,8 @@ router.put('/:id', validateUpdateStudent, handle, (req, res) => {
       .all().map(c => c.id));
     db.transaction(() => {
       drizzleDb.delete(classStudents).where(eq(classStudents.studentId, +id)).run();
-      for (const classId of classIds) {
-        if (valid.has(classId)) {
-          drizzleDb.insert(classStudents).values({ classId, studentId: +id }).run();
-        }
-      }
+      const inserts = classIds.filter(cid => valid.has(cid)).map(classId => ({ classId, studentId: +id }));
+      if (inserts.length) drizzleDb.insert(classStudents).values(inserts).run();
     })();
   }
 

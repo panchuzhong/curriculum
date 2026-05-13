@@ -166,8 +166,9 @@ router.get('/agent/help', (req, res) => {
       description: 'PUT /api/schedules/batch — 批量修改同一班级在指定范围内的排课的时间或地点',
       params: {
         classId: '班级 ID（必填）',
-        fromDate: '起始日期 YYYY-MM-DD（含，可选）；只修改该日期及之后的课。fromDate 与 weekday 至少传一个',
-        weekday: '星期几，0=周日…6=周六（可选）；只修改该星期几的课。省略则匹配所有星期几。fromDate 与 weekday 至少传一个',
+        fromDate: '起始日期 YYYY-MM-DD（含，可选）；只修改该日期及之后的课。fromDate、toDate 与 weekday 至少传一个',
+        toDate: '截止日期 YYYY-MM-DD（含，可选）；只修改该日期及之前的课。未传 fromDate 时下界默认为今天。fromDate、toDate 与 weekday 至少传一个',
+        weekday: '星期几，0=周日…6=周六（可选）；只修改该星期几的课。省略则匹配所有星期几。fromDate、toDate 与 weekday 至少传一个',
         semesterOnly: '跨学期保护开关（boolean，默认 true）；只在候选记录"部分在学期内、部分在学期外"时才生效，过滤掉学期外的部分。全部在学期内或全部在学期外时本参数不影响结果。设为 false 强制不过滤',
         updates: '要修改的字段对象（必填）；仅允许以下字段：startTime, endTime, durationBilling, locationName, locationLat, locationLng',
       },
@@ -229,6 +230,11 @@ router.get('/agent/help', (req, res) => {
         discountAmount: '优惠金额（默认 0）',
         discountReason: '优惠原因',
         effectiveFrom: '生效日期（YYYY-MM-DD）；排课定价按此日期匹配，同一班级同一天唯一',
+      },
+      pricingTier: {
+        minStudents: '最小学生人数',
+        maxStudents: '最大学生人数',
+        pricePerStudentPerHour: '每人每小时单价（元）',
       },
       semester: {
         name: '学期名称（如 "2026春季"）',
@@ -309,7 +315,7 @@ router.get('/agent/help', (req, res) => {
         create: { classId: '整数必填', date: 'YYYY-MM-DD 必填', startTime: 'HH:MM 必填', endTime: 'HH:MM 必填', durationBilling: '可选非负整数（默认由 endTime-startTime 自动计算）', locationName: '可选字符串（默认继承班级默认地点）', locationLat: '可选数字', locationLng: '可选数字' },
         update: { classId: '可选整数（变更时校验归属和软删除）', date: '可选 YYYY-MM-DD', startTime: '可选 HH:MM', endTime: '可选 HH:MM', durationBilling: '可选非负整数（startTime/endTime 变更且未显式传时自动重算）', locationName: '可选字符串', locationLat: '可选数字', locationLng: '可选数字' },
         batchCreate: { classId: '整数必填', startTime: 'HH:MM 必填', endTime: 'HH:MM 必填', dates: '可选数组,最多 365 项', semesterId: '可选,与 weekday 配合学期模式', weekday: '可选 0-6,与 semesterId 配合', durationBilling: '可选非负整数（默认由 endTime-startTime 自动计算）', preview: '布尔值可选（默认 false,true 时仅返回 {count,dates} 预览不创建）' },
-        batchUpdate: { classId: '整数必填', fromDate: 'YYYY-MM-DD 可选', weekday: '0-6 可选（省略匹配所有星期几）', semesterOnly: 'boolean 可选（默认 true）', updates: '对象必填', note: 'fromDate 与 weekday 至少传一个' },
+        batchUpdate: { classId: '整数必填', fromDate: 'YYYY-MM-DD 可选', toDate: 'YYYY-MM-DD 可选', weekday: '0-6 可选（省略匹配所有星期几）', semesterOnly: 'boolean 可选（默认 true）', updates: '对象必填', note: 'fromDate、toDate 与 weekday 至少传一个' },
         batchDelete: { ids: '整数数组（必填,byIds模式）', start: 'YYYY-MM-DD（byDateRange模式必填）', end: 'YYYY-MM-DD（byDateRange模式必填）', classId: '正整数（byClassId模式必填;byDateRange模式可选过滤）', fromDate: 'YYYY-MM-DD（byClassId模式必填）', semesterOnly: 'boolean 可选（默认 true,仅删学期内排课）', dryRun: 'boolean 可选（默认 false,true 时仅预览不删除）' },
       },
       semesters: {

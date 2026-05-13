@@ -9,13 +9,14 @@ export default function ClassList() {
   const dark = useContext(DarkContext);
   const toast = useToast();
   const [classes, setClasses] = useState([]);
+  const [loading, setLoading] = useState(true);
   const [expandedId, setExpandedId] = useState(null);
   const [activeTab, setActiveTab] = useState('info'); // 'info' | 'pricing'
   const [showNew, setShowNew] = useState(false);
   const [saving, setSaving] = useState(false);
 
   const refreshClasses = useCallback(() => {
-    api.getClasses().then(setClasses).catch(e => toast(e.message || '加载班级失败'));
+    api.getClasses().then(setClasses).catch(e => toast(e.message || '加载班级失败')).finally(() => setLoading(false));
   }, []);
 
   const cancelExpand = useCallback(() => setExpandedId(null), []);
@@ -79,6 +80,12 @@ export default function ClassList() {
       )}
 
       <div className="grid gap-2 mt-4">
+        {loading && (
+          <div className="text-center py-8 text-gray-400">加载中...</div>
+        )}
+        {!loading && classes.length === 0 && (
+          <p className="text-gray-400 text-center py-8">暂无班级，点击右上角新建</p>
+        )}
         {classes.map(cls => (
           <div key={cls.id} className="bg-gray-100 dark:bg-gray-800 rounded-lg overflow-hidden">
             {/* Collapsed header — no delete button, just chevron */}

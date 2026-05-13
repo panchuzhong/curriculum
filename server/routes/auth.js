@@ -76,7 +76,8 @@ router.post('/login', authLimiter, validateLogin, handle, async (req, res) => {
 router.get('/profile', authMiddleware, (req, res) => {
   const teacher = drizzleDb.select().from(teachers).where(eq(teachers.id, req.teacherId)).get();
   if (!teacher) return res.status(404).json({ error: 'Not found' });
-  const subjects = teacher.subjects ? JSON.parse(teacher.subjects) : DEFAULT_SUBJECTS;
+  let subjects = DEFAULT_SUBJECTS;
+  if (teacher.subjects) { try { subjects = JSON.parse(teacher.subjects); } catch { subjects = DEFAULT_SUBJECTS; } }
   res.json({ id: teacher.id, username: teacher.username, name: teacher.name, apiKey: teacher.apiKey, subjects });
 });
 

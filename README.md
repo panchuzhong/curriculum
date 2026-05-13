@@ -50,7 +50,7 @@
 - 修改密码
 
 ### 数据备份与还原
-- `GET /api/backup`：导出全量数据为 JSON（班级、学生、班级-学生关联、排课、学期、节假日、定价阶梯、操作日志）
+- `GET /api/backup`：导出全量数据为 JSON（班级、学生、班级-学生关联、排课、学期、节假日、定价阶梯、班级定价历史、操作日志）
 - `POST /api/backup/restore`：事务原子还原，teacherId 自动绑定当前账号防止越权
 
 ### 主题
@@ -203,6 +203,14 @@ sudo systemctl start curriculum-scheduler
 | POST | /api/classes/:classId/students | 在指定班级下创建学生并自动关联 |
 | DELETE | /api/classes/:classId/students/:studentId | 从指定班级移除学生（仅解除关联） |
 
+**班级定价历史**
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| GET | /api/classes/:classId/pricing | 获取班级定价历史（按生效日期降序） |
+| POST | /api/classes/:classId/pricing | 新增定价版本（同步更新班级当前定价） |
+| PUT | /api/classes/:classId/pricing/:pricingId | 修改定价记录 |
+| DELETE | /api/classes/:classId/pricing/:pricingId | 删除定价记录（至少保留一条） |
+
 **学生**
 | 方法 | 路径 | 说明 |
 |------|------|------|
@@ -215,9 +223,8 @@ sudo systemctl start curriculum-scheduler
 **排课**
 | 方法 | 路径 | 说明 |
 |------|------|------|
-| GET | /api/schedules?start=&end= | 获取日期范围内排课（含班级信息） |
+| GET | /api/schedules?start=&end= | 获取日期范围内排课（含班级信息）；支持 &classId=1,2,3 逗号分隔多班级过滤、&studentId=N 按学生所属班级过滤、&limit=N&offset=N 分页（limit 上限 1000） |
 | GET | /api/schedules?range=today\|tomorrow\|week\|month | 快捷范围查询 |
-| GET | /api/schedules?start=&end=&classId= | 按班级过滤 |
 | GET | /api/schedules/:id | 获取单条排课详情 |
 | POST | /api/schedules | 创建单次排课，返回完整对象 |
 | PUT | /api/schedules/:id | 更新排课，返回完整对象 |
@@ -227,8 +234,8 @@ sudo systemctl start curriculum-scheduler
 | PUT | /api/schedules/batch | 批量调整时间/地点（同班级同星期几，指定日期起） |
 | GET | /api/schedules/summary?start=&end= | 课时与收入汇总统计（可加 &classId= &format=csv） |
 | GET | /api/schedules/export?start=&end= | 排课明细导出（可加 &classId= &format=csv） |
-| GET | /api/schedules/free-slots?date= | 查询单日空闲时段（可加 after=&before= 限制时段） |
-| GET | /api/schedules/free-slots?start=&end= | 查询多日空闲时段（可加 after=&before=） |
+| GET | /api/schedules/free-slots?date= | 查询单日空闲时段（可加 after=&before= 限制时段、&minDuration=N 过滤最短时长） |
+| GET | /api/schedules/free-slots?start=&end= | 查询多日空闲时段（可加 after=&before=、&minDuration=N） |
 | GET | /api/schedules/conflicts | 查询冲突排课分组（可加 start=&end=&limit=） |
 
 **学期**
@@ -260,7 +267,7 @@ sudo systemctl start curriculum-scheduler
 **图片**
 | 方法 | 路径 | 说明 |
 |------|------|------|
-| GET | /api/schedule-image?start=&end= | 生成周课表 PNG；theme=light\|dark\|auto（默认 auto）；rowH=16-60（默认 40）；scale=0.25-3（默认 2）；highlight=YYYY-MM-DD |
+| GET | /api/schedule-image?start=&end= | 生成周课表 PNG；支持 range=today\|tomorrow\|week\|month 快捷参数；theme=light\|dark\|auto（默认 auto）；rowH=16-60（默认 40）；scale=0.25-3（默认 2）；highlight=YYYY-MM-DD |
 | GET | /api/schedule-image/monthly?year=&month= | 生成月课表日历网格 PNG；month=0-11（0=1月）；支持 endYear/endMonth 导出多个月份 |
 | GET | /api/schedule-image/yearly?year= | 生成年课表概览 PNG（12 月卡片 + 年度统计）；支持 endYear 导出多个年份 |
 
@@ -300,6 +307,8 @@ POST /api/schedules/batch
 }
 ```
 
+两种模式均支持可选参数：`durationBilling` 手动指定计费时长（分钟，默认为 endTime-startTime），`preview: true` 仅返回 `{count, dates}` 预览不实际创建。
+
 ### 批量删课
 
 **按 ID 数组**：
@@ -322,6 +331,8 @@ DELETE /api/schedules/batch
 {"classId": 1, "start": "2026-05-01", "end": "2026-05-31"}
 ```
 
+三种模式均支持 `dryRun: true` 仅预览匹配记录而不实际删除，返回包含 `count` 与 `ids` 的响应体。
+
 ### 批量调整排课
 
 修改同一班级在指定范围内课程的时间或地点：
@@ -339,8 +350,9 @@ PUT /api/schedules/batch
 
 - `classId`（必填）：班级 ID
 - `fromDate`（可选）：YYYY-MM-DD，只修改该日期及之后的课
+- `toDate`（可选）：YYYY-MM-DD，只修改该日期及之前的课；未传 `fromDate` 时下界默认为今天
 - `weekday`（可选）：0=周日，1=周一…6=周六；省略时匹配所有星期几
-- `fromDate` 与 `weekday` 至少传一个,防止误改全部
+- `fromDate`、`toDate` 与 `weekday` 至少传一个,防止误改全部
 - `semesterOnly`（默认 `true`）：跨学期保护开关。**仅在候选记录跨学期(部分在内、部分在外)时生效**,过滤掉学期外的部分；全部在学期内或全部在学期外时本参数不影响结果。设为 `false` 强制不过滤
 - `updates` 只允许：`startTime`, `endTime`, `durationBilling`, `locationName`, `locationLat`, `locationLng`
 - 修改时间时自动重算 `durationBilling`

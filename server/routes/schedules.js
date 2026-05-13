@@ -61,17 +61,16 @@ router.get('/', (req, res) => {
     classIds = classIds.filter(id => studentClassIds.has(id));
   }
 
-  const result = drizzleDb.select().from(schedules)
+  let query = drizzleDb.select().from(schedules)
     .where(and(gte(schedules.date, start), lte(schedules.date, end), inArray(schedules.classId, classIds)))
-    .all()
-    .sort((a, b) => a.date !== b.date ? a.date.localeCompare(b.date) : a.startTime.localeCompare(b.startTime));
-
-  const paged = pageLimit != null ? result.slice(pageOffset, pageOffset + pageLimit) : result;
+    .orderBy(schedules.date, schedules.startTime);
+  if (pageLimit != null) query = query.limit(pageLimit).offset(pageOffset);
+  const result = query.all();
 
   const classMap = {};
   teacherClasses.forEach(c => classMap[c.id] = c);
 
-  res.json(paged.map(s => ({ ...s, class: classMap[s.classId] })));
+  res.json(result.map(s => ({ ...s, class: classMap[s.classId] })));
 });
 
 router.post('/', validateCreateSchedule, handle, (req, res) => {
@@ -153,27 +152,35 @@ router.post('/batch', validateBatchCreate, handle, (req, res) => {
     return res.json({ count: targetDates.length, dates: targetDates });
   }
 
-  const values = targetDates.map(date => ({
+  const allValues = targetDates.map(date => ({
     classId, date, startTime, endTime, durationBilling: billing,
     locationName: cls.defaultLocationName,
     locationLat: cls.defaultLocationLat,
     locationLng: cls.defaultLocationLng,
   }));
-  const result = drizzleDb.insert(schedules).values(values).run();
-  const idList = targetDates.map((_, i) => Number(result.lastInsertRowid) - targetDates.length + 1 + i);
-  logAudit({ teacherId: req.teacherId, action: 'BATCH_CREATE', tableName: 'schedules', after: { count: targetDates.length, ids: idList } });
-  res.json({ count: targetDates.length, ids: idList });
+  // Chunk inserts to stay within SQLite's default 999-parameter limit
+  const CHUNK = 50;
+  const idList = [];
+  for (let i = 0; i < allValues.length; i += CHUNK) {
+    const result = drizzleDb.insert(schedules).values(allValues.slice(i, i + CHUNK)).run();
+    const firstId = Number(result.lastInsertRowid);
+    for (let j = 0; j < Math.min(CHUNK, allValues.length - i); j++) {
+      idList.push(firstId + j);
+    }
+  }
+  logAudit({ teacherId: req.teacherId, action: 'BATCH_CREATE', tableName: 'schedules', after: { count: idList.length, ids: idList } });
+  res.json({ count: idList.length, ids: idList });
 });
 
 router.put('/batch', validateBatchUpdate, handle, (req, res) => {
-  const { classId, fromDate, weekday, semesterOnly = true, updates } = req.body;
+  const { classId, fromDate, toDate, weekday, semesterOnly = true, updates } = req.body;
   if (!classId || !updates || Object.keys(updates).length === 0) {
     return res.status(400).json({ error: 'classId and updates required' });
   }
 
   // Require at least one scoping filter to prevent accidental mass updates
-  if (!fromDate && weekday == null) {
-    return res.status(400).json({ error: 'fromDate or weekday required to scope the update' });
+  if (!fromDate && !toDate && weekday == null) {
+    return res.status(400).json({ error: 'fromDate, toDate, or weekday required to scope the update' });
   }
 
   const allowed = new Set(['startTime', 'endTime', 'durationBilling', 'locationName', 'locationLat', 'locationLng']);
@@ -186,10 +193,16 @@ router.put('/batch', validateBatchUpdate, handle, (req, res) => {
     .where(and(eq(classes.id, classId), eq(classes.teacherId, req.teacherId), eq(classes.deleted, false))).get();
   if (!cls) return res.status(404).json({ error: 'Class not found' });
 
-  let candidates = drizzleDb.select().from(schedules)
-    .where(eq(schedules.classId, classId)).all();
+  // When toDate is set without fromDate, default lower bound to today
+  const effectiveFromDate = fromDate || (toDate ? toLocalDateStr(new Date()) : undefined);
 
-  if (fromDate) candidates = candidates.filter(s => s.date >= fromDate);
+  const conditions = [eq(schedules.classId, classId)];
+  if (effectiveFromDate) conditions.push(gte(schedules.date, effectiveFromDate));
+  if (toDate) conditions.push(lte(schedules.date, toDate));
+
+  let candidates = drizzleDb.select().from(schedules)
+    .where(and(...conditions)).all();
+
   if (weekday != null) {
     candidates = candidates.filter(s => new Date(s.date + 'T00:00:00').getDay() === +weekday);
   }
@@ -248,10 +261,9 @@ router.delete('/batch', validateBatchDelete, handle, (req, res) => {
   if (ids && Array.isArray(ids) && ids.length > 0) {
     const teacherClasses = drizzleDb.select({ id: classes.id }).from(classes)
       .where(and(eq(classes.teacherId, req.teacherId), eq(classes.deleted, false))).all();
-    const ownedClassIds = new Set(teacherClasses.map(c => c.id));
-    let candidates = drizzleDb.select({ id: schedules.id, classId: schedules.classId, date: schedules.date })
-      .from(schedules).where(inArray(schedules.id, ids.map(Number))).all()
-      .filter(s => ownedClassIds.has(s.classId));
+    const ownedClassIds = teacherClasses.map(c => c.id);
+    let candidates = ownedClassIds.length === 0 ? [] : drizzleDb.select({ id: schedules.id, classId: schedules.classId, date: schedules.date })
+      .from(schedules).where(and(inArray(schedules.id, ids.map(Number)), inArray(schedules.classId, ownedClassIds))).all();
 
     let semesterFiltered = 0;
     if (semesterOnly !== false) {
@@ -536,7 +548,7 @@ router.get('/export', (req, res) => {
   const scheds = cIds.length === 0 ? [] : drizzleDb.select().from(schedules)
     .where(and(gte(schedules.date, start), lte(schedules.date, end), inArray(schedules.classId, cIds)))
     .all()
-    .sort((a, b) => a.date !== b.date ? a.date.localeCompare(b.date) : a.startTime.localeCompare(b.startTime))
+    .sort((a, b) => a.date.localeCompare(b.date) || a.startTime.localeCompare(b.startTime))
     .map(s => ({ ...s, class: classMap[s.classId] }));
 
   if (format === 'csv') {
@@ -638,12 +650,51 @@ router.get('/free-slots', (req, res) => {
     return res.json({ date, slots: filterSlots(getFreeSlotsForDate(date, req.teacherId, dStart, dEnd)) });
   }
   if (start && end) {
+    // Bulk query: fetch all schedules in range once instead of day-by-day
+    const teacherClassIds = drizzleDb.select({ id: classes.id }).from(classes)
+      .where(and(eq(classes.teacherId, req.teacherId), eq(classes.deleted, false))).all().map(c => c.id);
+    if (teacherClassIds.length === 0) {
+      // All days are fully free
+      const results = [];
+      const current = new Date(start + 'T00:00:00');
+      const endDate = new Date(end + 'T00:00:00');
+      while (current <= endDate) {
+        results.push({ date: toLocalDateStr(current), slots: [{ start: dStart, end: dEnd }] });
+        current.setDate(current.getDate() + 1);
+      }
+      return res.json(results);
+    }
+    const rangeSchedules = drizzleDb.select().from(schedules)
+      .where(and(gte(schedules.date, start), lte(schedules.date, end), inArray(schedules.classId, teacherClassIds)))
+      .all()
+      .sort((a, b) => a.startTime.localeCompare(b.startTime));
+    const byDate = {};
+    for (const s of rangeSchedules) {
+      (byDate[s.date] ??= []).push(s);
+    }
+    const toTimeStr = (mins) => `${String(Math.floor(mins / 60)).padStart(2, '0')}:${String(mins % 60).padStart(2, '0')}`;
+    const dStartMin = toMin(dStart);
+    const dEndMin = toMin(dEnd);
+    function computeFreeSlots(dayScheds) {
+      if (!dayScheds.length) return [{ start: dStart, end: dEnd }];
+      const freeSlots = [];
+      let cursor = dStartMin;
+      for (const s of dayScheds) {
+        const sStart = toMin(s.startTime);
+        const sEndRaw = toMin(s.endTime);
+        const sEnd = sEndRaw > sStart ? sEndRaw : sEndRaw + 24 * 60;
+        if (sStart > cursor) freeSlots.push({ start: toTimeStr(cursor), end: toTimeStr(sStart) });
+        cursor = Math.max(cursor, sEnd);
+      }
+      if (cursor < dEndMin) freeSlots.push({ start: toTimeStr(cursor), end: toTimeStr(dEndMin) });
+      return freeSlots;
+    }
     const results = [];
     const current = new Date(start + 'T00:00:00');
     const endDate = new Date(end + 'T00:00:00');
     while (current <= endDate) {
       const dateStr = toLocalDateStr(current);
-      const slots = filterSlots(getFreeSlotsForDate(dateStr, req.teacherId, dStart, dEnd));
+      const slots = filterSlots(computeFreeSlots(byDate[dateStr] || []));
       if (slots.length > 0) results.push({ date: dateStr, slots });
       current.setDate(current.getDate() + 1);
     }

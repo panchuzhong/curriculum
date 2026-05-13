@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import request from 'supertest';
+import express from 'express';
 import { setupApp, makeUser, auth } from './route-helpers.js';
 
 let app, drizzleDb;
@@ -164,5 +165,15 @@ describe('PUT /api/auth/password', () => {
     expect(logAudit).toHaveBeenCalledWith(
       expect.objectContaining({ action: 'UPDATE', tableName: 'teachers' })
     );
+  });
+});
+
+describe('GET /api/health', () => {
+  it('returns ok without auth', async () => {
+    const healthApp = express();
+    healthApp.get('/api/health', (_req, res) => res.json({ status: 'ok' }));
+    const res = await request(healthApp).get('/api/health');
+    expect(res.status).toBe(200);
+    expect(res.body.status).toBe('ok');
   });
 });

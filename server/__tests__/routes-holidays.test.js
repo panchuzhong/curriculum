@@ -89,6 +89,11 @@ describe('DELETE /api/holidays/:id', () => {
     const res = await request(app).delete(`/api/holidays/${id}`).set(auth(token));
     expect(res.status).toBe(200);
   });
+
+  it('returns 404 for nonexistent id', async () => {
+    const res = await request(app).delete('/api/holidays/999999').set(auth(token));
+    expect(res.status).toBe(404);
+  });
 });
 
 describe('POST /api/holidays/batch', () => {

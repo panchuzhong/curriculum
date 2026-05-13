@@ -32,10 +32,11 @@ router.get('/', (req, res) => {
     .limit(cap)
     .all();
 
+  const safeParse = (s) => { try { return JSON.parse(s); } catch { return s; } };
   res.json(results.map(r => ({
     ...r,
-    beforeData: r.beforeData ? JSON.parse(r.beforeData) : null,
-    afterData: r.afterData ? JSON.parse(r.afterData) : null,
+    beforeData: r.beforeData ? safeParse(r.beforeData) : null,
+    afterData: r.afterData ? safeParse(r.afterData) : null,
   })));
 });
 

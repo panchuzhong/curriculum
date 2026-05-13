@@ -130,7 +130,7 @@ describe('PUT /api/schedules/batch — weekday filter', () => {
     expect(wednesday.locationName).toBeNull();
   });
 
-  it('requires fromDate or weekday', async () => {
+  it('requires fromDate, toDate, or weekday', async () => {
     const res = await request(app).put('/api/schedules/batch').set(auth(token))
       .send({ classId, updates: { locationName: 'X' } });
     expect(res.status).toBe(400);
@@ -150,6 +150,84 @@ describe('PUT /api/schedules/batch — weekday filter', () => {
     expect(res.status).toBe(200);
     const list = await request(app).get('/api/schedules?start=2026-05-01&end=2026-05-10').set(auth(token));
     expect(list.body[0].durationBilling).toBe(120);
+  });
+});
+
+// ── toDate filter ──
+
+describe('PUT /api/schedules/batch — toDate filter', () => {
+  it('toDate alone implicitly scopes from today to toDate inclusive', async () => {
+    // Use future dates so the implicit fromDate=today lower bound is meaningful
+    // 2026-06-01 = Mon, 2026-06-08 = Mon, 2026-06-15 = Mon
+    await request(app).post('/api/schedules').set(auth(token))
+      .send({ classId, date: '2026-06-01', startTime: '09:00', endTime: '10:00' });
+    await request(app).post('/api/schedules').set(auth(token))
+      .send({ classId, date: '2026-06-08', startTime: '09:00', endTime: '10:00' });
+    await request(app).post('/api/schedules').set(auth(token))
+      .send({ classId, date: '2026-06-15', startTime: '09:00', endTime: '10:00' });
+
+    // toDate alone → implicit lower bound = today; only <= 2026-06-08 matches
+    const res = await request(app).put('/api/schedules/batch').set(auth(token))
+      .send({ classId, toDate: '2026-06-08', updates: { locationName: '早课' } });
+    expect(res.status).toBe(200);
+    expect(res.body.count).toBe(2);
+
+    const list = await request(app).get('/api/schedules?start=2026-06-01&end=2026-06-20').set(auth(token));
+    expect(list.body.find(s => s.date === '2026-06-01').locationName).toBe('早课');
+    expect(list.body.find(s => s.date === '2026-06-08').locationName).toBe('早课');
+    expect(list.body.find(s => s.date === '2026-06-15').locationName).toBeNull();
+  });
+
+  it('toDate alone skips schedules before today', async () => {
+    // Create one schedule before today — should be skipped by implicit fromDate
+    await request(app).post('/api/schedules').set(auth(token))
+      .send({ classId, date: '2026-01-10', startTime: '09:00', endTime: '10:00' });
+
+    const res = await request(app).put('/api/schedules/batch').set(auth(token))
+      .send({ classId, toDate: '2026-12-31', updates: { locationName: '全年' } });
+    expect(res.status).toBe(200);
+    expect(res.body.count).toBe(0);
+  });
+
+  it('fromDate + toDate together scope to date range', async () => {
+    // fromDate is explicit, so it overrides the implicit today lower bound
+    await request(app).post('/api/schedules').set(auth(token))
+      .send({ classId, date: '2026-05-04', startTime: '09:00', endTime: '10:00' });
+    await request(app).post('/api/schedules').set(auth(token))
+      .send({ classId, date: '2026-05-11', startTime: '09:00', endTime: '10:00' });
+    await request(app).post('/api/schedules').set(auth(token))
+      .send({ classId, date: '2026-05-18', startTime: '09:00', endTime: '10:00' });
+
+    const res = await request(app).put('/api/schedules/batch').set(auth(token))
+      .send({ classId, fromDate: '2026-05-11', toDate: '2026-05-11', updates: { locationName: '中课' } });
+    expect(res.status).toBe(200);
+    expect(res.body.count).toBe(1);
+
+    const list = await request(app).get('/api/schedules?start=2026-05-01&end=2026-05-20').set(auth(token));
+    expect(list.body.find(s => s.date === '2026-05-04').locationName).toBeNull();
+    expect(list.body.find(s => s.date === '2026-05-11').locationName).toBe('中课');
+    expect(list.body.find(s => s.date === '2026-05-18').locationName).toBeNull();
+  });
+
+  it('toDate + weekday combined works', async () => {
+    // Use future dates; 2026-06-02 = Tue, 2026-06-09 = Tue, 2026-06-16 = Tue
+    await request(app).post('/api/schedules').set(auth(token))
+      .send({ classId, date: '2026-06-02', startTime: '09:00', endTime: '10:00' });
+    await request(app).post('/api/schedules').set(auth(token))
+      .send({ classId, date: '2026-06-09', startTime: '09:00', endTime: '10:00' });
+    await request(app).post('/api/schedules').set(auth(token))
+      .send({ classId, date: '2026-06-16', startTime: '09:00', endTime: '10:00' });
+
+    // toDate=2026-06-09 cuts off the 16th, weekday=2 = Tuesday
+    const res = await request(app).put('/api/schedules/batch').set(auth(token))
+      .send({ classId, toDate: '2026-06-09', weekday: 2, updates: { locationName: '周二早' } });
+    expect(res.status).toBe(200);
+    expect(res.body.count).toBe(2);
+
+    const list = await request(app).get('/api/schedules?start=2026-06-01&end=2026-06-20').set(auth(token));
+    expect(list.body.find(s => s.date === '2026-06-02').locationName).toBe('周二早');
+    expect(list.body.find(s => s.date === '2026-06-09').locationName).toBe('周二早');
+    expect(list.body.find(s => s.date === '2026-06-16').locationName).toBeNull();
   });
 });
 

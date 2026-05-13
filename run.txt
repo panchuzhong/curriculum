@@ -1,1 +1,0 @@
-claude --dangerously-skip-permissions --resume 273adf91-6f46-4540-ad32-03e31d0196ef

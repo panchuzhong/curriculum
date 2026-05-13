@@ -220,12 +220,14 @@ export function initDb() {
     CREATE INDEX IF NOT EXISTS idx_schedules_date ON schedules(date);
     CREATE INDEX IF NOT EXISTS idx_schedules_classId ON schedules(class_id);
     CREATE INDEX IF NOT EXISTS idx_schedules_date_classId ON schedules(date, class_id);
+    CREATE INDEX IF NOT EXISTS idx_schedules_classId_date ON schedules(class_id, date);
     CREATE INDEX IF NOT EXISTS idx_classes_teacherId_deleted ON classes(teacher_id, deleted);
     CREATE INDEX IF NOT EXISTS idx_students_teacherId ON students(teacher_id);
     CREATE INDEX IF NOT EXISTS idx_holidays_teacherId_date ON holidays(teacher_id, date);
     CREATE INDEX IF NOT EXISTS idx_semesters_teacherId ON semesters(teacher_id);
     CREATE INDEX IF NOT EXISTS idx_class_students_classId ON class_students(class_id);
     CREATE INDEX IF NOT EXISTS idx_class_students_studentId ON class_students(student_id);
+    CREATE INDEX IF NOT EXISTS idx_audit_log_teacherId ON audit_log(teacher_id);
   `);
 
   // Fix legacy createdAt that stored literal "CURRENT_TIMESTAMP" string

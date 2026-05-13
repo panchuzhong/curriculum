@@ -60,6 +60,7 @@ app.use((err, req, res, next) => {
 const PORT = process.env.PORT || 8443;
 const HOST = process.env.HOST || '127.0.0.1';
 const server = app.listen(PORT, HOST, () => console.log(`Server running on http://${HOST}:${PORT}`));
+server.timeout = 300000; // 5 minutes for image generation and backup endpoints
 
 process.on('SIGTERM', async () => {
   const { closeBrowser } = await import('./services/browser.js');

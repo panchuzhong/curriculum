@@ -31,8 +31,11 @@ function AuthInit({ children }) {
     }
     api.getProfile()
       .then(() => setReady(true))
-      .catch(() => {
-        clearToken();
+      .catch((err) => {
+        // Only clear token on explicit auth failure, not network errors
+        if (err.message === '登录已过期,请重新登录') {
+          clearToken();
+        }
         setReady(true);
       });
   }, []);

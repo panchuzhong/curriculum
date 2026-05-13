@@ -135,12 +135,13 @@ export default function StudentList() {
   const toast = useToast();
   const [classes, setClasses] = useState([]);
   const [students, setStudents] = useState([]);
+  const [loading, setLoading] = useState(true);
   const [dialog, setDialog] = useState(null); // null | 'new' | student object
   const [filterClass, setFilterClass] = useState('all');
 
   const reload = useCallback(() => {
     api.getClasses().then(setClasses).catch(e => toast(e.message || '加载班级失败'));
-    api.getAllStudents().then(setStudents).catch(e => toast(e.message || '加载学生失败'));
+    api.getAllStudents().then(setStudents).catch(e => toast(e.message || '加载学生失败')).finally(() => setLoading(false));
   }, []);
 
   const closeDialog = useCallback(() => setDialog(null), []);
@@ -175,7 +176,9 @@ export default function StudentList() {
         </div>
       </div>
 
-      {filtered.length === 0 ? (
+      {loading ? (
+        <p className="text-gray-400 text-center py-8">加载中...</p>
+      ) : filtered.length === 0 ? (
         <p className="text-gray-400 text-center py-8">
           {students.length === 0 ? '暂无学生，点击右上角新建' : '该班级暂无学生'}
         </p>
