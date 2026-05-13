@@ -37,7 +37,15 @@ router.post('/register', authLimiter, validateRegister, handle, async (req, res)
   const passwordHash = await bcrypt.hash(password, 10);
   const apiKey = uuidv4();
   const subjects = JSON.stringify(DEFAULT_SUBJECTS);
-  const result = drizzleDb.insert(teachers).values({ username, passwordHash, name, apiKey, subjects }).run();
+  let result;
+  try {
+    result = drizzleDb.insert(teachers).values({ username, passwordHash, name, apiKey, subjects }).run();
+  } catch (e) {
+    if (e.message?.includes('UNIQUE constraint')) {
+      return res.status(409).json({ error: 'Username taken' });
+    }
+    throw e;
+  }
   seedPricingTiers(result.lastInsertRowid);
 
   // Auto-close registration after first user (persist to .env so it survives restart)

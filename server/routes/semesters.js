@@ -37,6 +37,10 @@ router.put('/:id', validateUpdateSemester, handle, (req, res) => {
   const allowed = ['name', 'type', 'startDate', 'endDate'];
   const safeUpdates = Object.fromEntries(Object.entries(req.body).filter(([k]) => allowed.includes(k)));
   if (Object.keys(safeUpdates).length === 0) return res.status(400).json({ error: 'No valid fields' });
+  // Cross-field validation using stored record as fallback
+  const newStart = safeUpdates.startDate ?? existing.startDate;
+  const newEnd = safeUpdates.endDate ?? existing.endDate;
+  if (newEnd < newStart) return res.status(400).json({ error: '结束日期须不小于开始日期' });
   drizzleDb.update(semesters).set(safeUpdates).where(eq(semesters.id, +id)).run();
   const updated = drizzleDb.select().from(semesters).where(eq(semesters.id, +id)).get();
   logAudit({ teacherId: req.teacherId, action: 'UPDATE', tableName: 'semesters', recordId: +id, before: existing, after: safeUpdates });

@@ -13,14 +13,17 @@ const TOP_OFFSET_MIN = 5;
 const BOTTOM_OFFSET_MIN = 30;
 const HEADER_HEIGHT = 52;
 
-// Track recent touch events — suppress click for 300ms after touch to prevent ghost clicks
-let _touchTime = 0;
-if (typeof window !== 'undefined') {
-  window.addEventListener('touchstart', () => { _touchTime = Date.now(); }, { passive: true });
-}
-function wasRecentTouch() { return Date.now() - _touchTime < 300; }
-
 import { toMin, findConflictGroups, assignColumns } from '../utils/schedule';
+let _touchTime = 0;
+
+function useTouchTime() {
+  useEffect(() => {
+    const handler = () => { _touchTime = Date.now(); };
+    window.addEventListener('touchstart', handler, { passive: true });
+    return () => window.removeEventListener('touchstart', handler);
+  }, []);
+  return () => Date.now() - _touchTime < 300;
+}
 
 function NowLine({ rowHeight, topGapHeight, firstLabelMin }) {
   const [now, setNow] = useState(new Date());
@@ -57,6 +60,7 @@ export default function ScheduleGrid({ dates, schedules, visibleDays = 7, weekSt
 
   const { handleDayTouchStart, handleDayTouchMove, handleDayTouchEnd, dayBodyEls } =
     useGridTouch({ gridStateRef, onCellClick });
+  const wasRecentTouch = useTouchTime();
 
   const N = dates.length;
 

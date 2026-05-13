@@ -53,22 +53,25 @@ router.post('/', validateCreateClass, handle, (req, res) => {
   const { name, grade, subject, studentCount, unitPrice, discountAmount, discountReason,
           isCompetition, defaultLocationName, defaultLocationLat, defaultLocationLng } = req.body;
   const price = unitPrice ?? getDefaultPrice(req.teacherId, studentCount);
-  const result = drizzleDb.insert(classes).values({
-    teacherId: req.teacherId, name, grade, subject, studentCount,
-    unitPrice: price, discountAmount: discountAmount ?? 0, discountReason,
-    isCompetition: isCompetition ?? false,
-    defaultLocationName, defaultLocationLat, defaultLocationLng,
-  }).run();
-  const newId = Number(result.lastInsertRowid);
+  let newId;
+  db.transaction(() => {
+    const result = drizzleDb.insert(classes).values({
+      teacherId: req.teacherId, name, grade, subject, studentCount,
+      unitPrice: price, discountAmount: discountAmount ?? 0, discountReason,
+      isCompetition: isCompetition ?? false,
+      defaultLocationName, defaultLocationLat, defaultLocationLng,
+    }).run();
+    newId = Number(result.lastInsertRowid);
 
-  // Create initial pricing record
-  const today = new Date();
-  const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
-  drizzleDb.insert(classPricing).values({
-    classId: newId, studentCount, unitPrice: price,
-    discountAmount: discountAmount ?? 0, discountReason,
-    effectiveFrom: todayStr,
-  }).run();
+    // Create initial pricing record
+    const today = new Date();
+    const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+    drizzleDb.insert(classPricing).values({
+      classId: newId, studentCount, unitPrice: price,
+      discountAmount: discountAmount ?? 0, discountReason,
+      effectiveFrom: todayStr,
+    }).run();
+  })();
 
   const created = drizzleDb.select().from(classes).where(eq(classes.id, newId)).get();
   logAudit({ teacherId: req.teacherId, action: 'CREATE', tableName: 'classes', recordId: newId,

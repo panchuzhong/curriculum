@@ -35,6 +35,10 @@ router.put('/:id', validateUpdateTier, handle, (req, res) => {
   const allowed = ['minStudents', 'maxStudents', 'pricePerStudentPerHour'];
   const safeUpdates = Object.fromEntries(Object.entries(req.body).filter(([k]) => allowed.includes(k)));
   if (Object.keys(safeUpdates).length === 0) return res.status(400).json({ error: 'No valid fields' });
+  // Cross-field validation using stored record as fallback
+  const newMin = safeUpdates.minStudents ?? existing.minStudents;
+  const newMax = safeUpdates.maxStudents ?? existing.maxStudents;
+  if (newMax < newMin) return res.status(400).json({ error: '最大人数须不小于最小人数' });
   drizzleDb.update(pricingTiers).set(safeUpdates).where(eq(pricingTiers.id, +id)).run();
   const updated = drizzleDb.select().from(pricingTiers).where(eq(pricingTiers.id, +id)).get();
   logAudit({ teacherId: req.teacherId, action: 'UPDATE', tableName: 'pricing_tiers', recordId: +id, before: existing, after: safeUpdates });

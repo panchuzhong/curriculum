@@ -1,4 +1,4 @@
-import { useState, useEffect, useContext, useCallback } from 'react';
+import { useState, useEffect, useContext, useCallback, useMemo } from 'react';
 import { api } from '../api';
 import { getClassColor, DarkContext } from '../utils/colors';
 import { SUBJECT_HUES, GRADES } from '../utils/constants';
@@ -110,21 +110,26 @@ export default function Reports() {
   if (!period) return null;
 
   // Build class map
-  const classMap = {};
-  classes.forEach(c => classMap[c.id] = c);
+  const classMap = useMemo(() => {
+    const m = {};
+    classes.forEach(c => m[c.id] = c);
+    return m;
+  }, [classes]);
 
   // Attach class info to schedules
-  const enriched = schedules
-    .filter(s => classMap[s.classId])
-    .map(s => ({ ...s, class: classMap[s.classId] }));
+  const enriched = useMemo(() =>
+    schedules.filter(s => classMap[s.classId]).map(s => ({ ...s, class: classMap[s.classId] })),
+    [schedules, classMap]);
 
   // Apply class filter
-  const filtered = filterClassId ? enriched.filter(s => s.classId === +filterClassId) : enriched;
+  const filtered = useMemo(() =>
+    filterClassId ? enriched.filter(s => s.classId === +filterClassId) : enriched,
+    [enriched, filterClassId]);
 
   // Aggregate stats
   const totalClasses = filtered.length;
-  const totalHours = filtered.reduce((sum, s) => sum + toHoursAbs(s.durationBilling), 0);
-  const totalRevenue = filtered.reduce((sum, s) => sum + calcRevenue(s.class, s.durationBilling), 0);
+  const totalHours = useMemo(() => filtered.reduce((sum, s) => sum + toHoursAbs(s.durationBilling), 0), [filtered]);
+  const totalRevenue = useMemo(() => filtered.reduce((sum, s) => sum + calcRevenue(s.class, s.durationBilling), 0), [filtered]);
 
   // By subject (课内/竞赛自动分类)
   const byCatKey = groupBy(filtered, s => `${s.class.isCompetition ? '竞赛' : '课内'}${s.class.subject}`);

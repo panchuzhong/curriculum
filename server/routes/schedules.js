@@ -59,9 +59,8 @@ router.get('/', (req, res) => {
   }
 
   const result = drizzleDb.select().from(schedules)
-    .where(and(gte(schedules.date, start), lte(schedules.date, end)))
+    .where(and(gte(schedules.date, start), lte(schedules.date, end), inArray(schedules.classId, classIds)))
     .all()
-    .filter(s => classIds.includes(s.classId))
     .sort((a, b) => a.date !== b.date ? a.date.localeCompare(b.date) : a.startTime.localeCompare(b.startTime));
 
   const paged = pageLimit != null ? result.slice(pageOffset, pageOffset + pageLimit) : result;
@@ -217,18 +216,15 @@ router.put('/batch', validateBatchUpdate, handle, (req, res) => {
     return res.json(resp);
   }
 
-  const updatedIds = [];
-  for (const s of candidates) {
+  const updatedIds = candidates.map(s => s.id);
+  if (updatedIds.length > 0) {
     const payload = { ...safeUpdates };
     if (safeUpdates.startTime !== undefined || safeUpdates.endTime !== undefined) {
-      const newStart = safeUpdates.startTime || s.startTime;
-      const newEnd = safeUpdates.endTime || s.endTime;
       payload.durationBilling = safeUpdates.durationBilling != null
         ? safeUpdates.durationBilling
-        : calcDurationBilling(newStart, newEnd, null);
+        : calcDurationBilling(safeUpdates.startTime || candidates[0].startTime, safeUpdates.endTime || candidates[0].endTime, null);
     }
-    drizzleDb.update(schedules).set(payload).where(eq(schedules.id, s.id)).run();
-    updatedIds.push(s.id);
+    drizzleDb.update(schedules).set(payload).where(inArray(schedules.id, updatedIds)).run();
   }
 
   logAudit({
@@ -444,8 +440,8 @@ router.get('/summary', (req, res) => {
   }
 
   const scheds = drizzleDb.select().from(schedules)
-    .where(and(gte(schedules.date, start), lte(schedules.date, end)))
-    .all().filter(s => classIds.includes(s.classId));
+    .where(and(gte(schedules.date, start), lte(schedules.date, end), inArray(schedules.classId, classIds)))
+    .all();
 
   // Load class_pricing for revenue calculation
   const allPricing = drizzleDb.select().from(classPricing)
@@ -536,9 +532,8 @@ router.get('/export', (req, res) => {
   const classMap = {};
   teacherClasses.forEach(c => classMap[c.id] = c);
   const scheds = cIds.length === 0 ? [] : drizzleDb.select().from(schedules)
-    .where(and(gte(schedules.date, start), lte(schedules.date, end)))
+    .where(and(gte(schedules.date, start), lte(schedules.date, end), inArray(schedules.classId, cIds)))
     .all()
-    .filter(s => cIds.includes(s.classId))
     .sort((a, b) => a.date !== b.date ? a.date.localeCompare(b.date) : a.startTime.localeCompare(b.startTime))
     .map(s => ({ ...s, class: classMap[s.classId] }));
 

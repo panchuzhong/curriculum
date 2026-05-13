@@ -67,10 +67,11 @@ router.post('/', validateCreateStudent, handle, (req, res) => {
   const studentId = Number(result.lastInsertRowid);
 
   if (classIds && classIds.length > 0) {
+    const valid = new Set(drizzleDb.select({ id: classes.id }).from(classes)
+      .where(and(eq(classes.teacherId, req.teacherId), eq(classes.deleted, false), inArray(classes.id, classIds)))
+      .all().map(c => c.id));
     for (const classId of classIds) {
-      const cls = drizzleDb.select().from(classes)
-        .where(and(eq(classes.id, classId), eq(classes.teacherId, req.teacherId), eq(classes.deleted, false))).get();
-      if (cls) {
+      if (valid.has(classId)) {
         drizzleDb.insert(classStudents).values({ classId, studentId }).run();
       }
     }
@@ -98,12 +99,13 @@ router.put('/:id', validateUpdateStudent, handle, (req, res) => {
 
   const { classIds } = req.body;
   if (classIds !== undefined) {
+    const valid = new Set(drizzleDb.select({ id: classes.id }).from(classes)
+      .where(and(eq(classes.teacherId, req.teacherId), eq(classes.deleted, false), inArray(classes.id, classIds)))
+      .all().map(c => c.id));
     db.transaction(() => {
       drizzleDb.delete(classStudents).where(eq(classStudents.studentId, +id)).run();
       for (const classId of classIds) {
-        const cls = drizzleDb.select().from(classes)
-          .where(and(eq(classes.id, classId), eq(classes.teacherId, req.teacherId), eq(classes.deleted, false))).get();
-        if (cls) {
+        if (valid.has(classId)) {
           drizzleDb.insert(classStudents).values({ classId, studentId: +id }).run();
         }
       }
