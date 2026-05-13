@@ -107,29 +107,27 @@ export default function Reports() {
     api.getSchedules(monday, end).then(setSchedules).catch(e => toast(e.message || '加载课表失败'));
   }, []);
 
-  if (!period) return null;
-
-  // Build class map
+  // useMemo hooks must be before any conditional return
   const classMap = useMemo(() => {
     const m = {};
     classes.forEach(c => m[c.id] = c);
     return m;
   }, [classes]);
 
-  // Attach class info to schedules
   const enriched = useMemo(() =>
     schedules.filter(s => classMap[s.classId]).map(s => ({ ...s, class: classMap[s.classId] })),
     [schedules, classMap]);
 
-  // Apply class filter
   const filtered = useMemo(() =>
     filterClassId ? enriched.filter(s => s.classId === +filterClassId) : enriched,
     [enriched, filterClassId]);
 
-  // Aggregate stats
-  const totalClasses = filtered.length;
   const totalHours = useMemo(() => filtered.reduce((sum, s) => sum + toHoursAbs(s.durationBilling), 0), [filtered]);
   const totalRevenue = useMemo(() => filtered.reduce((sum, s) => sum + calcRevenue(s.class, s.durationBilling), 0), [filtered]);
+
+  if (!period) return null;
+
+  const totalClasses = filtered.length;
 
   // By subject (课内/竞赛自动分类)
   const byCatKey = groupBy(filtered, s => `${s.class.isCompetition ? '竞赛' : '课内'}${s.class.subject}`);
