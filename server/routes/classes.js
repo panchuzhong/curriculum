@@ -1,12 +1,12 @@
 import { Router } from 'express';
 import { drizzleDb, db } from '../db/index.js';
-import { classes, students, classStudents } from '../db/schema.js';
-import { eq, and, inArray } from 'drizzle-orm';
+import { classes, students, classStudents, classPricing } from '../db/schema.js';
+import { eq, and, inArray, desc } from 'drizzle-orm';
 import { authMiddleware } from '../middleware/auth.js';
 import { getDefaultPrice } from '../db/seed.js';
 import { logAudit } from '../services/audit.js';
 import handle from '../validations/handle.js';
-import { validateCreateClass, validateUpdateClass, validateClassStudent } from '../validations/classes.js';
+import { validateCreateClass, validateUpdateClass, validateClassStudent, validateCreatePricing, validateUpdatePricing } from '../validations/classes.js';
 
 const router = Router();
 router.use(authMiddleware);
@@ -60,6 +60,16 @@ router.post('/', validateCreateClass, handle, (req, res) => {
     defaultLocationName, defaultLocationLat, defaultLocationLng,
   }).run();
   const newId = Number(result.lastInsertRowid);
+
+  // Create initial pricing record
+  const today = new Date();
+  const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+  drizzleDb.insert(classPricing).values({
+    classId: newId, studentCount, unitPrice: price,
+    discountAmount: discountAmount ?? 0, discountReason,
+    effectiveFrom: todayStr,
+  }).run();
+
   const created = drizzleDb.select().from(classes).where(eq(classes.id, newId)).get();
   logAudit({ teacherId: req.teacherId, action: 'CREATE', tableName: 'classes', recordId: newId,
     after: { name, grade, subject, studentCount, unitPrice: price } });
@@ -168,6 +178,142 @@ classStudentRouter.delete('/:studentId', (req, res) => {
   res.json({ ok: true });
 });
 
+// ── Sub-resource: pricing records under a class ──
+const pricingRouter = Router({ mergeParams: true });
+
+// Get pricing history for a class
+pricingRouter.get('/', (req, res) => {
+  const classId = +req.params.classId;
+  const cls = drizzleDb.select().from(classes)
+    .where(and(eq(classes.id, classId), eq(classes.teacherId, req.teacherId), eq(classes.deleted, false))).get();
+  if (!cls) return res.status(404).json({ error: 'Class not found' });
+
+  const records = drizzleDb.select().from(classPricing)
+    .where(eq(classPricing.classId, classId))
+    .orderBy(desc(classPricing.effectiveFrom))
+    .all();
+  res.json(records);
+});
+
+// Add a new pricing version
+pricingRouter.post('/', validateCreatePricing, handle, (req, res) => {
+  const classId = +req.params.classId;
+  const cls = drizzleDb.select().from(classes)
+    .where(and(eq(classes.id, classId), eq(classes.teacherId, req.teacherId), eq(classes.deleted, false))).get();
+  if (!cls) return res.status(404).json({ error: 'Class not found' });
+
+  const { studentCount, unitPrice, effectiveFrom, discountAmount, discountReason } = req.body;
+
+  // Check for duplicate effective date
+  const existing = drizzleDb.select().from(classPricing)
+    .where(and(eq(classPricing.classId, classId), eq(classPricing.effectiveFrom, effectiveFrom)))
+    .get();
+  if (existing) return res.status(409).json({ error: '该日期已有定价记录' });
+
+  const result = drizzleDb.insert(classPricing).values({
+    classId, studentCount, unitPrice,
+    discountAmount: discountAmount ?? 0,
+    discountReason,
+    effectiveFrom,
+  }).run();
+
+  // Sync latest pricing to classes table
+  const latest = drizzleDb.select().from(classPricing)
+    .where(eq(classPricing.classId, classId))
+    .orderBy(desc(classPricing.effectiveFrom))
+    .get();
+  if (latest) {
+    drizzleDb.update(classes).set({
+      studentCount: latest.studentCount,
+      unitPrice: latest.unitPrice,
+      discountAmount: latest.discountAmount,
+      discountReason: latest.discountReason,
+    }).where(eq(classes.id, classId)).run();
+  }
+
+  const created = drizzleDb.select().from(classPricing).where(eq(classPricing.id, Number(result.lastInsertRowid))).get();
+  logAudit({ teacherId: req.teacherId, action: 'CREATE', tableName: 'class_pricing', recordId: created.id, after: created });
+  res.json(created);
+});
+
+// Update a pricing record
+pricingRouter.put('/:pricingId', validateUpdatePricing, handle, (req, res) => {
+  const pricingId = +req.params.pricingId;
+  const record = drizzleDb.select().from(classPricing).where(eq(classPricing.id, pricingId)).get();
+  if (!record) return res.status(404).json({ error: 'Pricing record not found' });
+
+  const cls = drizzleDb.select().from(classes)
+    .where(and(eq(classes.id, record.classId), eq(classes.teacherId, req.teacherId), eq(classes.deleted, false))).get();
+  if (!cls) return res.status(404).json({ error: 'Class not found' });
+
+  const allowed = ['studentCount', 'unitPrice', 'discountAmount', 'discountReason', 'effectiveFrom'];
+  const updates = Object.fromEntries(Object.entries(req.body).filter(([k]) => allowed.includes(k)));
+  if (Object.keys(updates).length === 0) return res.status(400).json({ error: 'No valid fields' });
+
+  // Check effectiveFrom uniqueness if changed
+  if (updates.effectiveFrom && updates.effectiveFrom !== record.effectiveFrom) {
+    const dup = drizzleDb.select().from(classPricing)
+      .where(and(eq(classPricing.classId, record.classId), eq(classPricing.effectiveFrom, updates.effectiveFrom)))
+      .get();
+    if (dup) return res.status(409).json({ error: '该日期已有定价记录' });
+  }
+
+  drizzleDb.update(classPricing).set(updates).where(eq(classPricing.id, pricingId)).run();
+
+  // Sync latest to classes table
+  const latest = drizzleDb.select().from(classPricing)
+    .where(eq(classPricing.classId, record.classId))
+    .orderBy(desc(classPricing.effectiveFrom))
+    .get();
+  if (latest) {
+    drizzleDb.update(classes).set({
+      studentCount: latest.studentCount,
+      unitPrice: latest.unitPrice,
+      discountAmount: latest.discountAmount,
+      discountReason: latest.discountReason,
+    }).where(eq(classes.id, record.classId)).run();
+  }
+
+  const updated = drizzleDb.select().from(classPricing).where(eq(classPricing.id, pricingId)).get();
+  logAudit({ teacherId: req.teacherId, action: 'UPDATE', tableName: 'class_pricing', recordId: pricingId, before: record, after: updates });
+  res.json(updated);
+});
+
+// Delete a pricing record (keep at least one)
+pricingRouter.delete('/:pricingId', (req, res) => {
+  const pricingId = +req.params.pricingId;
+  const record = drizzleDb.select().from(classPricing).where(eq(classPricing.id, pricingId)).get();
+  if (!record) return res.status(404).json({ error: 'Pricing record not found' });
+
+  const cls = drizzleDb.select().from(classes)
+    .where(and(eq(classes.id, record.classId), eq(classes.teacherId, req.teacherId), eq(classes.deleted, false))).get();
+  if (!cls) return res.status(404).json({ error: 'Class not found' });
+
+  const count = drizzleDb.select({ id: classPricing.id }).from(classPricing)
+    .where(eq(classPricing.classId, record.classId)).all();
+  if (count.length <= 1) return res.status(400).json({ error: '至少保留一条定价记录' });
+
+  drizzleDb.delete(classPricing).where(eq(classPricing.id, pricingId)).run();
+
+  // Sync latest to classes table
+  const latest = drizzleDb.select().from(classPricing)
+    .where(eq(classPricing.classId, record.classId))
+    .orderBy(desc(classPricing.effectiveFrom))
+    .get();
+  if (latest) {
+    drizzleDb.update(classes).set({
+      studentCount: latest.studentCount,
+      unitPrice: latest.unitPrice,
+      discountAmount: latest.discountAmount,
+      discountReason: latest.discountReason,
+    }).where(eq(classes.id, record.classId)).run();
+  }
+
+  logAudit({ teacherId: req.teacherId, action: 'DELETE', tableName: 'class_pricing', recordId: pricingId, before: record });
+  res.json({ ok: true });
+});
+
+router.use('/:classId/pricing', pricingRouter);
 router.use('/:classId/students', classStudentRouter);
 
 export default router;

@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { drizzleDb } from '../db/index.js';
-import { schedules, classes, semesters, holidays, classStudents } from '../db/schema.js';
-import { eq, and, gte, lte, inArray } from 'drizzle-orm';
+import { schedules, classes, semesters, holidays, classStudents, classPricing } from '../db/schema.js';
+import { eq, and, gte, lte, inArray, desc } from 'drizzle-orm';
 import { authMiddleware } from '../middleware/auth.js';
 import { isHoliday } from '../services/holidays.js';
 import handle from '../validations/handle.js';
@@ -11,6 +11,15 @@ import { toLocalDateStr, toMin, resolveRange, toCSV, detectConflictGroups, getSc
 
 const router = Router();
 router.use(authMiddleware);
+
+// Get the applicable pricing for a class on a given date
+function getApplicablePricing(classId, date) {
+  const records = drizzleDb.select().from(classPricing)
+    .where(eq(classPricing.classId, classId))
+    .orderBy(desc(classPricing.effectiveFrom))
+    .all();
+  return records.find(p => p.effectiveFrom <= date) || records[records.length - 1];
+}
 
 function getConflictsForSchedule(scheduleId, teacherId) {
   const s = drizzleDb.select().from(schedules).where(eq(schedules.id, scheduleId)).get();
@@ -447,21 +456,44 @@ router.get('/summary', (req, res) => {
     .where(and(gte(schedules.date, start), lte(schedules.date, end)))
     .all().filter(s => classIds.includes(s.classId));
 
+  // Load class_pricing for revenue calculation
+  const allPricing = drizzleDb.select().from(classPricing)
+    .where(inArray(classPricing.classId, classIds)).all();
+  const pricingByClass = {};
+  for (const p of allPricing) {
+    (pricingByClass[p.classId] ??= []).push(p);
+  }
+  for (const arr of Object.values(pricingByClass)) {
+    arr.sort((a, b) => a.effectiveFrom.localeCompare(b.effectiveFrom));
+  }
+  function matchPricing(cid, date) {
+    const records = pricingByClass[cid];
+    if (!records || records.length === 0) return null;
+    let match = records[0];
+    for (const p of records) {
+      if (p.effectiveFrom <= date) match = p;
+      else break;
+    }
+    return match;
+  }
+
   const byClassMap = {};
   for (const s of scheds) {
-    if (!byClassMap[s.classId]) byClassMap[s.classId] = { count: 0, minutes: 0 };
+    if (!byClassMap[s.classId]) byClassMap[s.classId] = { count: 0, minutes: 0, revenue: 0 };
     byClassMap[s.classId].count++;
     byClassMap[s.classId].minutes += s.durationBilling;
+    const p = matchPricing(s.classId, s.date);
+    const cls = classMap[s.classId];
+    const unit = p?.unitPrice ?? cls?.unitPrice ?? 0;
+    const cnt = p?.studentCount ?? cls?.studentCount ?? 0;
+    const disc = p?.discountAmount ?? cls?.discountAmount ?? 0;
+    byClassMap[s.classId].revenue += (unit * cnt - disc) * (s.durationBilling / 60);
   }
 
   const byClass = Object.entries(byClassMap).map(([cid, agg]) => {
     const cls = classMap[+cid];
     const hours = agg.minutes / 60;
-    const unit = cls.unitPrice ?? 0;
-    const count = cls.studentCount ?? 0;
-    const discount = cls.discountAmount ?? 0;
-    const revenue = (unit * count - discount) * hours;
-    return { classId: +cid, name: cls.name, subject: cls.subject, grade: cls.grade, count: agg.count, hours, revenue };
+    return { classId: +cid, name: cls.name, subject: cls.subject, grade: cls.grade, count: agg.count, hours, revenue: agg.revenue };
   }).sort((a, b) => b.revenue - a.revenue || a.classId - b.classId);
 
   if (format === 'csv') {
@@ -520,16 +552,41 @@ router.get('/export', (req, res) => {
     .map(s => ({ ...s, class: classMap[s.classId] }));
 
   if (format === 'csv') {
+    // Load pricing for accurate historical values
+    const allPricing = cIds.length > 0
+      ? drizzleDb.select().from(classPricing).where(inArray(classPricing.classId, cIds)).all()
+      : [];
+    const pricingByClass = {};
+    for (const p of allPricing) {
+      (pricingByClass[p.classId] ??= []).push(p);
+    }
+    for (const arr of Object.values(pricingByClass)) {
+      arr.sort((a, b) => a.effectiveFrom.localeCompare(b.effectiveFrom));
+    }
+    function matchPricing(cid, date) {
+      const records = pricingByClass[cid];
+      if (!records || records.length === 0) return null;
+      let match = records[0];
+      for (const p of records) {
+        if (p.effectiveFrom <= date) match = p;
+        else break;
+      }
+      return match;
+    }
+
     const weekdayNames = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
     const rows = [['日期', '星期', '班级', '年级', '学科', '开始时间', '结束时间', '计费时长(分钟)', '上课地点', '竞赛课', '单价', '学生人数', '优惠金额']];
     scheds.forEach(s => {
       const d = new Date(s.date + 'T00:00:00');
+      const p = matchPricing(s.classId, s.date);
       rows.push([
         s.date, weekdayNames[d.getDay()],
         s.class?.name || '', s.class?.grade || '', s.class?.subject || '',
         s.startTime, s.endTime, s.durationBilling, s.locationName || '',
         s.class?.isCompetition ? '是' : '否',
-        s.class?.unitPrice || '', s.class?.studentCount || '', s.class?.discountAmount || '',
+        p?.unitPrice ?? s.class?.unitPrice ?? '',
+        p?.studentCount ?? s.class?.studentCount ?? '',
+        p?.discountAmount ?? s.class?.discountAmount ?? '',
       ]);
     });
     res.setHeader('Content-Type', 'text/csv; charset=utf-8');

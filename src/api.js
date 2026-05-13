@@ -66,6 +66,12 @@ export const api = {
   addStudent: (classId, data) => request('POST', `/classes/${classId}/students`, data),
   removeStudentFromClass: (classId, studentId) => request('DELETE', `/classes/${classId}/students/${studentId}`),
 
+  // Class pricing history
+  getClassPricing: (classId) => request('GET', `/classes/${classId}/pricing`),
+  createClassPricing: (classId, data) => request('POST', `/classes/${classId}/pricing`, data),
+  updateClassPricing: (classId, id, data) => request('PUT', `/classes/${classId}/pricing/${id}`, data),
+  deleteClassPricing: (classId, id) => request('DELETE', `/classes/${classId}/pricing/${id}`),
+
   // Pricing Tiers
   getPricingTiers: () => request('GET', '/pricing-tiers'),
   createPricingTier: (data) => request('POST', '/pricing-tiers', data),

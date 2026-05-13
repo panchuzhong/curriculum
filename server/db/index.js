@@ -66,6 +66,31 @@ const migrations = [
       }
     },
   },
+  {
+    version: 3,
+    name: 'create_class_pricing',
+    up(db) {
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS class_pricing (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          class_id INTEGER NOT NULL REFERENCES classes(id),
+          student_count INTEGER NOT NULL,
+          unit_price REAL NOT NULL,
+          discount_amount REAL DEFAULT 0,
+          discount_reason TEXT,
+          effective_from TEXT NOT NULL,
+          created_at TEXT DEFAULT CURRENT_TIMESTAMP
+        );
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_cp_class_eff ON class_pricing(class_id, effective_from);
+      `);
+      // Backfill: one initial record per class using current pricing
+      db.exec(`
+        INSERT OR IGNORE INTO class_pricing (class_id, student_count, unit_price, discount_amount, discount_reason, effective_from)
+        SELECT id, student_count, unit_price, COALESCE(discount_amount, 0), discount_reason, COALESCE(created_at, '2000-01-01')
+        FROM classes
+      `);
+    },
+  },
 ];
 
 export function initDb() {

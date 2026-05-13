@@ -26,6 +26,20 @@ export const validateUpdateClass = [
   body('isCompetition').optional().isBoolean().withMessage('isCompetition 须为布尔值'),
 ];
 
+export const validateCreatePricing = [
+  body('studentCount').isInt({ min: 1 }).withMessage('学生人数须为正整数'),
+  body('unitPrice').isFloat({ min: 0 }).withMessage('单价不能为负'),
+  body('discountAmount').optional().isFloat({ min: 0 }).withMessage('优惠金额不能为负'),
+  body('effectiveFrom').matches(/^\d{4}-\d{2}-\d{2}$/).withMessage('生效日期格式须为 YYYY-MM-DD'),
+];
+
+export const validateUpdatePricing = [
+  body('studentCount').optional().isInt({ min: 1 }).withMessage('学生人数须为正整数'),
+  body('unitPrice').optional().isFloat({ min: 0 }).withMessage('单价不能为负'),
+  body('discountAmount').optional().isFloat({ min: 0 }).withMessage('优惠金额不能为负'),
+  body('effectiveFrom').optional().matches(/^\d{4}-\d{2}-\d{2}$/).withMessage('生效日期格式须为 YYYY-MM-DD'),
+];
+
 export const validateClassStudent = [
   body('name').notEmpty().withMessage('学生姓名不能为空'),
   body('birthDate').optional({ checkFalsy: true }).matches(DATE_RE).withMessage('出生日期格式须为 YYYY 或 YYYY-MM-DD'),

@@ -44,6 +44,12 @@ router.get('/agent/help', (req, res) => {
         'POST /api/classes/:classId/students': '在指定班级下创建学生并自动关联到该班级，返回完整学生对象（含 classIds:[classId]）',
         'DELETE /api/classes/:classId/students/:studentId': '从指定班级移除学生（仅解除关联，不删除学生实体），返回 {ok:true}',
       },
+      classPricing: {
+        'GET /api/classes/:classId/pricing': '获取指定班级的定价历史，按生效日期降序排列；返回定价记录数组',
+        'POST /api/classes/:classId/pricing': '新增定价版本（需 studentCount, unitPrice, effectiveFrom；可选 discountAmount, discountReason）；effectiveFrom 重复返回 409；同时更新班级表当前定价字段',
+        'PUT /api/classes/:classId/pricing/:pricingId': '修改某条定价记录（变更 effectiveFrom 时查重）；更新后同步班级表当前定价',
+        'DELETE /api/classes/:classId/pricing/:pricingId': '删除定价记录（至少保留一条），删除后同步班级表当前定价，返回 {ok:true}',
+      },
       students: {
         'GET /api/students': '获取所有学生（含 classIds 数组）；按姓名排序（中文名在前按拼音序，英文名在后按字母序，同名按 ID 倒序即新添加的在前）',
         'GET /api/students/by-class/:classId': '获取指定班级的学生列表',
@@ -180,7 +186,7 @@ router.get('/agent/help', (req, res) => {
         bySubject: '按学科分组 [{subject, count, hours, revenue}]，按次数降序',
         byGrade: '按年级分组 [{grade, count, hours, revenue}]，按次数降序',
       },
-      revenueFormula: '(unitPrice × studentCount - discountAmount) × (durationBilling 分钟 / 60); discount 大于课时基价时收入会为负数(教师可手动控制让利场景);unitPrice/studentCount 缺失按 0 处理',
+      revenueFormula: '按排课日期匹配 class_pricing 中的对应版本：(classPricing.unitPrice × classPricing.studentCount - classPricing.discountAmount) × (durationBilling 分钟 / 60)；当日无 class_pricing 时回退到班级表当前值；discount 大于课时基价时收入会为负数',
     },
     dataModels: {
       class: {
@@ -215,6 +221,14 @@ router.get('/agent/help', (req, res) => {
         locationLat: '纬度',
         locationLng: '经度',
         createdAt: '创建时间（YYYY-MM-DD HH:MM:SS 格式，由数据库自动填写）',
+      },
+      classPricing: {
+        classId: '所属班级 ID',
+        studentCount: '学生人数',
+        unitPrice: '单价（元/人/小时）',
+        discountAmount: '优惠金额（默认 0）',
+        discountReason: '优惠原因',
+        effectiveFrom: '生效日期（YYYY-MM-DD）；排课定价按此日期匹配，同一班级同一天唯一',
       },
       semester: {
         name: '学期名称（如 "2026春季"）',
@@ -272,6 +286,8 @@ router.get('/agent/help', (req, res) => {
       'GET /api/holidays/:year 返回指定年份的节假日记录',
       '批量排课学期模式起始日：max(今天, 学期开始日期)，确保不会生成历史排课',
       '学生创建/更新接口的可选字符串字段（phone、parentPhone、birthDate）接受空字符串 ""，等同于不传',
+      '班级创建时自动生成一条 class_pricing 初始记录（effectiveFrom=当天）；定价版本按 effectiveFrom 日期匹配排课收入计算，支持班级定价随时间分段变更；修改定价不会影响历史收入',
+      'class_pricing 与 classes 表双向同步：新增/修改/删除定价记录时自动更新班级表的当前定价字段；班级表字段仅作展示和默认值使用，收入计算以 class_pricing 为准',
     ],
     validationRules: {
       auth: {
@@ -308,6 +324,10 @@ router.get('/agent/help', (req, res) => {
       pricingTiers: {
         create: { minStudents: '≥1整数', maxStudents: '≥1整数,须不小于 minStudents', pricePerStudentPerHour: '>0 数字' },
         update: { minStudents: '可选≥1', maxStudents: '可选≥1,变更时仍校验不小于 minStudents', pricePerStudentPerHour: '可选>0' },
+      },
+      classPricing: {
+        create: { studentCount: '≥1 整数必填', unitPrice: '≥0 数字必填', effectiveFrom: 'YYYY-MM-DD 必填，同班级同日期不可重复', discountAmount: '可选≥0', discountReason: '可选自由文本' },
+        update: { studentCount: '可选≥1', unitPrice: '可选≥0', effectiveFrom: '可选 YYYY-MM-DD，变更时查重', discountAmount: '可选≥0', discountReason: '可选自由文本' },
       },
     },
     examples: {

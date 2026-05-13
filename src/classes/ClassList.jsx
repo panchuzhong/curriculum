@@ -3,6 +3,7 @@ import { api } from '../api';
 import { getClassColor, DarkContext } from '../utils/colors';
 import { useToast } from '../components/ToastProvider';
 import ClassForm from './ClassForm';
+import PricingManager from './PricingManager';
 
 export default function ClassList() {
   const dark = useContext(DarkContext);
@@ -87,6 +88,7 @@ export default function ClassList() {
             {expandedId === cls.id && (
               <div className="p-4 border-t border-gray-200 dark:border-gray-700">
                 <ClassForm initial={cls} onSubmit={handleUpdate} onCancel={() => setExpandedId(null)} />
+                <PricingManager classId={cls.id} onChanged={() => api.getClasses().then(setClasses)} />
               </div>
             )}
           </div>

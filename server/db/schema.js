@@ -70,6 +70,17 @@ export const schedules = sqliteTable('schedules', {
   createdAt: text('created_at').default(sql`CURRENT_TIMESTAMP`),
 });
 
+export const classPricing = sqliteTable('class_pricing', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  classId: integer('class_id').notNull().references(() => classes.id),
+  studentCount: integer('student_count').notNull(),
+  unitPrice: real('unit_price').notNull(),
+  discountAmount: real('discount_amount').default(0),
+  discountReason: text('discount_reason'),
+  effectiveFrom: text('effective_from').notNull(),
+  createdAt: text('created_at').default(sql`CURRENT_TIMESTAMP`),
+});
+
 export const holidays = sqliteTable('holidays', {
   id: integer('id').primaryKey({ autoIncrement: true }),
   teacherId: integer('teacher_id').notNull().references(() => teachers.id),
