@@ -101,6 +101,12 @@ export default function Reports() {
     api.getSchedules(start, end).then(setSchedules).catch(e => toast(e.message || '加载课表失败'));
   }, [tab, year, month, customStart, customEnd]);
 
+  const loadWeek = useCallback((monday) => {
+    const end = addDays(monday, 6);
+    setPeriod({ start: monday, end });
+    api.getSchedules(monday, end).then(setSchedules).catch(e => toast(e.message || '加载课表失败'));
+  }, []);
+
   if (!period) return null;
 
   // Build class map
@@ -177,12 +183,6 @@ export default function Reports() {
       sortKey: m,
     }))
     .sort((a, b) => a.sortKey.localeCompare(b.sortKey));
-
-  const loadWeek = useCallback((monday) => {
-    const end = addDays(monday, 6);
-    setPeriod({ start: monday, end });
-    api.getSchedules(monday, end).then(setSchedules).catch(e => toast(e.message || '加载课表失败'));
-  }, []);
 
   return (
     <div>
