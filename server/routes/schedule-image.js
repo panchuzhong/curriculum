@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { authMiddleware } from '../middleware/auth.js';
 import { drizzleDb } from '../db/index.js';
 import { schedules, classes, holidays } from '../db/schema.js';
-import { eq, and, gte, lte } from 'drizzle-orm';
+import { eq, and, gte, lte, inArray } from 'drizzle-orm';
 import { generateScheduleImage } from '../services/image-gen.js';
 import { generateMonthlyImage } from '../services/image-gen-monthly.js';
 import { generateYearlyImage } from '../services/image-gen-yearly.js';
@@ -26,9 +26,8 @@ router.get('/', async (req, res) => {
     teacherClasses.forEach(c => classMap[c.id] = c);
 
     const scheds = drizzleDb.select().from(schedules)
-      .where(and(gte(schedules.date, start), lte(schedules.date, end)))
+      .where(and(gte(schedules.date, start), lte(schedules.date, end), inArray(schedules.classId, classIds)))
       .all()
-      .filter(s => classIds.includes(s.classId))
       .map(s => ({ ...s, class: classMap[s.classId] }));
 
     const dbHolidays = drizzleDb.select().from(holidays)
@@ -71,9 +70,8 @@ router.get('/monthly', async (req, res) => {
     const endDate = `${ey}-${String(em + 1).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
 
     const scheds = drizzleDb.select().from(schedules)
-      .where(and(gte(schedules.date, startDate), lte(schedules.date, endDate)))
+      .where(and(gte(schedules.date, startDate), lte(schedules.date, endDate), inArray(schedules.classId, classIds)))
       .all()
-      .filter(s => classIds.includes(s.classId))
       .map(s => ({ ...s, class: classMap[s.classId] }));
 
     const dbHolidays = drizzleDb.select().from(holidays)
@@ -107,9 +105,8 @@ router.get('/yearly', async (req, res) => {
 
     const ey = endYear != null ? endYear : year;
     const scheds = drizzleDb.select().from(schedules)
-      .where(and(gte(schedules.date, `${year}-01-01`), lte(schedules.date, `${ey}-12-31`)))
+      .where(and(gte(schedules.date, `${year}-01-01`), lte(schedules.date, `${ey}-12-31`), inArray(schedules.classId, classIds)))
       .all()
-      .filter(s => classIds.includes(s.classId))
       .map(s => ({ ...s, class: classMap[s.classId] }));
 
     const buffer = await generateYearlyImage(scheds, year, { theme, endYear: ey });

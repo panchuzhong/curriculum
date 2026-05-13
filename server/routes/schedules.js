@@ -339,8 +339,7 @@ router.delete('/batch', validateBatchDelete, handle, (req, res) => {
       return res.json({ count: 0, ids: [] });
     }
     let candidates = drizzleDb.select({ id: schedules.id, classId: schedules.classId, date: schedules.date })
-      .from(schedules).where(and(gte(schedules.date, start), lte(schedules.date, end))).all()
-      .filter(s => classIds.includes(s.classId));
+      .from(schedules).where(and(gte(schedules.date, start), lte(schedules.date, end), inArray(schedules.classId, classIds))).all();
 
     let semesterFiltered = 0;
     if (semesterOnly !== false) {
