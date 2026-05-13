@@ -1,4 +1,4 @@
-import { useState, useEffect, useContext } from 'react';
+import { useState, useEffect, useContext, useCallback } from 'react';
 import { api } from '../api';
 import { getClassColor, DarkContext } from '../utils/colors';
 import { useToast } from '../components/ToastProvider';
@@ -14,7 +14,13 @@ export default function ClassList() {
   const [showNew, setShowNew] = useState(false);
   const [saving, setSaving] = useState(false);
 
-  useEffect(() => { api.getClasses().then(setClasses).catch(e => toast(e.message || '加载班级失败')); }, []);
+  const refreshClasses = useCallback(() => {
+    api.getClasses().then(setClasses).catch(e => toast(e.message || '加载班级失败'));
+  }, []);
+
+  const cancelExpand = useCallback(() => setExpandedId(null), []);
+
+  useEffect(() => { refreshClasses(); }, []);
 
   async function handleCreate(form) {
     if (saving) return;
@@ -22,7 +28,7 @@ export default function ClassList() {
     try {
       await api.createClass(form);
       setShowNew(false);
-      api.getClasses().then(setClasses).catch(e => toast(e.message || '加载班级失败'));
+      refreshClasses();
     } catch (e) { toast(e.message || '创建失败'); }
     finally { setSaving(false); }
   }
@@ -33,7 +39,7 @@ export default function ClassList() {
     try {
       await api.updateClass(expandedId, form);
       setExpandedId(null);
-      api.getClasses().then(setClasses).catch(e => toast(e.message || '加载班级失败'));
+      refreshClasses();
     } catch (e) { toast(e.message || '更新失败'); }
     finally { setSaving(false); }
   }
@@ -45,7 +51,7 @@ export default function ClassList() {
     try {
       await api.deleteClass(id);
       setExpandedId(null);
-      api.getClasses().then(setClasses).catch(e => toast(e.message || '加载班级失败'));
+      refreshClasses();
     } catch (e) { toast(e.message || '删除失败'); }
     finally { setSaving(false); }
   }
@@ -112,7 +118,7 @@ export default function ClassList() {
                 {/* Tab: 基本信息 */}
                 {activeTab === 'info' && (
                   <div className="px-4 pb-4">
-                    <ClassForm compact initial={cls} onSubmit={handleUpdate} onCancel={() => setExpandedId(null)}
+                    <ClassForm compact initial={cls} onSubmit={handleUpdate} onCancel={cancelExpand}
                       actions={
                         <button type="button" onClick={() => handleDelete(cls.id)}
                           className="px-4 py-2 text-red-500 border border-red-200 dark:border-red-800 rounded-lg text-sm hover:bg-red-50 dark:hover:bg-red-900/20 hover:text-red-700 dark:hover:text-red-400 transition-colors shrink-0">
@@ -125,7 +131,7 @@ export default function ClassList() {
                 {/* Tab: 定价历史 */}
                 {activeTab === 'pricing' && (
                   <div className="px-4 pb-4">
-                    <PricingManager classId={cls.id} onChanged={() => api.getClasses().then(setClasses)} />
+                    <PricingManager classId={cls.id} onChanged={refreshClasses} />
                   </div>
                 )}
               </div>

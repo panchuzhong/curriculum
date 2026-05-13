@@ -1,4 +1,4 @@
-import { useState, useEffect, useContext } from 'react';
+import { useState, useEffect, useContext, useCallback } from 'react';
 import { api } from '../api';
 import { getClassColor, DarkContext } from '../utils/colors';
 import { useToast } from '../components/ToastProvider';
@@ -138,10 +138,12 @@ export default function StudentList() {
   const [dialog, setDialog] = useState(null); // null | 'new' | student object
   const [filterClass, setFilterClass] = useState('all');
 
-  function reload() {
+  const reload = useCallback(() => {
     api.getClasses().then(setClasses).catch(e => toast(e.message || '加载班级失败'));
     api.getAllStudents().then(setStudents).catch(e => toast(e.message || '加载学生失败'));
-  }
+  }, []);
+
+  const closeDialog = useCallback(() => setDialog(null), []);
 
   useEffect(() => { reload(); }, []);
 
@@ -220,7 +222,7 @@ export default function StudentList() {
         <StudentDialog
           student={dialog === 'new' ? null : dialog}
           classes={classes}
-          onClose={() => setDialog(null)}
+          onClose={closeDialog}
           onSaved={() => { setDialog(null); reload(); }}
         />
       )}
