@@ -64,7 +64,7 @@ export default function ScheduleGrid({ dates, schedules, visibleDays = 7, weekSt
 
   const N = dates.length;
 
-  const { byDate, startHour, bottomMin } = useMemo(() => {
+  const { byDate, conflictMap, startHour, bottomMin } = useMemo(() => {
     const ss = schedules || [];
     const bd = {};
     dates.forEach(d => bd[d] = []);
@@ -72,6 +72,16 @@ export default function ScheduleGrid({ dates, schedules, visibleDays = 7, weekSt
       if (bd[s.date] !== undefined) bd[s.date].push(s);
     });
     Object.values(bd).forEach(arr => arr.sort((a, b) => a.startTime.localeCompare(b.startTime)));
+
+    const cm = {};
+    for (const [date, dayScheds] of Object.entries(bd)) {
+      cm[date] = findConflictGroups(dayScheds).map(group => {
+        const hasConflict = group.length > 1;
+        const items = hasConflict ? assignColumns(group) : group.map(s => ({ ...s, _col: 0 }));
+        const totalCols = Math.max(...items.map(it => it._col)) + 1;
+        return { hasConflict, items, totalCols };
+      });
+    }
 
     const visibleDateSet = weekStart
       ? new Set(Array.from({ length: visibleDays }, (_, i) => addDays(weekStart, i)))
@@ -90,7 +100,7 @@ export default function ScheduleGrid({ dates, schedules, visibleDays = 7, weekSt
     sh = Math.max(0, Math.min(sh, DEFAULT_START));
     const minBottom = DEFAULT_END * 60 + BOTTOM_OFFSET_MIN;
     const bm = latest > minBottom ? latest + BOTTOM_OFFSET_MIN : minBottom;
-    return { byDate: bd, startHour: sh, bottomMin: bm };
+    return { byDate: bd, conflictMap: cm, startHour: sh, bottomMin: bm };
   }, [schedules, dates, weekStart, visibleDays]);
   const endHour = Math.max(DEFAULT_END, Math.floor(bottomMin / 60));
 
@@ -172,12 +182,8 @@ export default function ScheduleGrid({ dates, schedules, visibleDays = 7, weekSt
                   ))}
 
                   {/* Schedule blocks */}
-                  {findConflictGroups(daySchedules).map(group => {
-                    const hasConflict = group.length > 1;
-                    const items = assignColumns(group);
-                    const totalCols = Math.max(...items.map(it => it._col)) + 1;
-
-                    return items.map(item => (
+                  {(conflictMap[date] || []).map(({ hasConflict, items, totalCols }) =>
+                    items.map(item => (
                       <ScheduleBlock
                         key={item.id}
                         item={item}
@@ -191,8 +197,8 @@ export default function ScheduleGrid({ dates, schedules, visibleDays = 7, weekSt
                         schedLpRef={schedLpRef}
                         wasRecentTouch={wasRecentTouch}
                       />
-                    ));
-                  })}
+                    ))
+                  )}
 
                   {isToday && <NowLine rowHeight={rowHeight} topGapHeight={topGapHeight} firstLabelMin={firstLabelMin} />}
                 </div>

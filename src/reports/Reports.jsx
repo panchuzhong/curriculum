@@ -125,67 +125,73 @@ export default function Reports() {
   const totalHours = useMemo(() => filtered.reduce((sum, s) => sum + toHoursAbs(s.durationBilling), 0), [filtered]);
   const totalRevenue = useMemo(() => filtered.reduce((sum, s) => sum + calcRevenue(s.class, s.durationBilling), 0), [filtered]);
 
+  const { subjectData, gradeData, classData, monthData } = useMemo(() => {
+    if (filtered.length === 0) return { subjectData: [], gradeData: [], classData: [], monthData: [] };
+
+    // By subject (课内/竞赛自动分类)
+    const byCatKey = groupBy(filtered, s => `${s.class.isCompetition ? '竞赛' : '课内'}${s.class.subject}`);
+    const subjectData = Object.entries(byCatKey)
+      .map(([label, items]) => {
+        const subject = items[0].class.subject;
+        const comp = items[0].class.isCompetition;
+        const hue = SUBJECT_HUES[subject] || { h: 0, s: 0 };
+        return {
+          label,
+          value: items.length,
+          hours: items.reduce((sum, s) => sum + toHoursAbs(s.durationBilling), 0),
+          revenue: items.reduce((sum, s) => sum + calcRevenue(s.class, s.durationBilling), 0),
+          color: `hsl(${hue.h}, ${hue.s}%, ${comp ? 35 : 50}%)`,
+        };
+      })
+      .sort((a, b) => b.value - a.value);
+
+    // By grade
+    const byGrade = groupBy(filtered, s => s.class.grade);
+    const gradeData = GRADES
+      .filter(g => byGrade[g])
+      .map(g => ({
+        label: g,
+        value: byGrade[g].length,
+        hours: byGrade[g].reduce((sum, s) => sum + toHoursAbs(s.durationBilling), 0),
+        revenue: byGrade[g].reduce((sum, s) => sum + calcRevenue(s.class, s.durationBilling), 0),
+        color: '#6366f1',
+      }))
+      .sort((a, b) => b.value - a.value);
+
+    // By class
+    const byClass = groupBy(filtered, s => s.classId);
+    const classData = Object.entries(byClass)
+      .map(([cid, scheds]) => {
+        const cls = classMap[cid];
+        return {
+          label: cls.name,
+          value: scheds.length,
+          hours: scheds.reduce((sum, s) => sum + toHoursAbs(s.durationBilling), 0),
+          revenue: scheds.reduce((sum, s) => sum + calcRevenue(cls, s.durationBilling), 0),
+          color: getClassColor(cls, dark),
+        };
+      })
+      .sort((a, b) => b.revenue - a.revenue);
+
+    // By month (YYYY-MM)
+    const byMonth = groupBy(filtered, s => s.date.slice(0, 7));
+    const monthData = Object.entries(byMonth)
+      .map(([m, scheds]) => ({
+        label: `${parseInt(m.split('-')[1])}月`,
+        value: scheds.length,
+        hours: scheds.reduce((sum, s) => sum + toHoursAbs(s.durationBilling), 0),
+        revenue: scheds.reduce((sum, s) => sum + calcRevenue(s.class, s.durationBilling), 0),
+        color: '#6366f1',
+        sortKey: m,
+      }))
+      .sort((a, b) => a.sortKey.localeCompare(b.sortKey));
+
+    return { subjectData, gradeData, classData, monthData };
+  }, [filtered, classMap, dark]);
+
   if (!period) return null;
 
   const totalClasses = filtered.length;
-
-  // By subject (课内/竞赛自动分类)
-  const byCatKey = groupBy(filtered, s => `${s.class.isCompetition ? '竞赛' : '课内'}${s.class.subject}`);
-  const subjectData = Object.entries(byCatKey)
-    .map(([label, items]) => {
-      const subject = items[0].class.subject;
-      const comp = items[0].class.isCompetition;
-      const hue = SUBJECT_HUES[subject] || { h: 0, s: 0 };
-      return {
-        label,
-        value: items.length,
-        hours: items.reduce((sum, s) => sum + toHoursAbs(s.durationBilling), 0),
-        revenue: items.reduce((sum, s) => sum + calcRevenue(s.class, s.durationBilling), 0),
-        color: `hsl(${hue.h}, ${hue.s}%, ${comp ? 35 : 50}%)`,
-      };
-    })
-    .sort((a, b) => b.value - a.value);
-
-  // By grade
-  const byGrade = groupBy(filtered, s => s.class.grade);
-  const gradeData = GRADES
-    .filter(g => byGrade[g])
-    .map(g => ({
-      label: g,
-      value: byGrade[g].length,
-      hours: byGrade[g].reduce((sum, s) => sum + toHoursAbs(s.durationBilling), 0),
-      revenue: byGrade[g].reduce((sum, s) => sum + calcRevenue(s.class, s.durationBilling), 0),
-      color: '#6366f1',
-    }))
-    .sort((a, b) => b.value - a.value);
-
-  // By class
-  const byClass = groupBy(filtered, s => s.classId);
-  const classData = Object.entries(byClass)
-    .map(([cid, scheds]) => {
-      const cls = classMap[cid];
-      return {
-        label: cls.name,
-        value: scheds.length,
-        hours: scheds.reduce((sum, s) => sum + toHoursAbs(s.durationBilling), 0),
-        revenue: scheds.reduce((sum, s) => sum + calcRevenue(cls, s.durationBilling), 0),
-        color: getClassColor(cls, dark),
-      };
-    })
-    .sort((a, b) => b.revenue - a.revenue);
-
-  // By month (YYYY-MM)
-  const byMonth = groupBy(filtered, s => s.date.slice(0, 7));
-  const monthData = Object.entries(byMonth)
-    .map(([m, scheds]) => ({
-      label: `${parseInt(m.split('-')[1])}月`,
-      value: scheds.length,
-      hours: scheds.reduce((sum, s) => sum + toHoursAbs(s.durationBilling), 0),
-      revenue: scheds.reduce((sum, s) => sum + calcRevenue(s.class, s.durationBilling), 0),
-      color: '#6366f1',
-      sortKey: m,
-    }))
-    .sort((a, b) => a.sortKey.localeCompare(b.sortKey));
 
   return (
     <div>

@@ -15,11 +15,14 @@ router.use(authMiddleware);
 function getConflictsForSchedule(scheduleId, teacherId) {
   const s = drizzleDb.select().from(schedules).where(eq(schedules.id, scheduleId)).get();
   if (!s) return [];
-  const teacherClassIds = drizzleDb.select({ id: classes.id }).from(classes)
-    .where(and(eq(classes.teacherId, teacherId), eq(classes.deleted, false))).all().map(c => c.id);
+  const teacherClasses = drizzleDb.select().from(classes)
+    .where(and(eq(classes.teacherId, teacherId), eq(classes.deleted, false))).all();
+  const classMap = {};
+  teacherClasses.forEach(c => classMap[c.id] = c);
+  const teacherClassIds = Object.keys(classMap).map(Number);
   const daySchedules = drizzleDb.select().from(schedules)
-    .where(eq(schedules.date, s.date)).all()
-    .filter(x => x.id !== scheduleId && teacherClassIds.includes(x.classId));
+    .where(and(eq(schedules.date, s.date), inArray(schedules.classId, teacherClassIds))).all()
+    .filter(x => x.id !== scheduleId);
   const conflicts = [];
   const sStart = toMin(s.startTime);
   const sEnd = toMin(s.endTime) >= sStart ? toMin(s.endTime) : toMin(s.endTime) + 24 * 60;
@@ -27,7 +30,7 @@ function getConflictsForSchedule(scheduleId, teacherId) {
     const oStart = toMin(other.startTime);
     const oEnd = toMin(other.endTime) >= oStart ? toMin(other.endTime) : toMin(other.endTime) + 24 * 60;
     if (sStart < oEnd && oStart < sEnd) {
-      const cls = drizzleDb.select().from(classes).where(eq(classes.id, other.classId)).get();
+      const cls = classMap[other.classId];
       conflicts.push({ id: other.id, classId: other.classId, className: cls?.name, startTime: other.startTime, endTime: other.endTime });
     }
   }
@@ -456,7 +459,7 @@ router.get('/summary', (req, res) => {
   function matchPricing(cid, date) {
     const records = pricingByClass[cid];
     if (!records || records.length === 0) return null;
-    let match = records[0];
+    let match = null;
     for (const p of records) {
       if (p.effectiveFrom <= date) match = p;
       else break;
@@ -552,7 +555,7 @@ router.get('/export', (req, res) => {
     function matchPricing(cid, date) {
       const records = pricingByClass[cid];
       if (!records || records.length === 0) return null;
-      let match = records[0];
+      let match = null;
       for (const p of records) {
         if (p.effectiveFrom <= date) match = p;
         else break;
@@ -592,8 +595,7 @@ function getFreeSlotsForDate(dateStr, teacherId, dayStart = '08:00', dayEnd = '2
   if (classIds.length === 0) return [{ start: dayStart, end: dayEnd }];
 
   const daySchedules = drizzleDb.select().from(schedules)
-    .where(eq(schedules.date, dateStr)).all()
-    .filter(s => classIds.includes(s.classId));
+    .where(and(eq(schedules.date, dateStr), inArray(schedules.classId, classIds))).all();
 
   if (daySchedules.length === 0) return [{ start: dayStart, end: dayEnd }];
 
@@ -672,9 +674,8 @@ router.get('/conflicts', (req, res) => {
   teacherClasses.forEach(c => classMap[c.id] = c);
 
   const allSchedules = drizzleDb.select().from(schedules)
-    .where(and(gte(schedules.date, start), lte(schedules.date, end)))
+    .where(and(gte(schedules.date, start), lte(schedules.date, end), inArray(schedules.classId, classIds)))
     .all()
-    .filter(s => classIds.includes(s.classId))
     .map(s => ({ ...s, class: classMap[s.classId] || null }));
 
   const byDate = {};

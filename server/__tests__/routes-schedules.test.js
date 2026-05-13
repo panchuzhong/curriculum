@@ -478,3 +478,76 @@ describe('GET /api/schedules/conflicts', () => {
     expect(res.body.total).toBe(0);
   });
 });
+
+describe('matchPricing fallback', () => {
+  it('uses class default pricing when no pricing record matches the date', async () => {
+    const { classPricing } = await import('../db/schema.js');
+    // Add a future-dated pricing record only (effectiveFrom after schedule date)
+    drizzleDb.insert(classPricing).values({
+      classId, studentCount: 5, unitPrice: 200, discountAmount: 0, effectiveFrom: '2027-01-01',
+    }).run();
+
+    await request(app).post('/api/schedules').set(auth(token))
+      .send({ classId, date: '2026-05-04', startTime: '09:00', endTime: '10:00' });
+
+    // Summary should use class default (unitPrice=100, studentCount=5), NOT the future pricing (200)
+    const res = await request(app).get('/api/schedules/summary?start=2026-05-01&end=2026-05-31').set(auth(token));
+    expect(res.status).toBe(200);
+    expect(res.body.byClass[0].revenue).toBe(100 * 5 * 1); // 500, not 200*5*1=1000
+  });
+
+  it('uses matching pricing record when one exists for the date', async () => {
+    const { classPricing } = await import('../db/schema.js');
+    drizzleDb.insert(classPricing).values({
+      classId, studentCount: 5, unitPrice: 150, discountAmount: 0, effectiveFrom: '2026-05-01',
+    }).run();
+
+    await request(app).post('/api/schedules').set(auth(token))
+      .send({ classId, date: '2026-05-04', startTime: '09:00', endTime: '10:00' });
+
+    const res = await request(app).get('/api/schedules/summary?start=2026-05-01&end=2026-05-31').set(auth(token));
+    expect(res.status).toBe(200);
+    expect(res.body.byClass[0].revenue).toBe(150 * 5 * 1); // 750, uses the pricing record
+  });
+
+  it('CSV export uses class default when no pricing record matches', async () => {
+    const { classPricing } = await import('../db/schema.js');
+    drizzleDb.insert(classPricing).values({
+      classId, studentCount: 5, unitPrice: 300, discountAmount: 0, effectiveFrom: '2027-01-01',
+    }).run();
+
+    await request(app).post('/api/schedules').set(auth(token))
+      .send({ classId, date: '2026-05-04', startTime: '09:00', endTime: '10:00' });
+
+    const res = await request(app).get('/api/schedules/export?start=2026-05-01&end=2026-05-31&format=csv').set(auth(token));
+    expect(res.status).toBe(200);
+    // Should show class default unitPrice=100, not the future 300
+    expect(res.text).toContain('"100"');
+    expect(res.text).not.toContain('"300"');
+  });
+});
+
+describe('conflicts endpoint isolates by teacher', () => {
+  it('does not return conflicts from another teacher', async () => {
+    const { token: token2, id: teacherId2 } = await makeUser(drizzleDb, 'user2');
+    const { classes } = await import('../db/schema.js');
+    const r2 = drizzleDb.insert(classes).values({
+      teacherId: teacherId2, name: '别班', grade: '高一', subject: '数学', studentCount: 3, unitPrice: 80,
+    }).run();
+    const classId2 = Number(r2.lastInsertRowid);
+
+    // Both teachers have schedules overlapping on same day
+    await request(app).post('/api/schedules').set(auth(token))
+      .send({ classId, date: '2026-05-04', startTime: '09:00', endTime: '11:00' });
+    await request(app).post('/api/schedules').set(auth(token2))
+      .send({ classId: classId2, date: '2026-05-04', startTime: '10:00', endTime: '12:00' });
+
+    // Teacher 1 should see no conflicts (only their own schedules)
+    const res1 = await request(app).get('/api/schedules/conflicts?start=2026-05-01&end=2026-05-31').set(auth(token));
+    expect(res1.body.total).toBe(0);
+
+    // Teacher 2 should also see no conflicts
+    const res2 = await request(app).get('/api/schedules/conflicts?start=2026-05-01&end=2026-05-31').set(auth(token2));
+    expect(res2.body.total).toBe(0);
+  });
+});

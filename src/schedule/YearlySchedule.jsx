@@ -88,7 +88,7 @@ export default function YearlySchedule() {
     return () => window.removeEventListener('keydown', onKey);
   }, [year]);
 
-  const { classMap, byMonth, yearDisplayEntries, yearMaxHours, yearCondensed, yearTotalHours, yearDates } = useMemo(() => {
+  const { classMap, byMonth, yearDisplayEntries, yearCategoryEntries, yearMaxHours, yearCondensed, yearTotalHours, yearDates, monthData } = useMemo(() => {
     const cm = {};
     classes.forEach(c => cm[c.id] = c);
 
@@ -113,7 +113,25 @@ export default function YearlySchedule() {
     const condensed = entries.length > collapseLimit;
     const displayEntries = condensed ? groupByGrade(entries) : entries;
     const maxH = displayEntries.length > 0 ? displayEntries[0][1] : 1;
-    return { classMap: cm, byMonth: bm, yearDisplayEntries: displayEntries, yearMaxHours: maxH, yearCondensed: condensed, yearTotalHours: yTotal, yearDates: yDates };
+
+    // Per-month precomputation
+    const monthData = {};
+    for (let m = 0; m < 12; m++) {
+      const ms = bm[m].schedules;
+      const totalHours = ms.reduce((sum, s) => sum + toHoursAbs(s.durationBilling), 0);
+      const byCategory = {};
+      ms.forEach(s => {
+        const cat = getCategory(s.class);
+        if (!byCategory[cat]) byCategory[cat] = 0;
+        byCategory[cat] += toHoursAbs(s.durationBilling);
+      });
+      const categoryEntries = Object.entries(byCategory).sort((a, b) => b[1] - a[1]);
+      const catCondensed = categoryEntries.length > collapseLimit;
+      const catDisplay = catCondensed ? groupByGrade(categoryEntries) : categoryEntries;
+      monthData[m] = { totalHours, categoryEntries, catCondensed, catDisplay };
+    }
+
+    return { classMap: cm, byMonth: bm, yearDisplayEntries: displayEntries, yearCategoryEntries: entries, yearMaxHours: maxH, yearCondensed: condensed, yearTotalHours: yTotal, yearDates: yDates, monthData };
   }, [schedules, classes, collapseLimit]);
 
   const cols = isMobile ? 2 : 3;
@@ -164,17 +182,11 @@ export default function YearlySchedule() {
           style={mobileRows ? { gridTemplateRows: mobileRows } : undefined}>
           {Array.from({ length: 12 }, (_, m) => {
             const data = byMonth[m];
-            const totalHours = data.schedules.reduce((sum, s) => sum + toHoursAbs(s.durationBilling), 0);
-
-            const byCategory = {};
-            data.schedules.forEach(s => {
-              const cat = getCategory(s.class);
-              if (!byCategory[cat]) byCategory[cat] = 0;
-              byCategory[cat] += toHoursAbs(s.durationBilling);
-            });
-            const categoryEntries = Object.entries(byCategory).sort((a, b) => b[1] - a[1]);
-            const condensed = categoryEntries.length > collapseLimit;
-            const displayEntries = condensed ? groupByGrade(categoryEntries) : categoryEntries;
+            const md = monthData[m];
+            const totalHours = md.totalHours;
+            const condensed = md.catCondensed;
+            const displayEntries = md.catDisplay;
+            const categoryEntries = md.categoryEntries;
 
             return (
               <div key={m} onClick={() => navigate(`/monthly?year=${year}&month=${m}`)}
