@@ -144,21 +144,18 @@ export default function StudentList() {
   }, []);
 
   const closeDialog = useCallback(() => setDialog(null), []);
+  const onSaved = useCallback(() => { setDialog(null); reload(); }, [reload]);
+
+  const getClassNames = useCallback((classIds) => {
+    if (!classIds || classIds.length === 0) return '未分班';
+    return classIds.map(id => classes.find(c => c.id === id)).filter(Boolean).map(c => c.name).join('、');
+  }, [classes]);
 
   useEffect(() => { reload(); }, []);
 
   const filtered = filterClass === 'all'
     ? students
     : students.filter(s => s.classIds?.includes(+filterClass));
-
-  function getClassNames(classIds) {
-    if (!classIds || classIds.length === 0) return '未分班';
-    return classIds
-      .map(id => classes.find(c => c.id === id))
-      .filter(Boolean)
-      .map(c => c.name)
-      .join('、');
-  }
 
   return (
     <div>
@@ -223,7 +220,7 @@ export default function StudentList() {
           student={dialog === 'new' ? null : dialog}
           classes={classes}
           onClose={closeDialog}
-          onSaved={() => { setDialog(null); reload(); }}
+          onSaved={onSaved}
         />
       )}
     </div>
