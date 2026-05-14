@@ -88,6 +88,8 @@ describe('DELETE /api/holidays/:id', () => {
       .send({ date: '2026-01-01', type: 'holiday', name: '元旦' });
     const res = await request(app).delete(`/api/holidays/${id}`).set(auth(token));
     expect(res.status).toBe(200);
+    const check = await request(app).get('/api/holidays').set(auth(token));
+    expect(check.body.find(h => h.id === id)).toBeUndefined();
   });
 
   it('returns 404 for nonexistent id', async () => {

@@ -22,6 +22,8 @@ test.describe('班级管理', () => {
     await page.goto('/classes');
     const firstCard = page.locator('[class*="cursor-pointer"]').first();
     await firstCard.click();
+    // Verify expanded section shows details (grade, subject, etc.)
+    await expect(page.getByText('年级')).toBeVisible();
   });
 
   test('导航栏显示所有页面链接', async ({ authenticatedPage: page }) => {
@@ -34,5 +36,20 @@ test.describe('班级管理', () => {
     await expect(page.getByRole('link', { name: '学期管理' })).toBeVisible();
     await expect(page.getByRole('link', { name: '统计报表' })).toBeVisible();
     await expect(page.getByRole('link', { name: '设置' })).toBeVisible();
+  });
+});
+
+test.describe('班级CRUD', () => {
+  test.use({ baseURL: 'http://127.0.0.1:5174' });
+
+  test('新建班级并验证显示', async ({ authenticatedPage: page }) => {
+    await page.goto('/classes');
+    const uniqueName = `E2E测试班_${Date.now()}`;
+    await page.getByRole('button', { name: '新建班级' }).click();
+    // Labels are not linked via htmlFor — locate inputs by context within the form
+    const form = page.locator('form').filter({ hasText: '班级名称' });
+    await form.locator('input').first().fill(uniqueName);
+    await page.getByRole('button', { name: '保存' }).click();
+    await expect(page.getByText(uniqueName)).toBeVisible();
   });
 });

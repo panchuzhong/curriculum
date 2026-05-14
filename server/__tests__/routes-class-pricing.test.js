@@ -174,3 +174,29 @@ describe('Revenue uses class_pricing by date', () => {
     expect(sumRes.body.revenue).toBe(3300);
   });
 });
+
+describe('Cross-teacher authorization', () => {
+  it('POST returns 404 for other teacher class', async () => {
+    const { token: t2 } = await makeUser(drizzleDb, 'user2');
+    const res = await request(app).post(`/api/classes/${classId}/pricing`).set(auth(t2))
+      .send({ studentCount: 3, unitPrice: 250, effectiveFrom: '2026-06-01' });
+    expect(res.status).toBe(404);
+  });
+
+  it('PUT returns 404 for other teacher class', async () => {
+    const { body: pricing } = await request(app).get(`/api/classes/${classId}/pricing`).set(auth(token));
+    const { token: t2 } = await makeUser(drizzleDb, 'user2');
+    const res = await request(app).put(`/api/classes/${classId}/pricing/${pricing[0].id}`).set(auth(t2))
+      .send({ studentCount: 10 });
+    expect(res.status).toBe(404);
+  });
+
+  it('DELETE returns 404 for other teacher class', async () => {
+    await request(app).post(`/api/classes/${classId}/pricing`).set(auth(token))
+      .send({ studentCount: 3, unitPrice: 250, effectiveFrom: '2026-06-01' });
+    const { body: all } = await request(app).get(`/api/classes/${classId}/pricing`).set(auth(token));
+    const { token: t2 } = await makeUser(drizzleDb, 'user2');
+    const res = await request(app).delete(`/api/classes/${classId}/pricing/${all[0].id}`).set(auth(t2));
+    expect(res.status).toBe(404);
+  });
+});

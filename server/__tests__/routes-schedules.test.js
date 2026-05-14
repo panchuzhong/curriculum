@@ -87,17 +87,27 @@ describe('GET /api/schedules', () => {
   });
 
   it('supports range=week', async () => {
+    const d = new Date();
+    const today = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
     await request(app).post('/api/schedules').set(auth(token))
-      .send({ classId, date: '2026-05-04', startTime: '09:00', endTime: '10:00' });
+      .send({ classId, date: today, startTime: '09:00', endTime: '10:00' });
     const res = await request(app).get('/api/schedules?range=week').set(auth(token));
     expect(res.status).toBe(200);
-    expect(res.body.length).toBeGreaterThanOrEqual(0);
+    expect(res.body.length).toBeGreaterThanOrEqual(1);
+    expect(res.body[0]).toHaveProperty('classId', classId);
+    expect(res.body[0]).toHaveProperty('date');
+    expect(res.body[0]).toHaveProperty('class');
   });
 
   it('supports range=month', async () => {
+    const d = new Date();
+    const today = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    await request(app).post('/api/schedules').set(auth(token))
+      .send({ classId, date: today, startTime: '14:00', endTime: '15:00' });
     const res = await request(app).get('/api/schedules?range=month').set(auth(token));
     expect(res.status).toBe(200);
-    expect(Array.isArray(res.body)).toBe(true);
+    expect(res.body.length).toBeGreaterThanOrEqual(1);
+    expect(res.body.some(s => s.date === today)).toBe(true);
   });
 });
 
@@ -549,5 +559,21 @@ describe('conflicts endpoint isolates by teacher', () => {
     // Teacher 2 should also see no conflicts
     const res2 = await request(app).get('/api/schedules/conflicts?start=2026-05-01&end=2026-05-31').set(auth(token2));
     expect(res2.body.total).toBe(0);
+  });
+});
+
+describe('edge cases', () => {
+  it('handles startTime === endTime with 1440min billing', async () => {
+    const res = await request(app).post('/api/schedules').set(auth(token))
+      .send({ classId, date: '2026-08-01', startTime: '09:00', endTime: '09:00' });
+    expect(res.status).toBe(200);
+    expect(res.body.durationBilling).toBe(1440);
+  });
+
+  it('handles cross-midnight schedule (end < start)', async () => {
+    const res = await request(app).post('/api/schedules').set(auth(token))
+      .send({ classId, date: '2026-08-02', startTime: '22:00', endTime: '01:00' });
+    expect(res.status).toBe(200);
+    expect(res.body.durationBilling).toBe(180);
   });
 });

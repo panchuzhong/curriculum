@@ -149,4 +149,11 @@ describe('Data isolation', () => {
     const res = await request(app).get('/api/students').set(auth(token2));
     expect(res.body).toHaveLength(0);
   });
+
+  it('DELETE returns 404 for other teacher student', async () => {
+    const { body: { id } } = await request(app).post('/api/students').set(auth(token)).send({ name: '张三' });
+    const { token: token2 } = await makeUser(drizzleDb, 'user2');
+    const res = await request(app).delete(`/api/students/${id}`).set(auth(token2));
+    expect(res.status).toBe(404);
+  });
 });

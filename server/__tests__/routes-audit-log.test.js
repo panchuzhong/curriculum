@@ -103,4 +103,17 @@ describe('GET /api/audit-log', () => {
     const res = await request(app).get('/api/audit-log?limit=-5').set(auth(token));
     expect(res.status).toBe(200);
   });
+
+  it('isolates logs between teachers', async () => {
+    const { auditLog } = await import('../db/schema.js');
+    const { id: teacherId1 } = await makeUser(drizzleDb, 'teacherA');
+    drizzleDb.insert(auditLog).values({
+      teacherId: teacherId1, action: 'CREATE', tableName: 'classes', recordId: 1, timestamp: new Date().toISOString(),
+    }).run();
+
+    const { token: tokenB } = await makeUser(drizzleDb, 'teacherB');
+    const res = await request(app).get('/api/audit-log').set(auth(tokenB));
+    expect(res.status).toBe(200);
+    expect(res.body).toHaveLength(0);
+  });
 });

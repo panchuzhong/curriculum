@@ -45,7 +45,7 @@ describe('POST /api/classes', () => {
     const res = await request(app).post('/api/classes').set(auth(token))
       .send({ name: '定价班', grade: '高一', subject: '数学', studentCount: 5 });
     expect(res.status).toBe(200);
-    expect(res.body.unitPrice).toBeGreaterThan(0);
+    expect(res.body.unitPrice).toBe(100);
   });
 });
 

@@ -150,4 +150,29 @@ describe('POST /api/backup/restore', () => {
     expect(res.status).toBe(200);
     expect(res.body.restored.auditLog).toBe(1);
   });
+
+  it('restore does not affect other teacher data', async () => {
+    const { classes } = await import('../db/schema.js');
+    // Teacher A has a class
+    drizzleDb.insert(classes).values({
+      teacherId, name: 'A的班级', grade: '高三', subject: '数学', studentCount: 3, unitPrice: 800,
+    }).run();
+
+    // Teacher B has a class
+    const { id: teacherId2, token: token2 } = await makeUser(drizzleDb, 'teacherB');
+    drizzleDb.insert(classes).values({
+      teacherId: teacherId2, name: 'B的班级', grade: '高二', subject: '物理', studentCount: 2, unitPrice: 600,
+    }).run();
+
+    // Teacher A restores empty backup
+    await request(app).post('/api/backup/restore').set(auth(token)).send({
+      version: 1, classes: [], students: [], schedules: [],
+      classStudents: [], holidays: [], semesters: [], pricingTiers: [],
+    });
+
+    // Teacher B's data should be intact
+    const exportB = await request(app).get('/api/backup').set(auth(token2));
+    expect(exportB.body.classes).toHaveLength(1);
+    expect(exportB.body.classes[0].name).toBe('B的班级');
+  });
 });

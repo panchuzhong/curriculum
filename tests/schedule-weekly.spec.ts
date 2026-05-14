@@ -76,3 +76,35 @@ test.describe('周课表', () => {
     await expect(page.getByText('上课地点')).toBeVisible();
   });
 });
+
+test.describe('排课操作', () => {
+  test.use({ baseURL: 'http://127.0.0.1:5174' });
+
+  test('编辑排课修改地点', async ({ authenticatedPage: page }) => {
+    await clickFirstScheduleCard(page);
+    await expect(page.getByRole('heading', { name: '编辑排课' })).toBeVisible();
+    const locationInput = page.getByPlaceholder(/地点/);
+    if (await locationInput.isVisible()) {
+      await locationInput.clear();
+      await locationInput.fill(`E2E地点_${Date.now()}`);
+    }
+    await page.getByRole('button', { name: '保存' }).click();
+    await expect(page.getByRole('heading', { name: '编辑排课' })).not.toBeVisible();
+  });
+
+  test('删除排课', async ({ authenticatedPage: page }) => {
+    // Count cards before
+    await page.waitForSelector(scheduleCard, { timeout: 10000 });
+    const countBefore = await page.locator(scheduleCard).count();
+    if (countBefore === 0) return; // No schedules to delete
+
+    await clickFirstScheduleCard(page);
+    await expect(page.getByRole('heading', { name: '编辑排课' })).toBeVisible();
+    page.on('dialog', dialog => dialog.accept());
+    await page.getByRole('button', { name: '删除' }).click();
+    // Verify card count decreased
+    await page.waitForTimeout(500);
+    const countAfter = await page.locator(scheduleCard).count();
+    expect(countAfter).toBe(countBefore - 1);
+  });
+});

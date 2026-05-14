@@ -189,3 +189,31 @@ describe('detectConflictGroups', () => {
     expect(detectConflictGroups([])).toEqual([]);
   });
 });
+
+describe('toMin — invalid inputs', () => {
+  it('throws on undefined', () => {
+    expect(() => toMin(undefined)).toThrow();
+  });
+
+  it('throws on null', () => {
+    expect(() => toMin(null)).toThrow();
+  });
+
+  it('returns NaN for non-time string', () => {
+    expect(toMin('not-a-time')).toBeNaN();
+  });
+});
+
+describe('resolveRange — unknown range', () => {
+  it('passes through for unknown range value', () => {
+    const q = { range: 'unknown', start: '2026-05-01' };
+    expect(resolveRange(q)).toBe(q);
+  });
+});
+
+describe('toCSV — edge cases', () => {
+  it('returns only BOM for empty array', () => {
+    const csv = toCSV([]);
+    expect(csv).toBe('﻿');
+  });
+});

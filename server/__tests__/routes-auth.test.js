@@ -101,6 +101,12 @@ describe('PUT /api/auth/password', () => {
     const res = await request(app).put('/api/auth/password').set(auth(token))
       .send({ oldPassword: 'pass123', newPassword: 'newpass123' });
     expect(res.status).toBe(200);
+    const oldLogin = await request(app).post('/api/auth/login')
+      .send({ username: 'testuser', password: 'pass123' });
+    expect(oldLogin.status).toBe(401);
+    const newLogin = await request(app).post('/api/auth/login')
+      .send({ username: 'testuser', password: 'newpass123' });
+    expect(newLogin.status).toBe(200);
   });
 
   it('rejects wrong old password', async () => {

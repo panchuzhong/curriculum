@@ -509,6 +509,7 @@ describe('GET /api/schedules/conflicts — edge cases', () => {
   it('clamps limit to 100 max', async () => {
     const res = await request(app).get('/api/schedules/conflicts?limit=9999').set(auth(token));
     expect(res.status).toBe(200);
+    expect(res.body.total).toBeLessThanOrEqual(100);
   });
 
   it('excludes deleted classes from conflict detection', async () => {

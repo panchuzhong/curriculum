@@ -135,3 +135,22 @@ describe('Audit logging', () => {
     );
   });
 });
+
+describe('edge cases', () => {
+  it('allows overlapping semesters', async () => {
+    await request(app).post('/api/semesters').set(auth(token))
+      .send({ name: '春季', type: 'spring', startDate: '2026-02-01', endDate: '2026-06-30' });
+    const res = await request(app).post('/api/semesters').set(auth(token))
+      .send({ name: '重叠学期', type: 'summer', startDate: '2026-06-01', endDate: '2026-07-31' });
+    expect(res.status).toBe(200);
+    expect(res.body.name).toBe('重叠学期');
+  });
+
+  it('allows startDate === endDate (single-day semester)', async () => {
+    const res = await request(app).post('/api/semesters').set(auth(token))
+      .send({ name: '单日学期', type: 'spring', startDate: '2026-05-01', endDate: '2026-05-01' });
+    expect(res.status).toBe(200);
+    expect(res.body.startDate).toBe('2026-05-01');
+    expect(res.body.endDate).toBe('2026-05-01');
+  });
+});

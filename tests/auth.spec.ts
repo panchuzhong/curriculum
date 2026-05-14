@@ -52,6 +52,13 @@ test.describe('注册页', () => {
   test('显示注册表单', async ({ page }) => {
     await expect(page.getByRole('heading', { name: '创建账号' })).toBeVisible();
   });
+
+  test('注册表单包含必要字段', async ({ page }) => {
+    await expect(page.getByPlaceholder('请输入姓名')).toBeVisible();
+    await expect(page.getByPlaceholder('请输入用户名')).toBeVisible();
+    await expect(page.getByPlaceholder('至少6位')).toBeVisible();
+    await expect(page.getByRole('button', { name: '注册' })).toBeVisible();
+  });
 });
 
 test.describe('未登录访问受保护页面', () => {

@@ -91,6 +91,8 @@ describe('DELETE /api/pricing-tiers/:id', () => {
       .send({ minStudents: 1, maxStudents: 3, pricePerStudentPerHour: 120 });
     const res = await request(app).delete(`/api/pricing-tiers/${id}`).set(auth(token));
     expect(res.status).toBe(200);
+    const check = await request(app).get('/api/pricing-tiers').set(auth(token));
+    expect(check.body.find(t => t.id === id)).toBeUndefined();
   });
 
   it('returns 404 for nonexistent id', async () => {

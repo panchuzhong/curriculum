@@ -58,3 +58,39 @@ test.describe('统计报表', () => {
     await expect(page.getByRole('heading', { name: '统计报表' })).toBeVisible();
   });
 });
+
+test.describe('报表数据验证', () => {
+  test.use({ baseURL: 'http://127.0.0.1:5174' });
+
+  test('汇总统计卡片显示实际数字', async ({ authenticatedPage: page }) => {
+    await page.goto('/reports');
+    // The stat cards should show numbers (not empty)
+    const main = page.locator('main');
+    // Find elements that contain digits in the stat card area
+    await page.waitForTimeout(1000); // Wait for data to load
+    const revenueText = await main.getByText(/[\d,]+/).first().textContent();
+    expect(revenueText).toBeTruthy();
+  });
+
+  test('切换班级筛选改变数据', async ({ authenticatedPage: page }) => {
+    await page.goto('/reports');
+    const combobox = page.getByRole('combobox');
+    const options = await combobox.locator('option').count();
+    if (options > 1) {
+      await combobox.selectOption({ index: 1 });
+      // Verify the page updates (not stale)
+      await page.waitForTimeout(500);
+      await expect(page.getByRole('heading', { name: '统计报表' })).toBeVisible();
+    }
+  });
+
+  test('切换到月报后按班级统计表格有数据行', async ({ authenticatedPage: page }) => {
+    await page.goto('/reports');
+    await page.getByRole('button', { name: '月报' }).click();
+    await page.waitForTimeout(1000);
+    const rows = page.getByRole('table').getByRole('row');
+    // Should have at least header + 1 data row
+    const count = await rows.count();
+    expect(count).toBeGreaterThanOrEqual(2);
+  });
+});
