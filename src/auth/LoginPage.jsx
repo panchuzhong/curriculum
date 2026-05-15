@@ -18,7 +18,7 @@ export default function LoginPage() {
       setToken(token);
       navigate('/');
     } catch (err) {
-      setError(err.message === 'Failed to fetch' ? '网络连接失败，请检查网络' : '用户名或密码错误');
+      setError(err.message === 'Failed to fetch' ? '网络连接失败，请检查网络' : (err.message || '用户名或密码错误'));
     } finally {
       setLoading(false);
     }

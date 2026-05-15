@@ -234,13 +234,24 @@ router.put('/batch', validateBatchUpdate, handle, (req, res) => {
 
   const updatedIds = candidates.map(s => s.id);
   if (updatedIds.length > 0) {
-    const payload = { ...safeUpdates };
     if (safeUpdates.startTime !== undefined || safeUpdates.endTime !== undefined) {
-      payload.durationBilling = safeUpdates.durationBilling != null
-        ? safeUpdates.durationBilling
-        : calcDurationBilling(safeUpdates.startTime || candidates[0].startTime, safeUpdates.endTime || candidates[0].endTime, null);
+      const startTime = safeUpdates.startTime;
+      const endTime = safeUpdates.endTime;
+      if (startTime && endTime) {
+        safeUpdates.durationBilling = safeUpdates.durationBilling ?? calcDurationBilling(startTime, endTime, null);
+      }
+      if (safeUpdates.durationBilling == null && updatedIds.length > 1) {
+        const uniqueStarts = new Set(candidates.map(c => c.startTime));
+        const uniqueEnds = new Set(candidates.map(c => c.endTime));
+        if (uniqueStarts.size > 1 || uniqueEnds.size > 1) {
+          return res.status(400).json({ error: '批量修改多条不同时间的排课时，请同时提供 durationBilling 或完整指定 startTime 和 endTime' });
+        }
+        safeUpdates.durationBilling = calcDurationBilling(startTime || candidates[0].startTime, endTime || candidates[0].endTime, null);
+      } else if (safeUpdates.durationBilling == null) {
+        safeUpdates.durationBilling = calcDurationBilling(startTime || candidates[0].startTime, endTime || candidates[0].endTime, null);
+      }
     }
-    drizzleDb.update(schedules).set(payload).where(inArray(schedules.id, updatedIds)).run();
+    drizzleDb.update(schedules).set(safeUpdates).where(inArray(schedules.id, updatedIds)).run();
   }
 
   logAudit({

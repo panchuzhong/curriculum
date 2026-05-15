@@ -9,7 +9,7 @@
 - **月课表**：日历视图，课程色条按实际时间定位，点击跳转周课表，左右滑动或方向键切换月
 - **年课表**：12 月概览，自动按年级/学科/竞赛分类，超限折叠，颜色与周/月课表统一，响应式布局（手机2列、桌面3列），左右方向键切换年，点击跳转月课表
 - **键盘导航**（桌面端）：上/下方向键切换侧边栏页面，左/右方向键切换课表时段
-- **排课冲突检测**：冲突课程并排显示，红色边框高亮
+- **排课冲突检测**：冲突课程并排显示，红色内嵌边框高亮（`ring-inset`），不遮挡网格线与列边界
 - **法定节假日标记**：节假日/调休自动标注
 - **今日高亮**：当天日期蓝色标记
 
@@ -57,6 +57,16 @@
 - 深色/浅色模式切换，根据时间自动切换（19:00-7:00 暗色），侧边栏宽度可拖拽
 - 课程色块按学科（色相）+年级（亮度/饱和度）自动着色，日/夜间模式自适应
 
+### 周课表色块定位设计
+
+色块采用绝对定位，与时间轴网格线的关系如下：
+
+- **顶部**：`gridLine(start) + 1px`，即起始时间网格线下方 1px，不覆盖网格线
+- **底部**：`gridLine(end)`，即结束时间网格线位置，紧贴网格线不覆盖
+- **高度**：`duration / 60 × rowHeight - 1px`，最小 `rowHeight - 1px`
+- **宽度**：前端 `100%`（单列）或 `100/totalCols%`（冲突分列）；导出图 `colW - 1px`
+- **冲突分列**：重叠课程通过 `detectConflictGroups` → `assignColumns` 检测并分列并排，红色边框使用 inset 方式绘制（前端 `ring-inset`，导出 `box-shadow: inset`），确保不向外扩展覆盖相邻网格线或列边界
+
 ## 技术栈
 
 - **前端**：React 19 + Vite + Tailwind CSS 4
@@ -90,6 +100,7 @@ cp .env.example .env
 PORT=8443                              # 服务端口（默认 8443）
 HOST=127.0.0.1                         # 监听地址（默认仅本地，外网访问设为 0.0.0.0）
 JWT_SECRET=your-secret-key             # JWT 密钥（请修改为随机字符串）
+JWT_EXPIRES_IN=7d                      # JWT 有效期（默认 7 天）
 ALLOW_REGISTRATION=true                # 首次启动设为 true，注册后自动关闭
 DB_PATH=./data/data.db                 # 数据库路径
 PUPPETEER_EXECUTABLE_PATH=             # Chromium 路径（服务器部署时填写）
@@ -181,7 +192,7 @@ sudo systemctl start curriculum-scheduler
 **认证**
 | 方法 | 路径 | 说明 |
 |------|------|------|
-| POST | /api/auth/register | 注册（需 ALLOW_REGISTRATION=true） |
+| POST | /api/auth/register | 注册（需 ALLOW_REGISTRATION=true），返回 {token, apiKey} |
 | POST | /api/auth/login | 登录，返回 JWT token |
 | GET | /api/auth/profile | 获取个人信息（含 subjects、apiKey） |
 | PUT | /api/auth/password | 修改密码 |
@@ -232,11 +243,11 @@ sudo systemctl start curriculum-scheduler
 | DELETE | /api/schedules/batch | 批量删除（byIds / byClassId+fromDate / byDateRange 三种模式） |
 | POST | /api/schedules/batch | 批量创建（学期模式/日期模式） |
 | PUT | /api/schedules/batch | 批量调整时间/地点（同班级同星期几，指定日期起） |
-| GET | /api/schedules/summary?start=&end= | 课时与收入汇总统计（可加 &classId= &format=csv） |
-| GET | /api/schedules/export?start=&end= | 排课明细导出（可加 &classId= &format=csv） |
+| GET | /api/schedules/summary?start=&end= | 课时与收入汇总统计（同样支持 range 快捷参数；可加 &classId=1,2,3 按班级过滤、&format=csv 导出） |
+| GET | /api/schedules/export?start=&end= | 排课明细导出（同样支持 range 快捷参数；可加 &classId=1,2,3 按班级过滤、&format=csv 导出） |
 | GET | /api/schedules/free-slots?date= | 查询单日空闲时段（可加 after=&before= 限制时段、&minDuration=N 过滤最短时长） |
 | GET | /api/schedules/free-slots?start=&end= | 查询多日空闲时段（可加 after=&before=、&minDuration=N） |
-| GET | /api/schedules/conflicts | 查询冲突排课分组（可加 start=&end=&limit=） |
+| GET | /api/schedules/conflicts | 查询冲突排课分组（可加 start=&end=&limit=&classId=1,2,3 按班级过滤） |
 
 **学期**
 | 方法 | 路径 | 说明 |
@@ -267,9 +278,9 @@ sudo systemctl start curriculum-scheduler
 **图片**
 | 方法 | 路径 | 说明 |
 |------|------|------|
-| GET | /api/schedule-image?start=&end= | 生成周课表 PNG；支持 range=today\|tomorrow\|week\|month 快捷参数；theme=light\|dark\|auto（默认 auto）；rowH=16-60（默认 40）；scale=0.25-3（默认 2）；highlight=YYYY-MM-DD |
+| GET | /api/schedule-image?start=&end= | 生成周课表 PNG；支持 range=today\|tomorrow\|week\|month 快捷参数；theme=light\|dark\|auto（默认 auto）；rowH=16-60（默认 40）；scale=0.25-4（默认 3）；highlight=YYYY-MM-DD |
 | GET | /api/schedule-image/monthly?year=&month= | 生成月课表日历网格 PNG；month=0-11（0=1月）；支持 endYear/endMonth 导出多个月份 |
-| GET | /api/schedule-image/yearly?year= | 生成年课表概览 PNG（12 月卡片 + 年度统计）；支持 endYear 导出多个年份 |
+| GET | /api/schedule-image/yearly?year= | 生成年课表概览 PNG（12 月卡片 + 年度统计）；支持 theme=light\|dark\|auto（默认 auto）和 endYear 导出多个年份 |
 
 **操作日志**
 | 方法 | 路径 | 说明 |
@@ -398,7 +409,7 @@ GET /api/schedules/summary?start=2026-05-01&end=2026-05-31
 }
 ```
 
-收入计算公式：`(unitPrice × studentCount - discountAmount) × (durationBilling / 60)`
+收入计算公式：按排课日期匹配 `class_pricing` 中的对应版本定价，无匹配时使用班级当前定价。单条计算：`(unitPrice × studentCount - discountAmount) × (durationBilling / 60)`
 
 ## 项目结构
 
@@ -440,6 +451,8 @@ new_curriculum/
 │       ├── image-gen-monthly.js  # Puppeteer 月课表 PNG 渲染
 │       ├── image-gen-yearly.js   # Puppeteer 年课表 PNG 渲染
 │       ├── schedule-helpers.js   # 排课业务逻辑（冲突检测、批量操作）
+│       ├── colors.js             # 课程色块颜色计算
+│       ├── holidays-data.js      # 内置节假日数据（2025-2027）
 │       └── audit.js              # 操作日志写入
 ├── src/                          # React 前端
 │   ├── App.jsx                   # 路由
@@ -452,7 +465,7 @@ new_curriculum/
 │   ├── pricing/                  # 阶梯定价管理
 │   ├── reports/                  # 统计报表
 │   ├── settings/                 # 设置（节假日、学科、API Key）
-│   └── utils/                    # 颜色、常量、日期、节假日工具
+│   └── utils/                    # 颜色、常量、日期、节假日、排课工具
 ├── scripts/release.sh            # 构建打包脚本
 ├── .env.example                  # 环境变量模板
 └── README.md
@@ -470,6 +483,7 @@ new_curriculum/
 | semesters | 学期定义，用于批量排课 |
 | holidays | 法定节假日与调休记录 |
 | pricing_tiers | 阶梯定价规则 |
+| class_pricing | 班级定价历史，按生效日期版本化管理 |
 | audit_log | 操作日志，记录增删改的前后数据 |
 
 ## 数据备份

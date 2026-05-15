@@ -5,12 +5,12 @@ import { toMin, duration } from '../utils/schedule';
 export default memo(function ScheduleBlock({ item, hasConflict, totalCols, rowHeight, topGapHeight, firstLabelMin, totalHeight, onScheduleClick, schedLpRef, wasRecentTouch }) {
   const dark = useContext(DarkContext);
   if (!item?.startTime || !item?.endTime) return null;
-  const topPx = topGapHeight + (toMin(item.startTime) - firstLabelMin) / 60 * rowHeight;
+  const topPx = topGapHeight + (toMin(item.startTime) - firstLabelMin) / 60 * rowHeight + 1;
   const dur = duration(item.startTime, item.endTime);
-  const heightPx = dur / 60 * rowHeight - 2;
+  const heightPx = dur / 60 * rowHeight - 1;
   const widthPct = 100 / totalCols;
   const leftPct = item._col * widthPct;
-  const h = Math.max(heightPx, rowHeight - 2);
+  const h = Math.max(heightPx, rowHeight - 1);
   const isShort = h < rowHeight * 1.5;
   const clippedTop = Math.max(0, topPx);
   const clippedHeight = Math.min(h, totalHeight - clippedTop);
@@ -55,13 +55,13 @@ export default memo(function ScheduleBlock({ item, hasConflict, totalCols, rowHe
         }
       }}
       className={`absolute rounded-md cursor-pointer overflow-hidden z-10 transition-shadow hover:shadow-md select-none ${
-        hasConflict ? 'ring-2 ring-red-500' : ''
+        hasConflict ? 'ring-2 ring-inset ring-red-500' : ''
       }`}
       style={{
         top: `${clippedTop}px`,
         height: `${clippedHeight}px`,
         left: `${leftPct}%`,
-        width: `calc(${widthPct}% - 2px)`,
+        width: `${widthPct}%`,
         backgroundColor: hasConflict ? '#ef4444' : getClassColor(item.class, dark),
         color: hasConflict ? '#ffffff' : getTextColor(item.class, dark),
       }}

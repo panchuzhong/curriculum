@@ -1,6 +1,6 @@
-const API_BASE = '/api';
+export const API_BASE = '/api';
 
-function getToken() {
+export function getToken() {
   return localStorage.getItem('token');
 }
 

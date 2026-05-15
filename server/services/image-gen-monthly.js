@@ -17,8 +17,6 @@ function formatDate(y, m, d) {
   return `${y}-${String(m + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
 }
 
-const DAY_END_MIN = 24 * 60;
-
 // ── Build list of (year, month) from range ────────────────────────
 function buildMonthList(startYear, startMonth, endYear, endMonth) {
   const months = [];
@@ -73,7 +71,7 @@ function renderMonthHtml(schedulesWithClasses, year, month, { theme, dbHolidayMa
     todayText: '#93c5fd',
     holidayBg: 'rgba(127,29,29,0.25)', workdayBg: 'rgba(120,53,15,0.25)',
     badgeRed: '#ef4444', badgeOrange: '#f97316', badgeBlue: '#3b82f6',
-    dayNumText: '#6b7280',
+    dayNumText: '#d1d5db',
   } : {
     bg: '#f9fafb', text: '#111827',
     headerBg: '#f3f4f6', headerText: '#111827',
@@ -82,17 +80,24 @@ function renderMonthHtml(schedulesWithClasses, year, month, { theme, dbHolidayMa
     todayText: '#1d4ed8',
     holidayBg: 'rgba(254,242,242,0.8)', workdayBg: 'rgba(255,247,237,0.8)',
     badgeRed: '#ef4444', badgeOrange: '#f97316', badgeBlue: '#3b82f6',
-    dayNumText: '#9ca3af',
+    dayNumText: '#374151',
   };
 
   const CELL_W = 160;
-  const CELL_MIN_H = 110;
+  const HEADER_H_CELL = 22;
+  const CELL_PAD = 4;
+  const CONTENT_H = CELL_W;
+  const CELL_H = CONTENT_H + HEADER_H_CELL + CELL_PAD;
   const GAP = 4;
-  const PAD = 20;
+  const PAD = 10;
+
+  const DEFAULT_START = 8 * 60;
+  const DEFAULT_END = 22 * 60 + 30;
+  const DEFAULT_TOTAL = DEFAULT_END - DEFAULT_START;
 
   function renderDayCell(day) {
     if (day === null) {
-      return `<div style="width:${CELL_W}px;height:${CELL_MIN_H}px;background:${c.cellEmptyBg};border-radius:6px"></div>`;
+      return `<div style="width:${CELL_W}px;height:${CELL_H}px;background:${c.cellEmptyBg};border-radius:6px"></div>`;
     }
     const dateStr = formatDate(year, month, day);
     const daySchedules = byDate[dateStr] || [];
@@ -106,7 +111,6 @@ function renderMonthHtml(schedulesWithClasses, year, month, { theme, dbHolidayMa
     else if (workday) cellBg = c.workdayBg;
 
     const borderStyle = isToday ? `border:2px solid ${c.todayBorder};` : '';
-    const cellH = CELL_MIN_H;
 
     let badgesHtml = '';
     if (isToday) badgesHtml += `<span style="font-size:9px;background:${c.badgeBlue};color:#fff;padding:1px 5px;border-radius:999px;font-weight:500;margin-left:2px">今</span>`;
@@ -115,48 +119,57 @@ function renderMonthHtml(schedulesWithClasses, year, month, { theme, dbHolidayMa
 
     let barsHtml = '';
     if (daySchedules.length > 0) {
-      const maxBar = 40;
-      const minBar = 5;
-      const early = Math.min(...daySchedules.map(s => toMin(s.startTime)));
-      const late = Math.max(...daySchedules.map(s => toMin(s.endTime)));
-      const MIN_VISIBLE = 240;
-      const dayStart = Math.max(0, Math.min(early - 30, 8 * 60 - 30));
-      const dayEnd = Math.min(DAY_END_MIN, Math.max(late + 30, dayStart + MIN_VISIBLE));
+      // Check if any schedule extends beyond default range
+      const earliest = Math.min(...daySchedules.map(s => toMin(s.startTime)));
+      const latest = Math.max(...daySchedules.map(s => {
+        const st = toMin(s.startTime);
+        const et = toMin(s.endTime);
+        return et > st ? et : et + 24 * 60;
+      }));
+      const hasEarly = earliest < DEFAULT_START;
+      const hasLate = latest > DEFAULT_END;
+      const dayStart = hasEarly ? earliest : DEFAULT_START;
+      const dayEnd = hasLate ? latest : DEFAULT_END;
       const dayTotal = dayEnd - dayStart;
-      const cellContentH = cellH - 28;
-      const groups = detectConflictGroups(daySchedules);
 
+      const groups = detectConflictGroups(daySchedules);
       for (const group of groups) {
         const hasConflict = group.length > 1;
         const items = hasConflict ? assignColumns(group) : group.map(s => ({ ...s, _col: 0 }));
         const totalCols = Math.max(...items.map(it => (it._col || 0))) + 1;
-        const groupTop = Math.min(...items.map(s => toMin(s.startTime)));
         for (const item of items) {
           const startMin = toMin(item.startTime);
-          const endMin = toMin(item.endTime);
+          const endMinRaw = toMin(item.endTime);
+          const endMin = endMinRaw > startMin ? endMinRaw : endMinRaw + 24 * 60;
           const dur = endMin - startMin;
-          const topPct = Math.max(0, (groupTop - dayStart) / dayTotal * 100);
-          const heightPct = Math.min(maxBar, Math.max(minBar, dur / dayTotal * 100));
+          const topPct = (startMin - dayStart) / dayTotal * 100;
+          const heightPct = dur / dayTotal * 100;
+          const barTop = HEADER_H_CELL + topPct / 100 * CONTENT_H;
+          const barH = Math.max(6, heightPct / 100 * CONTENT_H);
+          const isEarly = startMin < DEFAULT_START;
+          const isLate = endMin > DEFAULT_END;
+          const isOvertime = isEarly || isLate;
           const widthPct = hasConflict ? 100 / totalCols : 100;
           const leftPct = hasConflict ? (item._col || 0) * widthPct : 0;
-          const fontSize = Math.max(6, Math.floor(heightPct * 0.38));
-          const barH = heightPct / 100 * cellContentH;
-          const barTop = topPct / 100 * cellContentH + 24;
-          const barLeft = leftPct / 100 * (CELL_W - 4);
-          const barW = (widthPct / 100 * (CELL_W - 4)) - 2;
+          const cellInnerW = isOvertime ? CELL_W : CELL_W - 8;
+          const barLeft = isOvertime ? (leftPct / 100 * CELL_W) : (leftPct / 100 * (CELL_W - 8) + 4);
+          const barW = (widthPct / 100 * cellInnerW) - (isOvertime ? 0 : 2);
           const bg = hasConflict ? '#ef4444' : getColor(item.class, isDark);
           const fg = hasConflict ? '#ffffff' : getTextColor(item.class, isDark);
           const name = escapeHtml(item.class?.name ?? '');
           const star = item.class?.isCompetition ? '★ ' : '';
+          const fontSize = Math.max(7, Math.min(14, Math.floor(barH * 0.8)));
           const ring = hasConflict ? 'box-shadow:0 0 0 1px #ef4444;z-index:1;' : '';
-          barsHtml += `<div style="position:absolute;left:${2 + barLeft}px;top:${barTop}px;width:${barW}px;height:${Math.max(8, barH)}px;background:${bg};color:${fg};border-radius:4px;display:flex;align-items:center;padding:0 4px;font-size:${fontSize}px;overflow:hidden;white-space:nowrap;${ring}" title="${star}${name} ${item.startTime}-${item.endTime}${hasConflict ? ' [冲突]' : ''}">${star}${name}</div>`;
+          const overtimeRing = isOvertime ? 'border-left:3px solid #f59e0b;border-right:3px solid #f59e0b;' : '';
+          const borderRad = isEarly && isLate ? '0' : isEarly ? '0 0 4px 4px' : isLate ? '4px 4px 0 0' : '4px';
+          barsHtml += `<div style="position:absolute;left:${barLeft}px;top:${barTop}px;width:${barW}px;height:${barH}px;background:${bg};color:${fg};border-radius:${borderRad};display:flex;align-items:center;padding:0 ${isOvertime ? 6 : 4}px;font-size:${fontSize}px;overflow:hidden;white-space:nowrap;${ring}${overtimeRing}" title="${star}${name} ${item.startTime}-${item.endTime}${hasConflict ? ' [冲突]' : ''}${isOvertime ? ' [非正常时段]' : ''}">${star}${name}</div>`;
         }
       }
     }
 
-    return `<div style="width:${CELL_W}px;height:${cellH}px;background:${cellBg};border-radius:6px;${borderStyle}position:relative;overflow:hidden;padding:4px 6px">
+    return `<div style="width:${CELL_W}px;height:${CELL_H}px;background:${cellBg};border-radius:6px;${borderStyle}position:relative;overflow:hidden;padding:4px 6px">
       <div style="display:flex;align-items:center;margin-bottom:2px">
-        <span style="font-size:11px;font-weight:${isToday ? 600 : 400};color:${isToday ? c.todayText : c.dayNumText}">${day}</span>
+        <span style="font-size:11px;font-weight:800;color:${isToday ? c.todayText : c.dayNumText}">${day}</span>
         ${badgesHtml}
       </div>
       ${barsHtml}
@@ -227,14 +240,14 @@ export async function generateMonthlyImage(schedulesWithClasses, year, month, { 
     maxW = Math.max(maxW, result.totalW);
   }
 
-  const PAD = 20;
-  const totalW = maxW + PAD * 2;
+  const PAD = 10;
+  const totalW = maxW;
 
   const html = `<!DOCTYPE html>
 <html><head><meta charset="UTF-8"><style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
   html, body { min-height: 0; height: auto; }
-  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: ${bg}; padding: ${PAD}px; }
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: ${bg}; padding: ${PAD}px; -webkit-font-smoothing: antialiased; }
 </style></head><body>
   ${combinedHtml}
 </body></html>`;
@@ -243,14 +256,14 @@ export async function generateMonthlyImage(schedulesWithClasses, year, month, { 
   const page = await browser.newPage();
   try {
     await page.setContent(html, { waitUntil: 'networkidle0', timeout: 30000 });
-    await page.setViewport({ width: totalW + 32, height: 800, deviceScaleFactor: 2 });
-    const bodyBox = await page.evaluate(() => {
-      const r = document.body.getBoundingClientRect();
-      return { x: r.x, y: r.y, w: r.width, h: r.height };
+    await page.setViewport({ width: totalW + 4, height: 800, deviceScaleFactor: 4 });
+    const clipRect = await page.evaluate(() => {
+      const r = document.documentElement.getBoundingClientRect();
+      return { x: 0, y: 0, w: r.width, h: r.height };
     });
     const buffer = await page.screenshot({
       type: 'png', timeout: 30000,
-      clip: { x: bodyBox.x, y: bodyBox.y, width: bodyBox.w, height: bodyBox.h },
+      clip: { x: 0, y: 0, width: totalW, height: clipRect.h },
     });
     return buffer;
   } finally {

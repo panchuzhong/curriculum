@@ -78,8 +78,8 @@ export async function generateScheduleImage(schedulesWithClasses, startDate, end
   const bottomFraction = (bottomMin - endHour * 60) / 60;
   const totalH = TOP_GAP + (numHours - 1) * rowHSafe + bottomFraction * rowHSafe;
   const timeColW = 64;
-  const TARGET_TOTAL_WIDTH = Math.min(1800, Math.max(600, numDays * 160));
-  const colW = Math.max(80, Math.floor((TARGET_TOTAL_WIDTH - timeColW) / numDays));
+  const TARGET_TOTAL_WIDTH = Math.max(600, numDays * 160);
+  const colW = Math.floor((TARGET_TOTAL_WIDTH - timeColW) / numDays);
   const totalW = timeColW + numDays * colW;
   const HEADER_H = 52;
 
@@ -101,8 +101,8 @@ export async function generateScheduleImage(schedulesWithClasses, startDate, end
   };
 
   // ── Header row ─────────────────────────────────────────────────
-  let headerHtml = `<div style="display:flex;border-bottom:2px solid ${c.gridBorder}">
-    <div style="width:${timeColW}px;height:${HEADER_H}px;padding:6px;background:${isDark ? '#1f2937' : '#f3f4f6'};text-align:center;font-size:12px;color:${c.headerText};display:flex;align-items:center;justify-content:center;border-right:1px solid ${c.gridBorder}">时间</div>`;
+  let headerHtml = `<div style="display:flex;border-bottom:2px solid ${c.gridBorder};position:relative">
+    <div style="width:${timeColW}px;height:${HEADER_H}px;padding:6px;background:${isDark ? '#1f2937' : '#f3f4f6'};text-align:center;font-size:12px;color:${c.headerText};display:flex;align-items:center;justify-content:center">时间</div>`;
   dates.forEach(date => {
     const d = new Date(date + 'T00:00:00');
     const wd = WEEKDAY_LABELS[d.getDay()];
@@ -114,7 +114,7 @@ export async function generateScheduleImage(schedulesWithClasses, startDate, end
     else if (workday) bg = c.workdayHeader;
     else if (holiday) bg = c.holidayHeader;
     else bg = c.headerBg;
-    headerHtml += `<div style="width:${colW}px;height:${HEADER_H}px;padding:6px;background:${bg};text-align:center;border-right:1px solid ${c.gridBorder};display:flex;flex-direction:column;align-items:center;justify-content:center">
+    headerHtml += `<div style="width:${colW}px;height:${HEADER_H}px;padding:6px;background:${bg};text-align:center;display:flex;flex-direction:column;align-items:center;justify-content:center">
       <div style="display:flex;align-items:center;gap:4px">
         <span style="font-size:13px;font-weight:${isToday ? 600 : 400};color:${isToday ? c.todayText : c.text}">${wd}</span>
         ${isToday ? `<span style="font-size:10px;background:${c.todayBadge};color:#fff;padding:2px 6px;border-radius:9999px;font-weight:500">今天</span>` : ''}
@@ -124,15 +124,21 @@ export async function generateScheduleImage(schedulesWithClasses, startDate, end
       <span style="font-size:11px;color:${c.timeText}">${date.slice(5)}</span>
     </div>`;
   });
-  headerHtml += '</div>';
+  // Header vertical lines (absolute positioned to avoid flex border issues)
+  let headerLinesHtml = '';
+  for (let i = 1; i < numDays; i++) {
+    headerLinesHtml += `<div style="position:absolute;top:0;left:${timeColW + i * colW}px;width:1px;height:100%;background:${c.gridBorder}"></div>`;
+  }
+  headerLinesHtml += `<div style="position:absolute;top:0;left:${timeColW}px;width:1px;height:100%;background:${c.gridBorder}"></div>`;
+  headerHtml += headerLinesHtml + '</div>';
 
   // ── Grid lines & labels (08:00–23:00) ──────────────────────────
   let gridHtml = '';
   for (let h = firstLabelHour; h <= endHour; h++) {
     const top = TOP_GAP + (h - firstLabelHour) * rowHSafe;
     gridHtml += `<div style="position:absolute;top:${top}px;left:0;width:${totalW}px;height:1px;background:${c.gridBorder}"></div>`;
-    gridHtml += `<div style="position:absolute;top:${top}px;left:0;width:${timeColW}px;pointer-events:none">`;
-    gridHtml +=   `<span style="position:absolute;top:-7px;left:50%;transform:translateX(-50%);font-size:11px;color:${c.timeText};background:${c.bg};padding:0 4px;white-space:nowrap">${String(h).padStart(2, '0')}:00</span>`;
+    gridHtml += `<div style="position:absolute;top:${top}px;left:0;width:${timeColW}px;height:${rowHSafe}px;background:${c.bg};z-index:2;pointer-events:none">`;
+    gridHtml +=   `<span style="position:absolute;top:-7px;left:50%;transform:translateX(-50%);font-size:11px;color:${c.timeText};white-space:nowrap">${String(h).padStart(2, '0')}:00</span>`;
     gridHtml += `</div>`;
   }
   for (let i = 1; i < numDays; i++) {
@@ -167,13 +173,13 @@ export async function generateScheduleImage(schedulesWithClasses, startDate, end
         const startMin = toMin(item.startTime);
         const endMin = toMin(item.endTime);
         const durMin = endMin > startMin ? endMin - startMin : endMin + 24 * 60 - startMin;
-        const top = TOP_GAP + (startMin - firstLabelHour * 60) / 60 * rowHSafe;
-        const h = Math.max(durMin / 60 * rowHSafe - 2, rowHSafe - 2);
+        const top = TOP_GAP + (startMin - firstLabelHour * 60) / 60 * rowHSafe + 1;
+        const h = Math.max(durMin / 60 * rowHSafe - 1, rowHSafe - 1);
         const clippedTop = Math.max(0, top);
         const clippedH = Math.min(h, totalH - clippedTop);
         const itemColW = colW / totalCols;
         const left = timeColW + di * colW + item._col * itemColW + 1;
-        const width = itemColW - 2;
+        const width = itemColW - 1;
         const bg = hasConflict ? '#ef4444' : getColor(item.class, isDark);
         const fg = hasConflict ? '#ffffff' : getTextColor(item.class, isDark);
 
@@ -195,7 +201,7 @@ export async function generateScheduleImage(schedulesWithClasses, startDate, end
         const locFs = Math.max(8, fs - 2);
 
         const starHtml = item.class.isCompetition ? '<span style="color:#f59e0b">★ </span>' : '';
-        blocksHtml += `<div style="position:absolute;top:${clippedTop}px;left:${left}px;width:${width}px;height:${clippedH}px;background:${bg};color:${fg};border-radius:6px;box-shadow:${hasConflict ? '0 0 0 2px #ef4444' : 'none'};overflow:hidden;z-index:10;${isShort ? `display:flex;align-items:center;gap:4px;padding:0 6px` : 'padding:4px'}">
+        blocksHtml += `<div style="position:absolute;top:${clippedTop}px;left:${left}px;width:${width}px;height:${clippedH}px;background:${bg};color:${fg};border-radius:6px;box-shadow:${hasConflict ? 'inset 0 0 0 2px #ef4444' : 'none'};overflow:hidden;z-index:10;${isShort ? `display:flex;align-items:center;gap:4px;padding:0 6px` : 'padding:4px'}">
           ${isShort
             ? `<div style="font-size:${fs}px;line-height:1.25;${nameStyle};flex:1;min-width:0">${starHtml}${name}</div><div style="font-size:${timeFs}px;opacity:0.6;white-space:nowrap;flex-shrink:0">${item.startTime}-${item.endTime}</div>`
             : `<div style="font-size:${fs}px;line-height:${lh}px;${nameStyle}">${starHtml}${name}</div><div style="font-size:${timeFs}px;line-height:${lh}px;opacity:0.65">${item.startTime}-${item.endTime}</div>${safeLoc ? `<div style="font-size:${locFs}px;opacity:0.55;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">📍${safeLoc}</div>` : ''}`
@@ -208,8 +214,8 @@ export async function generateScheduleImage(schedulesWithClasses, startDate, end
   const html = `<!DOCTYPE html>
 <html><head><meta charset="UTF-8"><style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
-  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: ${c.bg}; color: ${c.text}; padding: 16px; }
-  h1 { text-align: center; font-size: 15px; margin-bottom: 12px; font-weight: 600; }
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: ${c.bg}; color: ${c.text}; margin: 0; padding: 0; -webkit-font-smoothing: antialiased; }
+  h1 { text-align: center; font-size: 15px; margin: 12px 0; font-weight: 600; }
 </style></head><body>
   <h1>${startDate} ~ ${endDate}</h1>
   ${headerHtml}
@@ -223,9 +229,16 @@ export async function generateScheduleImage(schedulesWithClasses, startDate, end
   const page = await browser.newPage();
   try {
     await page.setContent(html, { waitUntil: 'networkidle0', timeout: 30000 });
-    const scaleFactor = scale ? Math.max(0.25, Math.min(3, +scale)) : 2;
-    await page.setViewport({ width: totalW + 32, height: totalH + HEADER_H + 100, deviceScaleFactor: scaleFactor });
-    const buffer = await page.screenshot({ type: 'png', fullPage: true, timeout: 30000 });
+    const scaleFactor = scale ? Math.max(0.25, Math.min(4, +scale)) : 3;
+    await page.setViewport({ width: Math.ceil(totalW), height: 800, deviceScaleFactor: scaleFactor });
+    const clipRect = await page.evaluate(() => {
+      const r = document.documentElement.getBoundingClientRect();
+      return { x: 0, y: 0, w: r.width, h: r.height };
+    });
+    const buffer = await page.screenshot({
+      type: 'png', timeout: 30000,
+      clip: { x: 0, y: 0, width: clipRect.w, height: clipRect.h },
+    });
     return buffer;
   } finally {
     await page.close();

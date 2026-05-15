@@ -1,10 +1,6 @@
 import { useState } from 'react';
-import { api } from '../api';
+import { api, API_BASE, getToken } from '../api';
 import { useToast } from '../components/ToastProvider';
-
-function getToken() {
-  return localStorage.getItem('token');
-}
 
 export default function useViewExport({ view }) {
   const toast = useToast();
@@ -25,18 +21,18 @@ export default function useViewExport({ view }) {
       let url;
       if (view === 'monthly') {
         const { startYear, startMonth, endYear, endMonth } = extraParams || {};
-        url = `/api/schedule-image/monthly?year=${startYear}&month=${startMonth}`;
+        url = `${API_BASE}/schedule-image/monthly?year=${startYear}&month=${startMonth}`;
         if (endYear !== undefined && endMonth !== undefined && (endYear !== startYear || endMonth !== startMonth)) {
           url += `&endYear=${endYear}&endMonth=${endMonth}`;
         }
       } else if (view === 'yearly') {
         const { startYear, endYear } = extraParams || {};
-        url = `/api/schedule-image/yearly?year=${startYear}`;
+        url = `${API_BASE}/schedule-image/yearly?year=${startYear}`;
         if (endYear !== undefined && endYear !== startYear) {
           url += `&endYear=${endYear}`;
         }
       } else {
-        url = `/api/schedule-image?start=${start}&end=${end}`;
+        url = `${API_BASE}/schedule-image?start=${start}&end=${end}`;
       }
       const res = await fetch(url, {
         headers: { Authorization: `Bearer ${getToken()}` },
@@ -49,10 +45,11 @@ export default function useViewExport({ view }) {
       }
       const blob = await res.blob();
       const a = document.createElement('a');
-      a.href = URL.createObjectURL(blob);
+      const objUrl = URL.createObjectURL(blob);
+      a.href = objUrl;
       a.download = `课表_${start}_${end}.png`;
       a.click();
-      URL.revokeObjectURL(a.href);
+      setTimeout(() => URL.revokeObjectURL(objUrl), 1000);
       setShowExport(false);
     } catch (e) {
       toast(e.message || '导出PNG失败');
@@ -96,10 +93,11 @@ export default function useViewExport({ view }) {
       const csv = bom + [header, ...rows].join('\n');
       const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
       const a = document.createElement('a');
-      a.href = URL.createObjectURL(blob);
+      const objUrl = URL.createObjectURL(blob);
+      a.href = objUrl;
       a.download = `课表_${start}_${end}.csv`;
       a.click();
-      URL.revokeObjectURL(a.href);
+      setTimeout(() => URL.revokeObjectURL(objUrl), 1000);
       setShowExport(false);
     } catch (e) {
       toast(e.message || '导出CSV失败');

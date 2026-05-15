@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { api } from '../api';
+import { api, API_BASE, getToken } from '../api';
 import { parseDateStr } from '../utils/date';
 import { useToast } from '../components/ToastProvider';
 
@@ -19,19 +19,19 @@ export default function useScheduleExport({ weekStart, visibleDays, addDays }) {
   async function exportPNG(start, end) {
     setExporting(true);
     try {
-      const token = localStorage.getItem('token');
+      const token = getToken();
       if (!token) throw new Error('未登录');
-      const res = await fetch(`/api/schedule-image?start=${start}&end=${end}`, {
+      const res = await fetch(`${API_BASE}/schedule-image?start=${start}&end=${end}`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       if (!res.ok) throw new Error('导出失败');
       const blob = await res.blob();
-      const url = URL.createObjectURL(blob);
+      const objUrl = URL.createObjectURL(blob);
       const a = document.createElement('a');
-      a.href = url;
+      a.href = objUrl;
       a.download = `课表_${start}_${end}.png`;
       a.click();
-      URL.revokeObjectURL(url);
+      setTimeout(() => URL.revokeObjectURL(objUrl), 1000);
     } catch (e) { toast('导出失败'); } finally {
       setExporting(false);
     }
@@ -62,12 +62,12 @@ export default function useScheduleExport({ weekStart, visibleDays, addDays }) {
         return `"${safe.replace(/"/g, '""')}"`;
       }).join(',')).join('\n');
       const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8' });
-      const url = URL.createObjectURL(blob);
+      const objUrl = URL.createObjectURL(blob);
       const a = document.createElement('a');
-      a.href = url;
+      a.href = objUrl;
       a.download = `课表_${start}_${end}.csv`;
       a.click();
-      URL.revokeObjectURL(url);
+      setTimeout(() => URL.revokeObjectURL(objUrl), 1000);
     } catch (e) { toast(e.message || '导出失败'); }
     finally { setExporting(false); }
   }

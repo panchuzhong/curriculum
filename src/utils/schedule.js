@@ -6,6 +6,7 @@ export function toMin(t) {
 export function duration(startTime, endTime) {
   const s = toMin(startTime);
   const e = toMin(endTime);
+  if (s === e) return 0;
   return e > s ? e - s : e + 24 * 60 - s;
 }
 

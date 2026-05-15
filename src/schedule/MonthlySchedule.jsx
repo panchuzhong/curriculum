@@ -21,8 +21,6 @@ function getMonthDates(year, month) {
   return dates;
 }
 
-const DAY_END_MIN = 24 * 60;
-
 function formatDate(y, m, d) {
   return `${y}-${String(m + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
 }
@@ -146,19 +144,24 @@ export default function MonthlySchedule() {
                 'bg-gray-100 dark:bg-gray-800'
               } hover:bg-gray-200 dark:hover:bg-gray-700`}>
               <div className="flex items-center gap-0.5 mb-0.5 flex-wrap shrink-0">
-                <span className={`text-[10px] sm:text-xs ${isToday ? 'font-bold text-blue-600 dark:text-blue-400' : 'text-gray-500 dark:text-gray-400'}`}>{day}</span>
+                <span className={`text-[10px] sm:text-xs ${isToday ? 'font-bold text-blue-600 dark:text-blue-400' : 'font-semibold text-gray-500 dark:text-gray-400'}`}>{day}</span>
                 {isToday && <span className="text-[8px] sm:text-[9px] bg-blue-500 text-white px-0.5 rounded">今</span>}
                 {holiday && <span className="text-[8px] sm:text-[9px] bg-red-500 text-white px-0.5 rounded truncate max-w-full">{getHolidayName(dateStr)}</span>}
                 {workday && <span className="text-[8px] sm:text-[9px] bg-orange-500 text-white px-0.5 rounded">班</span>}
               </div>
               {daySchedules.length > 0 && (() => {
-                const maxBar = 40;
-                const minBar = 5;
-                const early = Math.min(...daySchedules.map(s => toMin(s.startTime)));
-                const late = Math.max(...daySchedules.map(s => toMin(s.endTime)));
-                const MIN_VISIBLE = 240;
-                const dayStart = Math.max(0, Math.min(early - 30, 8 * 60 - 30));
-                const dayEnd = Math.min(DAY_END_MIN, Math.max(late + 30, dayStart + MIN_VISIBLE));
+                const DEFAULT_START = 8 * 60;
+                const DEFAULT_END = 22 * 60 + 30;
+                const earliest = Math.min(...daySchedules.map(s => toMin(s.startTime)));
+                const latest = Math.max(...daySchedules.map(s => {
+                  const st = toMin(s.startTime);
+                  const et = toMin(s.endTime);
+                  return et > st ? et : et + 24 * 60;
+                }));
+                const hasEarly = earliest < DEFAULT_START;
+                const hasLate = latest > DEFAULT_END;
+                const dayStart = hasEarly ? earliest : DEFAULT_START;
+                const dayEnd = hasLate ? latest : DEFAULT_END;
                 const dayTotal = dayEnd - dayStart;
                 const groups = findConflictGroups(daySchedules);
                 const els = [];
@@ -166,29 +169,32 @@ export default function MonthlySchedule() {
                   const hasConflict = group.length > 1;
                   const items = hasConflict ? assignColumns(group) : group.map(s => ({ ...s, _col: 0 }));
                   const totalCols = Math.max(...items.map(it => (it._col || 0))) + 1;
-                  const groupTop = Math.min(...items.map(s => toMin(s.startTime)));
                   for (const item of items) {
                     const startMin = toMin(item.startTime);
-                    const endMin = toMin(item.endTime);
+                    const endMinRaw = toMin(item.endTime);
+                    const endMin = endMinRaw > startMin ? endMinRaw : endMinRaw + 24 * 60;
                     const dur = endMin - startMin;
-                    const topPct = Math.max(0, (groupTop - dayStart) / dayTotal * 100);
-                    const heightPct = Math.min(maxBar, Math.max(minBar, dur / dayTotal * 100));
+                    const topPct = (startMin - dayStart) / dayTotal * 100;
+                    const heightPct = dur / dayTotal * 100;
                     const widthPct = hasConflict ? 100 / totalCols : 100;
                     const leftPct = hasConflict ? (item._col || 0) * widthPct : 0;
+                    const isEarly = startMin < DEFAULT_START;
+                    const isLate = endMin > DEFAULT_END;
+                    const isOvertime = isEarly || isLate;
+                    const rounded = isEarly && isLate ? 'rounded-none' : isEarly ? 'rounded-b' : isLate ? 'rounded-t' : 'rounded';
                     els.push(
                       <div key={item.id}
-                        className={`absolute rounded truncate px-0.5 flex items-center ${hasConflict ? 'ring-1 ring-red-500 z-10' : ''}`}
+                        className={`absolute truncate px-0.5 flex items-center ${hasConflict ? 'ring-1 ring-red-500 z-10' : ''} ${rounded} ${isOvertime ? 'border-x-2 border-amber-500' : ''}`}
                         style={{
                           top: `${topPct}%`,
                           height: `${heightPct}%`,
-                          left: `${leftPct + 0.5}%`,
-                          width: `calc(${widthPct}% - 2px)`,
+                          left: isOvertime ? `${leftPct}%` : `${leftPct + 0.5}%`,
+                          width: isOvertime ? `${widthPct}%` : `calc(${widthPct}% - 2px)`,
                           backgroundColor: hasConflict ? '#ef4444' : getClassColor(item.class, dark),
                           color: hasConflict ? '#fff' : getTextColor(item.class, dark),
-                          fontSize: 'clamp(9px, 1.2vw, 13px)',
-                          overflow: 'hidden',
+                          fontSize: 'clamp(9px, 1.3vw, 14px)',
                         }}
-                        title={`${item.startTime}-${item.endTime} ${item.class?.isCompetition ? '★ ' : ''}${item.class?.name}${hasConflict ? ' [冲突]' : ''}`}>
+                        title={`${item.startTime}-${item.endTime} ${item.class?.isCompetition ? '★ ' : ''}${item.class?.name}${hasConflict ? ' [冲突]' : ''}${isOvertime ? ' [非正常时段]' : ''}`}>
                         {item.class?.isCompetition && '★ '}{item.class?.name}
                       </div>
                     );

@@ -24,7 +24,7 @@ export default function ScheduleDialog({ date, startTime, schedule, onClose, onS
   });
   const [newClass, setNewClass] = useState({
     name: '', grade: '初三', subject: '', studentCount: 1,
-    unitPrice: 800, isCompetition: false,
+    unitPrice: 800, discountAmount: 0, discountReason: '', isCompetition: false,
   });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
