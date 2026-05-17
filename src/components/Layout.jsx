@@ -138,7 +138,7 @@ export default function Layout({ children }) {
 
   const sidebarContent = (
     <>
-      <div className={`${isTablet ? 'p-3' : 'p-5'} border-b border-gray-100 dark:border-gray-700 flex items-center justify-between`}>
+      <div className={`${isTablet ? 'px-3 pt-4 pb-3' : 'px-5 pt-4 pb-3'} border-b border-gray-100 dark:border-gray-700 flex items-center justify-between`}>
         <div className="flex items-center gap-3">
           <div className="w-9 h-9 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-xl flex items-center justify-center shadow-lg shadow-blue-500/20 shrink-0">
             <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -261,7 +261,7 @@ export default function Layout({ children }) {
           </div>
         )}
 
-        <main className={`flex-1 min-h-0 overflow-auto thin-scroll bg-gray-50 dark:bg-gray-900 ${location.pathname === '/' ? 'pt-6' : isMobile ? 'p-2' : isTablet ? 'p-3' : 'p-6'}`}>
+        <main className={`flex-1 min-h-0 overflow-auto thin-scroll bg-gray-50 dark:bg-gray-900 ${location.pathname === '/' ? 'pt-4' : isMobile ? 'p-2' : isTablet ? 'p-3' : 'p-6'}`}>
           {children}
         </main>
       </div>

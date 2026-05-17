@@ -22,7 +22,7 @@ export default function DayHeader({ date, isToday, HEADER_HEIGHT }) {
         {holiday && <span className="text-[10px] bg-red-500 text-white px-1.5 py-0.5 rounded-full">{getHolidayName(date)}</span>}
         {workday && <span className="text-[10px] bg-orange-500 text-white px-1.5 py-0.5 rounded-full">调休</span>}
       </div>
-      <span className="text-xs text-gray-400 dark:text-gray-500">{date.slice(5)}</span>
+      <span className="text-xs text-gray-600 dark:text-gray-400">{date.slice(5)}</span>
     </div>
   );
 }
