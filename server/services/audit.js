@@ -25,7 +25,8 @@ export function logAudit({ teacherId, action, tableName, recordId, before, after
         db.prepare('DELETE FROM audit_log WHERE id IN (SELECT id FROM audit_log ORDER BY id ASC LIMIT ?)').run(count - MAX_AUDIT_ROWS);
       }
     })();
-  } catch {
+  } catch (err) {
     // Audit failures must never break the main request
+    console.error('Audit log error:', err.message);
   }
 }

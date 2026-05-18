@@ -220,7 +220,7 @@ export default function Layout({ children }) {
     <DarkContext.Provider value={dark}>
     <div className="flex h-screen bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-gray-100 overflow-hidden" style={{ height: '100dvh' }}>
       {isMobile && sidebarOpen && (
-        <div className="fixed inset-0 z-40 bg-black/40" onClick={() => setSidebarOpen(false)} />
+        <div className="fixed inset-0 z-40 bg-black/40" onClick={() => setSidebarOpen(false)} aria-hidden="true" />
       )}
 
       {isMobile ? (

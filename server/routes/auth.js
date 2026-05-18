@@ -34,7 +34,7 @@ router.post('/register', authLimiter, validateRegister, handle, async (req, res)
   const existing = drizzleDb.select().from(teachers).where(eq(teachers.username, username)).get();
   if (existing) return res.status(409).json({ error: 'Username taken' });
 
-  const passwordHash = await bcrypt.hash(password, 10);
+  const passwordHash = await bcrypt.hash(password, 12);
   const apiKey = uuidv4();
   const subjects = JSON.stringify(DEFAULT_SUBJECTS);
   let result;
@@ -88,20 +88,20 @@ router.put('/subjects', authMiddleware, validateUpdateSubjects, handle, (req, re
   res.json({ subjects });
 });
 
-router.put('/api-key', authMiddleware, (req, res) => {
+router.put('/api-key', authMiddleware, authLimiter, (req, res) => {
   const newKey = uuidv4();
   drizzleDb.update(teachers).set({ apiKey: newKey }).where(eq(teachers.id, req.teacherId)).run();
   logAudit({ teacherId: req.teacherId, action: 'UPDATE', tableName: 'teachers', recordId: req.teacherId, after: { apiKeyRotated: true } });
   res.json({ apiKey: newKey });
 });
 
-router.put('/password', authMiddleware, validateChangePassword, handle, async (req, res) => {
+router.put('/password', authMiddleware, authLimiter, validateChangePassword, handle, async (req, res) => {
   const { oldPassword, newPassword } = req.body;
   const teacher = drizzleDb.select().from(teachers).where(eq(teachers.id, req.teacherId)).get();
   if (!teacher || !(await bcrypt.compare(oldPassword, teacher.passwordHash))) {
     return res.status(401).json({ error: '当前密码错误' });
   }
-  const passwordHash = await bcrypt.hash(newPassword, 10);
+  const passwordHash = await bcrypt.hash(newPassword, 12);
   drizzleDb.update(teachers).set({ passwordHash }).where(eq(teachers.id, req.teacherId)).run();
   logAudit({ teacherId: req.teacherId, action: 'UPDATE', tableName: 'teachers', recordId: req.teacherId, after: { passwordChanged: true } });
   res.json({ ok: true });

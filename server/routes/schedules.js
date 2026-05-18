@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { drizzleDb } from '../db/index.js';
+import { drizzleDb, db } from '../db/index.js';
 import { schedules, classes, semesters, holidays, classStudents, classPricing } from '../db/schema.js';
 import { eq, and, gte, lte, inArray } from 'drizzle-orm';
 import { authMiddleware } from '../middleware/auth.js';
@@ -8,6 +8,7 @@ import handle from '../validations/handle.js';
 import { validateCreateSchedule, validateBatchCreate, validateBatchUpdate, validateBatchDelete, validateUpdateSchedule } from '../validations/schedules.js';
 import { logAudit } from '../services/audit.js';
 import { toLocalDateStr, toMin, resolveRange, toCSV, detectConflictGroups, getScheduleWithClass, calcDurationBilling, getTeacherSemesters } from '../services/schedule-helpers.js';
+import { students as studentsTable } from '../db/schema.js';
 
 const router = Router();
 router.use(authMiddleware);
@@ -55,6 +56,9 @@ router.get('/', (req, res) => {
     if (queryClassIds.length) classIds = classIds.filter(id => queryClassIds.includes(id));
   }
   if (studentId) {
+    const student = drizzleDb.select().from(studentsTable)
+      .where(and(eq(studentsTable.id, +studentId), eq(studentsTable.teacherId, req.teacherId))).get();
+    if (!student) return res.json([]);
     const studentClasses = drizzleDb.select({ classId: classStudents.classId }).from(classStudents)
       .where(eq(classStudents.studentId, +studentId)).all();
     const studentClassIds = new Set(studentClasses.map(c => c.classId));
@@ -80,6 +84,10 @@ router.post('/', validateCreateSchedule, handle, (req, res) => {
   if (!cls) return res.status(404).json({ error: 'Class not found' });
 
   const billing = calcDurationBilling(startTime, endTime, durationBilling);
+  // Check for duplicate schedule (same class, date, startTime)
+  const dup = drizzleDb.select().from(schedules)
+    .where(and(eq(schedules.classId, classId), eq(schedules.date, date), eq(schedules.startTime, startTime))).get();
+  if (dup) return res.status(409).json({ error: '该班级在此日期的同一时间已有排课' });
   const result = drizzleDb.insert(schedules).values({
     classId, date, startTime, endTime, durationBilling: billing,
     locationName: locationName ?? cls.defaultLocationName,
@@ -161,13 +169,15 @@ router.post('/batch', validateBatchCreate, handle, (req, res) => {
   // Chunk inserts to stay within SQLite's default 999-parameter limit
   const CHUNK = 50;
   const idList = [];
-  for (let i = 0; i < allValues.length; i += CHUNK) {
-    const result = drizzleDb.insert(schedules).values(allValues.slice(i, i + CHUNK)).run();
-    const firstId = Number(result.lastInsertRowid);
-    for (let j = 0; j < Math.min(CHUNK, allValues.length - i); j++) {
-      idList.push(firstId + j);
+  db.transaction(() => {
+    for (let i = 0; i < allValues.length; i += CHUNK) {
+      const result = drizzleDb.insert(schedules).values(allValues.slice(i, i + CHUNK)).run();
+      const firstId = Number(result.lastInsertRowid);
+      for (let j = 0; j < Math.min(CHUNK, allValues.length - i); j++) {
+        idList.push(firstId + j);
+      }
     }
-  }
+  })();
   logAudit({ teacherId: req.teacherId, action: 'BATCH_CREATE', tableName: 'schedules', after: { count: idList.length, ids: idList } });
   res.json({ count: idList.length, ids: idList });
 });
@@ -610,7 +620,7 @@ router.get('/export', (req, res) => {
 
 // ── Availability & Conflicts ──
 
-function getFreeSlotsForDate(dateStr, teacherId, dayStart = '08:00', dayEnd = '23:00') {
+function getFreeSlotsForDate(dateStr, teacherId, dayStart = '08:00', dayEnd = '22:30') {
   const teacherClasses = drizzleDb.select({ id: classes.id }).from(classes)
     .where(and(eq(classes.teacherId, teacherId), eq(classes.deleted, false))).all();
   const classIds = teacherClasses.map(c => c.id);
@@ -642,7 +652,7 @@ function getFreeSlotsForDate(dateStr, teacherId, dayStart = '08:00', dayEnd = '2
 router.get('/free-slots', (req, res) => {
   const { date, start, end, dayStart, dayEnd, after, before, minDuration } = req.query;
   const dStart = after || dayStart || '08:00';
-  const dEnd = before || dayEnd || '23:00';
+  const dEnd = before || dayEnd || '22:30';
   if (dStart >= dEnd) {
     return res.status(400).json({ error: 'after/dayStart 须早于 before/dayEnd（不支持跨午夜查询）' });
   }

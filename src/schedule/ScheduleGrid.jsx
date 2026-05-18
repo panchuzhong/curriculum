@@ -6,7 +6,7 @@ import DayHeader from './DayHeader';
 import ScheduleBlock from './ScheduleBlock';
 import useGridTouch from './useGridTouch';
 
-const DEFAULT_START = 7;
+const DEFAULT_START = 8;
 const DEFAULT_END = 22;
 const MIN_ROW_HEIGHT = 24;
 const TOP_OFFSET_MIN = 5;
@@ -105,7 +105,7 @@ export default function ScheduleGrid({ dates, schedules, visibleDays = 7, weekSt
   const endHour = Math.max(DEFAULT_END, Math.floor(bottomMin / 60));
 
   const displayHours = [];
-  const labelStart = startHour === 0 ? 0 : startHour + 1;
+  const labelStart = startHour;
   for (let h = labelStart; h <= endHour; h++) displayHours.push(h);
   const numDisplayHours = displayHours.length;
   const topGapFraction = TOP_OFFSET_MIN / 60;

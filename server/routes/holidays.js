@@ -88,9 +88,10 @@ router.post('/batch', validateBatchHolidays, handle, (req, res) => {
   const { items } = req.body; // [{date, type, name}]
 
   let count = 0;
+  let skipped = 0;
   db.transaction(() => {
     for (const item of items) {
-      if (!item.date || !item.type) continue;
+      if (!item.date || !item.type) { skipped++; continue; }
       const existing = drizzleDb.select().from(holidays)
         .where(and(eq(holidays.teacherId, req.teacherId), eq(holidays.date, item.date))).get();
       if (!existing) {
@@ -98,13 +99,15 @@ router.post('/batch', validateBatchHolidays, handle, (req, res) => {
           teacherId: req.teacherId, date: item.date, type: item.type, name: item.name,
         }).run();
         count++;
+      } else {
+        skipped++;
       }
     }
   })();
   if (count > 0) {
     logAudit({ teacherId: req.teacherId, action: 'BATCH_CREATE', tableName: 'holidays', after: { count } });
   }
-  res.json({ count });
+  res.json({ count, skipped });
 });
 
 export default router;

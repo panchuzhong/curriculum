@@ -18,6 +18,11 @@ router.get('/', (req, res) => {
 
 router.post('/', validateCreateTier, handle, (req, res) => {
   const { minStudents, maxStudents, pricePerStudentPerHour } = req.body;
+  // Check for overlapping ranges
+  const existing = drizzleDb.select().from(pricingTiers)
+    .where(eq(pricingTiers.teacherId, req.teacherId)).all();
+  const overlaps = existing.some(t => minStudents <= t.maxStudents && maxStudents >= t.minStudents);
+  if (overlaps) return res.status(409).json({ error: '已存在人数区间重叠的定价阶梯' });
   const result = drizzleDb.insert(pricingTiers).values({
     teacherId: req.teacherId, minStudents, maxStudents, pricePerStudentPerHour,
   }).run();
@@ -39,6 +44,11 @@ router.put('/:id', validateUpdateTier, handle, (req, res) => {
   const newMin = safeUpdates.minStudents ?? existing.minStudents;
   const newMax = safeUpdates.maxStudents ?? existing.maxStudents;
   if (newMax < newMin) return res.status(400).json({ error: '最大人数须不小于最小人数' });
+  // Check for overlapping ranges (excluding current)
+  const allTiers = drizzleDb.select().from(pricingTiers)
+    .where(eq(pricingTiers.teacherId, req.teacherId)).all();
+  const overlaps = allTiers.some(t => t.id !== +id && newMin <= t.maxStudents && newMax >= t.minStudents);
+  if (overlaps) return res.status(409).json({ error: '已存在人数区间重叠的定价阶梯' });
   drizzleDb.update(pricingTiers).set(safeUpdates).where(eq(pricingTiers.id, +id)).run();
   const updated = drizzleDb.select().from(pricingTiers).where(eq(pricingTiers.id, +id)).get();
   logAudit({ teacherId: req.teacherId, action: 'UPDATE', tableName: 'pricing_tiers', recordId: +id, before: existing, after: safeUpdates });

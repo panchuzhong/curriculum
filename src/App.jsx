@@ -17,6 +17,12 @@ import DesignPreview from './DesignPreview';
 import { api, clearToken } from './api';
 
 function PrivateRoute({ children }) {
+  const [, setTick] = useState(0);
+  useEffect(() => {
+    const onStorage = () => setTick(t => t + 1);
+    window.addEventListener('storage', onStorage);
+    return () => window.removeEventListener('storage', onStorage);
+  }, []);
   const token = localStorage.getItem('token');
   return token ? children : <Navigate to="/login" />;
 }
@@ -58,7 +64,7 @@ export default function App() {
           <Routes>
             <Route path="/login" element={<LoginPage />} />
             <Route path="/register" element={<RegisterPage />} />
-            <Route path="/design" element={<DesignPreview />} />
+            <Route path="/design" element={<PrivateRoute><DesignPreview /></PrivateRoute>} />
             <Route path="/*" element={
               <PrivateRoute>
                 <Layout>

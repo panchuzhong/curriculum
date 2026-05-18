@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import rateLimit from 'express-rate-limit';
 import { authMiddleware } from '../middleware/auth.js';
 import { drizzleDb } from '../db/index.js';
 import { schedules, classes, holidays } from '../db/schema.js';
@@ -10,6 +11,9 @@ import { resolveRange } from '../services/schedule-helpers.js';
 
 const router = Router();
 router.use(authMiddleware);
+if (process.env.NODE_ENV !== 'test') {
+  router.use(rateLimit({ windowMs: 60 * 1000, max: 30, standardHeaders: true, legacyHeaders: false }));
+}
 
 router.get('/', async (req, res) => {
   try {

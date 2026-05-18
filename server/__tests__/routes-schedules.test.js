@@ -357,7 +357,7 @@ describe('GET /api/schedules/free-slots', () => {
     const res = await request(app).get('/api/schedules/free-slots?date=2026-05-04').set(auth(token));
     expect(res.status).toBe(200);
     expect(res.body.date).toBe('2026-05-04');
-    expect(res.body.slots).toEqual([{ start: '08:00', end: '23:00' }]);
+    expect(res.body.slots).toEqual([{ start: '08:00', end: '22:30' }]);
   });
 
   it('excludes scheduled time from free slots', async () => {
@@ -367,7 +367,7 @@ describe('GET /api/schedules/free-slots', () => {
     expect(res.status).toBe(200);
     expect(res.body.slots).toEqual([
       { start: '08:00', end: '09:00' },
-      { start: '10:30', end: '23:00' },
+      { start: '10:30', end: '22:30' },
     ]);
   });
 
@@ -403,7 +403,7 @@ describe('GET /api/schedules/free-slots', () => {
     expect(res.body[0].date).toBe('2026-05-04');
     expect(res.body[0].slots).toHaveLength(2);
     expect(res.body[1].date).toBe('2026-05-05');
-    expect(res.body[1].slots).toEqual([{ start: '08:00', end: '23:00' }]);
+    expect(res.body[1].slots).toEqual([{ start: '08:00', end: '22:30' }]);
   });
 
   it('requires date or start+end', async () => {

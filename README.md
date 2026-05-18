@@ -5,7 +5,7 @@
 ## 功能特性
 
 ### 课表管理
-- **周课表**：时间轴网格，周一至周日，7:45-23:00，左右方向键切换周
+- **周课表**：时间轴网格，周一至周日，8:00-22:30，左右方向键切换周
 - **月课表**：日历视图，课程色条按实际时间定位，点击跳转周课表，左右滑动或方向键切换月
 - **年课表**：12 月概览，自动按年级/学科/竞赛分类，超限折叠，颜色与周/月课表统一，响应式布局（手机2列、桌面3列），左右方向键切换年，点击跳转月课表
 - **键盘导航**（桌面端）：上/下方向键切换侧边栏页面，左/右方向键切换课表时段
@@ -146,8 +146,8 @@ PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium-browser
 ```bash
 chmod +x scripts/release.sh
 ./scripts/release.sh
-tar -xzf release/curriculum-scheduler-v1.1.0.tar.gz
-cd curriculum-scheduler-v1.1.0
+tar -xzf release/curriculum-scheduler-v1.7.8.tar.gz
+cd curriculum-scheduler-v1.7.8
 vim .env        # 修改 JWT_SECRET
 ./start.sh
 ```
@@ -186,7 +186,7 @@ sudo systemctl start curriculum-scheduler
 **系统**
 | 方法 | 路径 | 说明 |
 |------|------|------|
-| GET | /api/agent/help | API 帮助文档（公开） |
+| GET | /api/agent/help | API 帮助文档（需认证） |
 | GET | /api/health | 健康检查（公开） |
 
 **认证**

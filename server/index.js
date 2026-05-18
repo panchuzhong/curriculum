@@ -17,6 +17,15 @@ import backupRoutes from './routes/backup.js';
 const app = express();
 app.use(express.json({ limit: '50mb' }));
 
+// Security headers
+app.use((req, res, next) => {
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-Frame-Options', 'DENY');
+  res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+  res.setHeader('Access-Control-Allow-Origin', 'same-origin');
+  next();
+});
+
 app.use((req, res, next) => {
   const origJson = res.json.bind(res);
   res.json = (body) => {
@@ -30,6 +39,7 @@ app.use((req, res, next) => {
 initDb();
 
 // Public routes
+// agent-help requires auth to avoid exposing API surface
 app.use('/api', agentHelpRoutes);
 app.use('/api/auth', authRoutes);
 app.use('/api/classes', classRoutes);

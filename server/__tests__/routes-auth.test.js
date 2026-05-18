@@ -13,7 +13,7 @@ beforeEach(async () => {
 describe('POST /api/auth/register', () => {
   it('registers and returns token + apiKey', async () => {
     const res = await request(app).post('/api/auth/register')
-      .send({ username: 'testuser', password: 'test123', name: 'Test' });
+      .send({ username: 'testuser', password: 'test1234', name: 'Test' });
     expect(res.status).toBe(200);
     expect(res.body.token).toBeDefined();
     expect(res.body.apiKey).toBeDefined();
@@ -21,21 +21,21 @@ describe('POST /api/auth/register', () => {
 
   it('rejects duplicate username', async () => {
     await request(app).post('/api/auth/register')
-      .send({ username: 'testuser', password: 'test123', name: 'Test' });
+      .send({ username: 'testuser', password: 'test1234', name: 'Test' });
     // Route auto-closes registration after first user, reset it to test duplicate check
     process.env.ALLOW_REGISTRATION = 'true';
     const res = await request(app).post('/api/auth/register')
-      .send({ username: 'testuser', password: 'test123', name: 'Test' });
+      .send({ username: 'testuser', password: 'test1234', name: 'Test' });
     expect(res.status).toBe(409);
   });
 
   it('rejects short username (<3 chars)', async () => {
     const res = await request(app).post('/api/auth/register')
-      .send({ username: 'ab', password: 'test123', name: 'Test' });
+      .send({ username: 'ab', password: 'test1234', name: 'Test' });
     expect(res.status).toBe(400);
   });
 
-  it('rejects short password (<6 chars)', async () => {
+  it('rejects short password (<8 chars)', async () => {
     const res = await request(app).post('/api/auth/register')
       .send({ username: 'testuser', password: '12345', name: 'Test' });
     expect(res.status).toBe(400);
@@ -50,7 +50,7 @@ describe('POST /api/auth/register', () => {
   it('rejects when registration is closed', async () => {
     process.env.ALLOW_REGISTRATION = 'false';
     const res = await request(app).post('/api/auth/register')
-      .send({ username: 'newuser', password: 'test123', name: 'New' });
+      .send({ username: 'newuser', password: 'test1234', name: 'New' });
     expect(res.status).toBe(403);
   });
 });
@@ -58,12 +58,12 @@ describe('POST /api/auth/register', () => {
 describe('POST /api/auth/login', () => {
   beforeEach(async () => {
     await request(app).post('/api/auth/register')
-      .send({ username: 'testuser', password: 'test123', name: 'Test' });
+      .send({ username: 'testuser', password: 'test1234', name: 'Test' });
   });
 
   it('logs in with correct credentials', async () => {
     const res = await request(app).post('/api/auth/login')
-      .send({ username: 'testuser', password: 'test123' });
+      .send({ username: 'testuser', password: 'test1234' });
     expect(res.status).toBe(200);
     expect(res.body.token).toBeDefined();
   });
@@ -76,7 +76,7 @@ describe('POST /api/auth/login', () => {
 
   it('rejects non-existent user', async () => {
     const res = await request(app).post('/api/auth/login')
-      .send({ username: 'nobody', password: 'test123' });
+      .send({ username: 'nobody', password: 'test1234' });
     expect(res.status).toBe(401);
   });
 });
@@ -119,7 +119,7 @@ describe('PUT /api/auth/password', () => {
   it('rejects short new password', async () => {
     const { token } = await makeUser(drizzleDb);
     const res = await request(app).put('/api/auth/password').set(auth(token))
-      .send({ oldPassword: 'pass123', newPassword: '12345' });
+      .send({ oldPassword: 'pass123', newPassword: '1234567' });
     expect(res.status).toBe(400);
   });
 });

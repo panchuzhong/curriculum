@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import rateLimit from 'express-rate-limit';
 import { drizzleDb, db } from '../db/index.js';
 import { classes, pricingTiers, students, classStudents, schedules, holidays, semesters, auditLog, classPricing } from '../db/schema.js';
 import { eq, inArray } from 'drizzle-orm';
@@ -10,6 +11,9 @@ const BACKUP_VERSION = 1;
 
 const router = Router();
 router.use(authMiddleware);
+if (process.env.NODE_ENV !== 'test') {
+  router.use(rateLimit({ windowMs: 60 * 1000, max: 10, standardHeaders: true, legacyHeaders: false }));
+}
 
 router.get('/', (req, res) => {
   const tid = req.teacherId;
@@ -165,7 +169,7 @@ router.post('/restore', (req, res) => {
       counts.auditLog = restoreData.auditLog.length;
     })();
   } catch (err) {
-    return res.status(500).json({ error: `还原失败: ${err.message || '未知错误'}（事务已回滚，原数据保留）` });
+    return res.status(500).json({ error: '还原失败，事务已回滚，原数据保留' });
   }
 
   res.json({ ok: true, restored: counts });

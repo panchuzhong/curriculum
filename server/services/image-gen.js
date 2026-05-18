@@ -53,7 +53,7 @@ export async function generateScheduleImage(schedulesWithClasses, startDate, end
     if (byDate[s.date]) byDate[s.date].push(s);
   });
 
-  const DEFAULT_START = 7;
+  const DEFAULT_START = 8;
   const DEFAULT_END = 22;
   const BOTTOM_OFFSET_MIN = 30;
 
@@ -73,7 +73,7 @@ export async function generateScheduleImage(schedulesWithClasses, startDate, end
   const endHour = Math.max(DEFAULT_END, Math.floor(bottomMin / 60));
   const rowHSafe = Math.max(16, Math.min(60, +rowH || 40));
   const TOP_GAP = 5 / 60 * rowHSafe;
-  const firstLabelHour = startHour === 0 ? 0 : startHour + 1;
+  const firstLabelHour = startHour;
   const numHours = endHour - firstLabelHour + 1;
   const bottomFraction = (bottomMin - endHour * 60) / 60;
   const totalH = TOP_GAP + (numHours - 1) * rowHSafe + bottomFraction * rowHSafe;
@@ -130,21 +130,28 @@ export async function generateScheduleImage(schedulesWithClasses, startDate, end
     headerLinesHtml += `<div style="position:absolute;top:0;left:${timeColW + i * colW}px;width:1px;height:100%;background:${c.gridBorder}"></div>`;
   }
   headerLinesHtml += `<div style="position:absolute;top:0;left:${timeColW}px;width:1px;height:100%;background:${c.gridBorder}"></div>`;
+  headerLinesHtml += `<div style="position:absolute;top:0;left:${totalW}px;width:1px;height:100%;background:${c.gridBorder}"></div>`;
   headerHtml += headerLinesHtml + '</div>';
 
-  // ── Grid lines & labels (08:00–23:00) ──────────────────────────
+  // ── Grid lines & labels (08:00–22:30) ──────────────────────────
   let gridHtml = '';
   for (let h = firstLabelHour; h <= endHour; h++) {
     const top = TOP_GAP + (h - firstLabelHour) * rowHSafe;
     gridHtml += `<div style="position:absolute;top:${top}px;left:0;width:${totalW}px;height:1px;background:${c.gridBorder}"></div>`;
     gridHtml += `<div style="position:absolute;top:${top}px;left:0;width:${timeColW}px;height:${rowHSafe}px;background:${c.bg};z-index:2;pointer-events:none">`;
-    gridHtml +=   `<span style="position:absolute;top:-7px;left:50%;transform:translateX(-50%);font-size:11px;color:${c.timeText};white-space:nowrap">${String(h).padStart(2, '0')}:00</span>`;
+    gridHtml +=   `<span style="position:absolute;top:-7px;right:8px;font-size:11px;color:${c.timeText};white-space:nowrap">${String(h).padStart(2, '0')}:00</span>`;
     gridHtml += `</div>`;
   }
+  // Left boundary of first day column (time column separator)
+  gridHtml += `<div style="position:absolute;top:0;left:${timeColW}px;width:1px;height:${totalH}px;background:${c.gridBorder}"></div>`;
   for (let i = 1; i < numDays; i++) {
     const left = timeColW + i * colW;
     gridHtml += `<div style="position:absolute;top:0;left:${left}px;width:1px;height:${totalH}px;background:${c.gridBorder}"></div>`;
   }
+  // Right boundary of last day column
+  gridHtml += `<div style="position:absolute;top:0;left:${totalW}px;width:1px;height:${totalH}px;background:${c.gridBorder}"></div>`;
+  // Bottom border
+  gridHtml += `<div style="position:absolute;top:${totalH}px;left:0;width:${totalW}px;height:1px;background:${c.gridBorder}"></div>`;
 
   // ── Today column highlight ──────────────────────────────────────
   const todayIdx = dates.indexOf(todayStr);
@@ -219,7 +226,7 @@ export async function generateScheduleImage(schedulesWithClasses, startDate, end
 </style></head><body>
   <h1>${startDate} ~ ${endDate}</h1>
   ${headerHtml}
-  <div style="position:relative;width:${totalW}px;height:${totalH}px">
+  <div style="position:relative;width:${totalW}px;height:${totalH + 1}px">
     ${gridHtml}
     ${blocksHtml}
   </div>
@@ -230,7 +237,7 @@ export async function generateScheduleImage(schedulesWithClasses, startDate, end
   try {
     await page.setContent(html, { waitUntil: 'networkidle0', timeout: 30000 });
     const scaleFactor = scale ? Math.max(0.25, Math.min(4, +scale)) : 3;
-    await page.setViewport({ width: Math.ceil(totalW), height: 800, deviceScaleFactor: scaleFactor });
+    await page.setViewport({ width: Math.ceil(totalW) + 2, height: 800, deviceScaleFactor: scaleFactor });
     const clipRect = await page.evaluate(() => {
       const r = document.documentElement.getBoundingClientRect();
       return { x: 0, y: 0, w: r.width, h: r.height };

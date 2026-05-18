@@ -11,6 +11,9 @@ const DEFAULT_TIERS = [
 ];
 
 export function seedPricingTiers(teacherId) {
+  const existing = drizzleDb.select().from(pricingTiers)
+    .where(eq(pricingTiers.teacherId, teacherId)).all();
+  if (existing.length > 0) return;
   for (const tier of DEFAULT_TIERS) {
     drizzleDb.insert(pricingTiers).values({
       teacherId,

@@ -2,38 +2,35 @@ import puppeteer from 'puppeteer';
 
 let browserPromise = null;
 
+function launchBrowser() {
+  return puppeteer.launch({
+    headless: 'new',
+    args: [
+      '--no-sandbox',
+      '--disable-setuid-sandbox',
+      '--disable-dev-shm-usage',
+      '--disable-gpu',
+      '--disable-software-rasterizer',
+    ],
+    executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || undefined,
+  });
+}
+
 export async function getBrowser() {
-  if (!browserPromise) {
-    browserPromise = puppeteer.launch({
-      headless: 'new',
-      args: [
-        '--no-sandbox',
-        '--disable-setuid-sandbox',
-        '--disable-dev-shm-usage',
-        '--disable-gpu',
-        '--disable-software-rasterizer',
-      ],
-      executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || undefined,
-    }).catch(err => {
+  if (browserPromise) {
+    try {
+      const browser = await browserPromise;
+      if (browser.connected) return browser;
       browserPromise = null;
-      throw err;
-    });
+    } catch {
+      browserPromise = null;
+    }
   }
-  try {
-    return await browserPromise;
-  } catch {
+  browserPromise = launchBrowser().catch(err => {
     browserPromise = null;
-    // Retry once
-    browserPromise = puppeteer.launch({
-      headless: 'new',
-      args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--disable-gpu', '--disable-software-rasterizer'],
-      executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || undefined,
-    }).catch(err => {
-      browserPromise = null;
-      throw err;
-    });
-    return browserPromise;
-  }
+    throw err;
+  });
+  return browserPromise;
 }
 
 export async function closeBrowser() {

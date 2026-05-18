@@ -1,5 +1,7 @@
 import { Router } from 'express';
+import { authMiddleware } from '../middleware/auth.js';
 const router = Router();
+router.use(authMiddleware);
 
 router.get('/agent/help', (req, res) => {
   res.json({
@@ -20,7 +22,7 @@ router.get('/agent/help', (req, res) => {
     },
     endpoints: {
       system: {
-        'GET /api/agent/help': '获取此帮助文档（公开，无需认证）',
+        'GET /api/agent/help': '获取此帮助文档（需认证）',
         'GET /api/health': '健康检查（公开，无需认证）',
       },
       auth: {
@@ -62,7 +64,7 @@ router.get('/agent/help', (req, res) => {
         'GET /api/schedules?range=today|tomorrow|week|month': '快捷范围：today=今天，tomorrow=明天，week=本周（周一到周日），month=本月。与 start/end 互斥',
         'GET /api/schedules?start=&end=&classId=1,2,3': '同上，额外按班级 ID 过滤（逗号分隔多个，服务端过滤，节省流量）',
         'GET /api/schedules/:id': '获取单条排课详情（含班级信息）',
-        'POST /api/schedules': '创建单次排课，返回完整排课对象（含 class 字段）；如有时间冲突，额外返回 warnings 数组（不阻止创建）',
+        'POST /api/schedules': '创建单次排课（同一 classId+date+startTime 重复返回 409），返回完整排课对象（含 class 字段）；如有时间冲突，额外返回 warnings 数组（不阻止创建）',
         'PUT /api/schedules/:id': '更新排课（输入经 express-validator 校验），返回完整排课对象；时间变更时自动重算 durationBilling；如有冲突返回 warnings；变更 classId 时校验目标班级归属且未软删除',
         'DELETE /api/schedules/:id': '删除单条排课，返回 {ok:true}',
         'DELETE /api/schedules/batch': '批量删除排课（见 batchDeleteModes）',
@@ -70,15 +72,15 @@ router.get('/agent/help', (req, res) => {
         'PUT /api/schedules/batch': '批量更新排课时间/地点（见 batchUpdateMode）',
         'GET /api/schedules/summary?start=YYYY-MM-DD&end=YYYY-MM-DD': '课时与收入汇总统计（见 summaryResponse）；同样支持 range 快捷参数；加 &format=csv 返回 CSV 文件（UTF-8 BOM，Excel 兼容）；加 &classId=1 或 &classId=1,2,3 按班级过滤',
         'GET /api/schedules/export?start=YYYY-MM-DD&end=YYYY-MM-DD': '导出排课明细列表（含班级信息）；同样支持 range 快捷参数；加 &classId=1,2,3 逗号分隔过滤班级；加 &format=csv 返回 CSV',
-        'GET /api/schedules/free-slots?date=YYYY-MM-DD': '查询单日空闲时段（默认 08:00-23:00；可用 after=HH:MM&before=HH:MM 限制时段;不支持跨午夜,after≥before 返回 400）；返回 {date, slots:[{start,end}]}',
+        'GET /api/schedules/free-slots?date=YYYY-MM-DD': '查询单日空闲时段（默认 08:00-22:30；可用 after=HH:MM&before=HH:MM 限制时段;不支持跨午夜,after≥before 返回 400）；返回 {date, slots:[{start,end}]}',
         'GET /api/schedules/free-slots?date=&minDuration=60': '只返回连续可用 ≥60 分钟的时段，适合约课筛选',
         'GET /api/schedules/free-slots?start=YYYY-MM-DD&end=YYYY-MM-DD': '查询多日空闲时段（同样支持 after/before/minDuration）；返回 [{date, slots:[{start,end}]}]（仅含有时段的日期）',
         'GET /api/schedules/conflicts?start=YYYY-MM-DD&end=YYYY-MM-DD&limit=N': '查询冲突排课分组（默认今天起60天，limit 上限100，默认20）；加 &classId=1,2,3 逗号分隔按班级过滤',
       },
       semesters: {
         'GET /api/semesters': '获取学期列表',
-        'POST /api/semesters': '创建学期，返回完整学期对象',
-        'PUT /api/semesters/:id': '更新学期，返回完整学期对象',
+        'POST /api/semesters': '创建学期，日期范围不可与已有学期重叠（否则 409），返回完整学期对象',
+        'PUT /api/semesters/:id': '更新学期，日期范围不可与其它学期重叠（否则 409），返回完整学期对象',
         'DELETE /api/semesters/:id': '删除学期，返回 {ok:true}',
       },
       holidays: {
@@ -87,7 +89,7 @@ router.get('/agent/help', (req, res) => {
         'POST /api/holidays': '添加节假日/调休（需 date, type: holiday|workday, name），返回完整节假日对象',
         'PUT /api/holidays/:id': '更新节假日记录（变更日期时校验不与已有记录重复），返回完整节假日对象',
         'DELETE /api/holidays/:id': '删除节假日记录，返回 {ok:true}',
-        'POST /api/holidays/batch': '批量导入节假日（需 items 数组），返回 {count: N}',
+        'POST /api/holidays/batch': '批量导入节假日（需 items 数组），返回 {count, skipped}（缺少 date 或 type 的项跳过计入 skipped）',
       },
       pricingTiers: {
         'GET /api/pricing-tiers': '获取定价阶梯列表',
@@ -283,7 +285,7 @@ router.get('/agent/help', (req, res) => {
       'POST/PUT /api/holidays 变更日期时会检查是否与已有节假日记录重复，重复则返回 409 {error:"该日期已有记录"}',
       '审计日志（audit_log）覆盖：排课 CREATE/UPDATE/DELETE/BATCH_CREATE/BATCH_UPDATE/BATCH_DELETE；班级 CREATE/UPDATE/DELETE（含恢复操作）；学生 CREATE/UPDATE/DELETE（含子路由 POST/DELETE /api/classes/:cid/students）；节假日 CREATE/UPDATE/DELETE/BATCH_CREATE；定价阶梯 CREATE/UPDATE/DELETE；学期 CREATE/UPDATE/DELETE；班级定价（class_pricing）CREATE/UPDATE/DELETE；教师（teachers）API Key 轮换/密码修改/学科更新。日志超过 10000 条时自动删除最旧记录',
       '注册成功后系统自动将 ALLOW_REGISTRATION 设为 false，单用户设计',
-      'rate limiting：仅 POST /api/auth/register 与 POST /api/auth/login 启用 60 次/分钟限速；其它认证后端点（含 PUT /api/auth/api-key、PUT /api/auth/password 与各资源 CRUD）不受 rate limit 保护',
+      'rate limiting：POST /api/auth/register 与 POST /api/auth/login 启用 60 次/分钟限速；PUT /api/auth/api-key 与 PUT /api/auth/password 同样受 auth 限速保护；GET /api/backup 启用 10 次/分钟限速；GET /api/schedule-image（含 /monthly、/yearly）启用 30 次/分钟限速；其余认证后端点不限速',
       '所有写接口均使用 express-validator 校验输入（POST /api/backup/restore 和 PUT /api/auth/api-key 因无标准字段或 payload 特殊，采用手动校验），校验失败返回 400 {error: "提示信息"}，详见下方 validationRules',
       'GET /api/schedules 和 GET /api/schedules/export 的 classId 参数支持逗号分隔多值（如 classId=1,2,3），与 summary 端点一致',
       '批量创建/删除/更新返回 {count, ids} 汇总；单条操作（GET/POST/PUT）返回完整的排课对象（含 class 字段）',
@@ -297,9 +299,9 @@ router.get('/agent/help', (req, res) => {
     ],
     validationRules: {
       auth: {
-        register: { username: '3-20位字母数字', password: '至少6位', name: '必填' },
+        register: { username: '3-20位字母数字', password: '至少8位', name: '必填' },
         login: { username: '必填', password: '必填' },
-        changePassword: { oldPassword: '必填', newPassword: '至少6位' },
+        changePassword: { oldPassword: '必填', newPassword: '至少8位' },
         updateSubjects: { subjects: '字符串数组，每项1-20字符' },
       },
       classes: {
@@ -325,7 +327,7 @@ router.get('/agent/help', (req, res) => {
       holidays: {
         create: { date: 'YYYY-MM-DD 必填', type: '枚举：holiday/workday', name: '必填非空' },
         update: { date: '可选 YYYY-MM-DD（变更时校验不与已有记录重复，重复返回 409）', type: '可选枚举', name: '可选,传则不能为空字符串' },
-        batch: { items: '数组,最多 365 项;同一 date 仅插入第一条（重复跳过）' },
+        batch: { items: '数组,最多 365 项;缺少 date 或 type 的项跳过;同一 date 仅插入第一条（重复跳过,返回 {count, skipped}）' },
       },
       pricingTiers: {
         create: { minStudents: '≥1整数', maxStudents: '≥1整数,须不小于 minStudents', pricePerStudentPerHour: '>0 数字' },

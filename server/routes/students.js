@@ -54,11 +54,13 @@ router.get('/by-class/:classId', (req, res) => {
 
   const byClassStudents = drizzleDb.select().from(students)
     .where(and(eq(students.teacherId, req.teacherId), inArray(students.id, studentIds))).all();
-  const allLinks = drizzleDb.select().from(classStudents).all();
+  const allLinks = studentIds.length
+    ? drizzleDb.select({ studentId: classStudents.studentId, classId: classStudents.classId }).from(classStudents)
+        .where(inArray(classStudents.studentId, studentIds)).all()
+    : [];
   const linksByStudent = {};
   for (const l of allLinks) {
-    if (!linksByStudent[l.studentId]) linksByStudent[l.studentId] = [];
-    linksByStudent[l.studentId].push(l.classId);
+    (linksByStudent[l.studentId] ??= []).push(l.classId);
   }
   res.json(byClassStudents.map(s => ({ ...s, classIds: linksByStudent[s.id] || [] })));
 });
