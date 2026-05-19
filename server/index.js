@@ -39,9 +39,9 @@ app.use((req, res, next) => {
 initDb();
 
 // Public routes
-// agent-help requires auth to avoid exposing API surface
-app.use('/api', agentHelpRoutes);
+// auth routes must come before agentHelpRoutes to allow unauthenticated login/register
 app.use('/api/auth', authRoutes);
+app.use('/api', agentHelpRoutes);
 app.use('/api/classes', classRoutes);
 app.use('/api/pricing-tiers', pricingTierRoutes);
 app.use('/api/students', studentRoutes);

@@ -1,9 +1,7 @@
 import { Router } from 'express';
 import { authMiddleware } from '../middleware/auth.js';
 const router = Router();
-router.use(authMiddleware);
-
-router.get('/agent/help', (req, res) => {
+router.get('/agent/help', authMiddleware, (req, res) => {
   res.json({
     name: '课表管理系统 API',
     version: '1.7.8',
