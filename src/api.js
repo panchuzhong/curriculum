@@ -84,6 +84,19 @@ export const api = {
     if (classId) url += `&classId=${classId}`;
     return request('GET', url);
   },
+  getScheduleSummary: (start, end, classId) => {
+    let url = `/schedules/summary?start=${start}&end=${end}`;
+    if (classId) url += `&classId=${classId}`;
+    return request('GET', url);
+  },
+  exportScheduleCSV: async (start, end, classId) => {
+    let url = `${API_BASE}/schedules/export?format=csv&start=${start}&end=${end}`;
+    if (classId) url += `&classId=${classId}`;
+    const res = await fetch(url, { headers: { Authorization: `Bearer ${getToken()}` } });
+    if (res.status === 401) { clearToken(); throw new Error('登录已过期,请重新登录'); }
+    if (!res.ok) throw new Error('导出失败');
+    return res.blob();
+  },
   createSchedule: (data) => request('POST', '/schedules', data),
   batchSchedules: (data) => request('POST', '/schedules/batch', data),
   batchDeleteSchedules: (data) => request('DELETE', '/schedules/batch', data),

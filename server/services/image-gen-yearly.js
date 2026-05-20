@@ -219,11 +219,11 @@ export async function generateYearlyImage(schedulesWithClasses, year, { theme = 
       const r = document.body.getBoundingClientRect();
       return { x: r.x, y: r.y, w: r.width, h: r.height };
     });
-    const buffer = await page.screenshot({
+    const buf = await page.screenshot({
       type: 'png', timeout: 30000,
       clip: { x: bodyBox.x, y: bodyBox.y, width: bodyBox.w, height: bodyBox.h },
     });
-    return buffer;
+    return Buffer.from(buf);
   } finally {
     await page.close();
   }

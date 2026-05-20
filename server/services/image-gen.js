@@ -242,11 +242,11 @@ export async function generateScheduleImage(schedulesWithClasses, startDate, end
       const r = document.documentElement.getBoundingClientRect();
       return { x: 0, y: 0, w: r.width, h: r.height };
     });
-    const buffer = await page.screenshot({
+    const buf = await page.screenshot({
       type: 'png', timeout: 30000,
       clip: { x: 0, y: 0, width: clipRect.w, height: clipRect.h },
     });
-    return buffer;
+    return Buffer.from(buf);
   } finally {
     await page.close();
   }

@@ -1,6 +1,5 @@
 import { useState } from 'react';
 import { api, API_BASE, getToken } from '../api';
-import { parseDateStr } from '../utils/date';
 import { useToast } from '../components/ToastProvider';
 
 export default function useScheduleExport({ weekStart, visibleDays, addDays }) {
@@ -40,28 +39,7 @@ export default function useScheduleExport({ weekStart, visibleDays, addDays }) {
   async function exportCSV(start, end) {
     setExporting(true);
     try {
-      const weekdayNames = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
-      const data = await api.getSchedules(start, end);
-      const rows = [['日期', '星期', '班级', '年级', '学科', '开始时间', '结束时间', '计费时长(分钟)', '上课地点', '竞赛课', '单价', '学生人数', '优惠金额']];
-      const sorted = [...data].sort((a, b) =>
-        a.date !== b.date ? a.date.localeCompare(b.date) : a.startTime.localeCompare(b.startTime)
-      );
-      sorted.forEach(s => {
-        const d = parseDateStr(s.date);
-        rows.push([
-          s.date, weekdayNames[d.getDay()],
-          s.class?.name ?? '', s.class?.grade ?? '', s.class?.subject ?? '',
-          s.startTime, s.endTime, s.durationBilling, s.locationName ?? '',
-          s.class?.isCompetition ? '是' : '否',
-          s.class?.unitPrice ?? '', s.class?.studentCount ?? '', s.class?.discountAmount ?? '',
-        ]);
-      });
-      const csv = rows.map(r => r.map(c => {
-        const v = String(c ?? '');
-        const safe = /^[=+\-@\t\r]/.test(v) ? "'" + v : v;
-        return `"${safe.replace(/"/g, '""')}"`;
-      }).join(',')).join('\n');
-      const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8' });
+      const blob = await api.exportScheduleCSV(start, end);
       const objUrl = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = objUrl;

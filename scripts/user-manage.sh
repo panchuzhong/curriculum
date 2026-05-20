@@ -17,6 +17,9 @@ Usage: bash scripts/user-manage.sh <command> [args...]
 Commands:
   list                        List all teachers (id, username, name, created)
   info      [teacher-id]      Show detailed info for a teacher (default: 1)
+  register  <username> <name> <password>
+                              Register a new teacher (generates API key,
+                              seeds default pricing tiers)
   reset-pw  <new-password> [teacher-id]
                               Reset password (default teacher-id: 1)
   delete    <teacher-id>      Delete a teacher and ALL their data
@@ -29,6 +32,7 @@ Examples:
   bash scripts/user-manage.sh list
   bash scripts/user-manage.sh info
   bash scripts/user-manage.sh info 2
+  bash scripts/user-manage.sh register teacher01 "张老师" mypassword
   bash scripts/user-manage.sh reset-pw mynewpassword
   bash scripts/user-manage.sh delete 3
 EOF
@@ -42,6 +46,13 @@ if [ ! -f "$DB" ]; then
   exit 1
 fi
 
+validate_tid() {
+  if [[ ! "$1" =~ ^[0-9]+$ ]]; then
+    echo "Error: teacher-id must be a positive integer, got: $1"
+    exit 1
+  fi
+}
+
 # ── list ──────────────────────────────────────────────────────────
 if [ "$CMD" = "list" ]; then
   echo "ID  Username        Name                 Created"
@@ -54,6 +65,7 @@ fi
 # ── info ──────────────────────────────────────────────────────────
 if [ "$CMD" = "info" ]; then
   TID="${2:-1}"
+  validate_tid "$TID"
   USER=$(sqlite3 "$DB" "SELECT id, username, name, api_key, subjects, created_at FROM teachers WHERE id = $TID;")
   if [ -z "$USER" ]; then
     echo "Error: Teacher id=$TID not found."
@@ -80,6 +92,53 @@ EOF
   exit 0
 fi
 
+# ── register ────────────────────────────────────────────────────────
+if [ "$CMD" = "register" ]; then
+  USERNAME="${2:-}"
+  NAME="${3:-}"
+  PASS="${4:-}"
+
+  if [ -z "$USERNAME" ] || [ -z "$NAME" ] || [ -z "$PASS" ]; then
+    echo "Usage: bash scripts/user-manage.sh register <username> <name> <password>"
+    exit 1
+  fi
+
+  # Escape single quotes for SQL safety
+  SQL_USER="${USERNAME//\'/\'\'}"
+  SQL_NAME="${NAME//\'/\'\'}"
+
+  EXISTS=$(sqlite3 "$DB" "SELECT COUNT(*) FROM teachers WHERE username = '${SQL_USER}';")
+  if [ "$EXISTS" -gt 0 ]; then
+    echo "Error: Username '$USERNAME' already taken."
+    exit 1
+  fi
+
+  HASH=$(node -e "const bcrypt=require('bcryptjs');bcrypt.hash(process.argv[1],12).then(h=>console.log(h))" "$PASS")
+  API_KEY=$(node -e "const {v4}=require('uuid');console.log(v4())")
+  SUBJECTS='["数学","物理","化学","英语","语文","生物","历史","地理","政治"]'
+
+  sqlite3 "$DB" "INSERT INTO teachers (username, password_hash, name, api_key, subjects) VALUES ('${SQL_USER}', '$HASH', '${SQL_NAME}', '$API_KEY', '$SUBJECTS');"
+
+  TID=$(sqlite3 "$DB" "SELECT last_insert_rowid();")
+
+  # Seed default pricing tiers
+  sqlite3 "$DB" <<SQL
+INSERT INTO pricing_tiers (teacher_id, min_students, max_students, price_per_student_per_hour) VALUES ($TID, 1, 1, 800);
+INSERT INTO pricing_tiers (teacher_id, min_students, max_students, price_per_student_per_hour) VALUES ($TID, 2, 2, 600);
+INSERT INTO pricing_tiers (teacher_id, min_students, max_students, price_per_student_per_hour) VALUES ($TID, 3, 3, 500);
+INSERT INTO pricing_tiers (teacher_id, min_students, max_students, price_per_student_per_hour) VALUES ($TID, 4, 4, 400);
+INSERT INTO pricing_tiers (teacher_id, min_students, max_students, price_per_student_per_hour) VALUES ($TID, 5, 999, 200);
+SQL
+
+  echo "Teacher registered successfully."
+  echo ""
+  echo "ID        : $TID"
+  echo "Username  : $USERNAME"
+  echo "Name      : $NAME"
+  echo "API Key   : $API_KEY"
+  exit 0
+fi
+
 # ── reset-pw ──────────────────────────────────────────────────────
 if [ "$CMD" = "reset-pw" ]; then
   PASS="${2:-}"
@@ -90,6 +149,7 @@ if [ "$CMD" = "reset-pw" ]; then
     exit 1
   fi
 
+  validate_tid "$TID"
   EXISTS=$(sqlite3 "$DB" "SELECT COUNT(*) FROM teachers WHERE id = $TID;")
   if [ "$EXISTS" -eq 0 ]; then
     echo "Error: Teacher id=$TID not found."
@@ -97,7 +157,8 @@ if [ "$CMD" = "reset-pw" ]; then
   fi
 
   HASH=$(node -e "const bcrypt=require('bcryptjs');bcrypt.hash(process.argv[1],10).then(h=>console.log(h))" "$PASS")
-  sqlite3 "$DB" "UPDATE teachers SET password_hash = '$HASH' WHERE id = $TID;"
+  SQL_HASH="${HASH//\'/\'\'}"
+  sqlite3 "$DB" "UPDATE teachers SET password_hash = '${SQL_HASH}' WHERE id = $TID;"
   echo "Password updated for teacher id=$TID."
   exit 0
 fi
@@ -115,6 +176,7 @@ if [ "$CMD" = "delete" ]; then
     exit 1
   fi
 
+  validate_tid "$TID"
   USER=$(sqlite3 "$DB" "SELECT username || ' (' || name || ')' FROM teachers WHERE id = $TID;")
   if [ -z "$USER" ]; then
     echo "Error: Teacher id=$TID not found."

@@ -8,6 +8,11 @@ if (!JWT_SECRET) {
   console.error('FATAL: JWT_SECRET environment variable is not set');
   process.exit(1);
 }
+const INSECURE_SECRETS = ['change-me', 'change-me-to-a-random-string', 'secret', 'your-secret-key'];
+if (INSECURE_SECRETS.includes(JWT_SECRET)) {
+  console.error('FATAL: JWT_SECRET is set to a known insecure default. Please set a strong random secret.');
+  process.exit(1);
+}
 const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || '7d';
 
 export function authMiddleware(req, res, next) {

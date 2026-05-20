@@ -1,16 +1,16 @@
 import { body } from 'express-validator';
+import { isValidDate } from './dates.js';
 
-const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const VALID_TYPES = ['holiday', 'workday'];
 
 export const validateCreateHoliday = [
-  body('date').matches(DATE_RE).withMessage('日期格式须为 YYYY-MM-DD'),
+  body('date').custom(v => { if (!isValidDate(v)) throw new Error('日期格式须为有效的 YYYY-MM-DD'); return true; }),
   body('type').isIn(VALID_TYPES).withMessage('类型须为 holiday 或 workday'),
   body('name').notEmpty().withMessage('名称不能为空'),
 ];
 
 export const validateUpdateHoliday = [
-  body('date').optional().matches(DATE_RE).withMessage('日期格式须为 YYYY-MM-DD'),
+  body('date').optional().custom(v => { if (!isValidDate(v)) throw new Error('日期格式须为有效的 YYYY-MM-DD'); return true; }),
   body('type').optional().isIn(VALID_TYPES).withMessage('类型须为 holiday 或 workday'),
   body('name').optional().notEmpty().withMessage('名称不能为空'),
 ];

@@ -1,14 +1,9 @@
 import { useState, useEffect, useContext, useCallback, useMemo } from 'react';
 import { api } from '../api';
 import { getClassColor, DarkContext } from '../utils/colors';
-import { SUBJECT_HUES, GRADES } from '../utils/constants';
-import { todayStr, getMonday, addDays, getMonthRange, getYearRange, toHoursAbs } from '../utils/date';
+import { SUBJECT_HUES } from '../utils/constants';
+import { todayStr, getMonday, addDays, getMonthRange, getYearRange } from '../utils/date';
 import { useToast } from '../components/ToastProvider';
-
-function calcRevenue(cls, durationBilling) {
-  const hours = toHoursAbs(durationBilling);
-  return (cls.unitPrice * cls.studentCount - (cls.discountAmount || 0)) * hours;
-}
 
 function groupBy(arr, fn) {
   const map = {};
@@ -66,7 +61,7 @@ export default function Reports() {
   const toast = useToast();
   const [tab, setTab] = useState('week'); // week | month | year | custom
   const [classes, setClasses] = useState([]);
-  const [schedules, setSchedules] = useState([]);
+  const [summary, setSummary] = useState(null);
   const [period, setPeriod] = useState(null);
   const [year, setYear] = useState(new Date().getFullYear());
   const [month, setMonth] = useState(new Date().getMonth());
@@ -98,100 +93,89 @@ export default function Reports() {
 
     if (!start || !end || start > end) return;
     setPeriod({ start, end });
-    api.getSchedules(start, end).then(setSchedules).catch(e => toast(e.message || '加载课表失败'));
+    api.getScheduleSummary(start, end).then(setSummary).catch(e => toast(e.message || '加载报表失败'));
   }, [tab, year, month, customStart, customEnd]);
 
   const loadWeek = useCallback((monday) => {
     const end = addDays(monday, 6);
     setPeriod({ start: monday, end });
-    api.getSchedules(monday, end).then(setSchedules).catch(e => toast(e.message || '加载课表失败'));
+    api.getScheduleSummary(monday, end).then(setSummary).catch(e => toast(e.message || '加载报表失败'));
   }, []);
 
-  // useMemo hooks must be before any conditional return
   const classMap = useMemo(() => {
     const m = {};
     classes.forEach(c => m[c.id] = c);
     return m;
   }, [classes]);
 
-  const enriched = useMemo(() =>
-    schedules.filter(s => classMap[s.classId]).map(s => ({ ...s, class: classMap[s.classId] })),
-    [schedules, classMap]);
+  const { totalCount, totalHours, totalRevenue, subjectData, gradeData, classData, monthData } = useMemo(() => {
+    if (!summary) return { totalCount: 0, totalHours: 0, totalRevenue: 0, subjectData: [], gradeData: [], classData: [], monthData: [] };
 
-  const filtered = useMemo(() =>
-    filterClassId ? enriched.filter(s => s.classId === +filterClassId) : enriched,
-    [enriched, filterClassId]);
+    const filteredByClass = filterClassId
+      ? summary.byClass.filter(b => b.classId === +filterClassId)
+      : summary.byClass;
 
-  const totalHours = useMemo(() => filtered.reduce((sum, s) => sum + toHoursAbs(s.durationBilling), 0), [filtered]);
-  const totalRevenue = useMemo(() => filtered.reduce((sum, s) => sum + calcRevenue(s.class, s.durationBilling), 0), [filtered]);
+    const totalCount = filteredByClass.reduce((s, b) => s + b.count, 0);
+    const totalHours = filteredByClass.reduce((s, b) => s + b.hours, 0);
+    const totalRevenue = filteredByClass.reduce((s, b) => s + b.revenue, 0);
 
-  const { subjectData, gradeData, classData, monthData } = useMemo(() => {
-    if (filtered.length === 0) return { subjectData: [], gradeData: [], classData: [], monthData: [] };
-
-    // By subject (课内/竞赛自动分类)
-    const byCatKey = groupBy(filtered, s => `${s.class.isCompetition ? '竞赛' : '课内'}${s.class.subject}`);
+    // By subject (课内/竞赛自动分类) — regroup from byClass which has isCompetition
+    const byCatKey = groupBy(filteredByClass, b => `${b.isCompetition ? '竞赛' : '课内'}${b.subject}`);
     const subjectData = Object.entries(byCatKey)
       .map(([label, items]) => {
-        const subject = items[0].class.subject;
-        const comp = items[0].class.isCompetition;
+        const subject = items[0].subject;
+        const comp = items[0].isCompetition;
         const hue = SUBJECT_HUES[subject] || { h: 0, s: 0 };
         return {
           label,
-          value: items.length,
-          hours: items.reduce((sum, s) => sum + toHoursAbs(s.durationBilling), 0),
-          revenue: items.reduce((sum, s) => sum + calcRevenue(s.class, s.durationBilling), 0),
+          value: items.reduce((s, b) => s + b.count, 0),
+          hours: items.reduce((s, b) => s + b.hours, 0),
+          revenue: items.reduce((s, b) => s + b.revenue, 0),
           color: `hsl(${hue.h}, ${hue.s}%, ${comp ? 35 : 50}%)`,
         };
       })
       .sort((a, b) => b.value - a.value);
 
-    // By grade
-    const byGrade = groupBy(filtered, s => s.class.grade);
-    const gradeData = GRADES
-      .filter(g => byGrade[g])
-      .map(g => ({
-        label: g,
-        value: byGrade[g].length,
-        hours: byGrade[g].reduce((sum, s) => sum + toHoursAbs(s.durationBilling), 0),
-        revenue: byGrade[g].reduce((sum, s) => sum + calcRevenue(s.class, s.durationBilling), 0),
+    // By grade — regroup from byClass
+    const byGrade = groupBy(filteredByClass, b => b.grade);
+    const gradeData = Object.entries(byGrade)
+      .map(([grade, items]) => ({
+        label: grade,
+        value: items.reduce((s, b) => s + b.count, 0),
+        hours: items.reduce((s, b) => s + b.hours, 0),
+        revenue: items.reduce((s, b) => s + b.revenue, 0),
         color: '#6366f1',
       }))
       .sort((a, b) => b.value - a.value);
 
-    // By class
-    const byClass = groupBy(filtered, s => s.classId);
-    const classData = Object.entries(byClass)
-      .map(([cid, scheds]) => {
-        const cls = classMap[cid];
+    // By class — use byClass directly
+    const classData = filteredByClass
+      .map(b => {
+        const cls = classMap[b.classId] || b;
         return {
-          label: cls.name,
-          value: scheds.length,
-          hours: scheds.reduce((sum, s) => sum + toHoursAbs(s.durationBilling), 0),
-          revenue: scheds.reduce((sum, s) => sum + calcRevenue(cls, s.durationBilling), 0),
+          label: b.name,
+          value: b.count,
+          hours: b.hours,
+          revenue: b.revenue,
           color: getClassColor(cls, dark),
         };
       })
       .sort((a, b) => b.revenue - a.revenue);
 
-    // By month (YYYY-MM)
-    const byMonth = groupBy(filtered, s => s.date.slice(0, 7));
-    const monthData = Object.entries(byMonth)
-      .map(([m, scheds]) => ({
-        label: `${parseInt(m.split('-')[1])}月`,
-        value: scheds.length,
-        hours: scheds.reduce((sum, s) => sum + toHoursAbs(s.durationBilling), 0),
-        revenue: scheds.reduce((sum, s) => sum + calcRevenue(s.class, s.durationBilling), 0),
-        color: '#6366f1',
-        sortKey: m,
-      }))
-      .sort((a, b) => a.sortKey.localeCompare(b.sortKey));
+    // By month — use byMonth from summary
+    const monthData = (summary.byMonth || []).map(m => ({
+      label: `${parseInt(m.month.split('-')[1])}月`,
+      value: m.count,
+      hours: m.hours,
+      revenue: m.revenue,
+      color: '#6366f1',
+      sortKey: m.month,
+    }));
 
-    return { subjectData, gradeData, classData, monthData };
-  }, [filtered, classMap, dark]);
+    return { totalCount, totalHours, totalRevenue, subjectData, gradeData, classData, monthData };
+  }, [summary, filterClassId, classMap, dark]);
 
   if (!period) return null;
-
-  const totalClasses = filtered.length;
 
   return (
     <div>
@@ -264,12 +248,12 @@ export default function Reports() {
 
       {/* Summary cards */}
       <div className="grid grid-cols-3 gap-2 sm:gap-4 mb-3 sm:mb-6">
-        <StatCard label="排课次数" value={totalClasses} unit="次" accent="#3b82f6" icon="📅" />
+        <StatCard label="排课次数" value={totalCount} unit="次" accent="#3b82f6" icon="📅" />
         <StatCard label="教学时长" value={totalHours} unit="小时" accent="#8b5cf6" icon="⏱" />
         <StatCard label="预估收入" value={`¥${totalRevenue.toLocaleString()}`} accent="#22c55e" icon="💰" />
       </div>
 
-      {totalClasses === 0 ? (
+      {totalCount === 0 ? (
         <div className="text-center py-16">
           <svg className="w-16 h-16 mx-auto mb-4 text-gray-300 dark:text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 56 56">
             <rect x="8" y="12" width="40" height="36" rx="4" strokeWidth="1.5" />
@@ -347,7 +331,7 @@ export default function Reports() {
                   ))}
                   <tr className="font-bold">
                     <td className="p-2">合计</td>
-                    <td className="text-right p-2">{totalClasses} 次</td>
+                    <td className="text-right p-2">{totalCount} 次</td>
                     <td className="text-right p-2">{totalHours.toFixed(1)} 小时</td>
                     <td className="text-right p-2 text-green-600 dark:text-green-400">¥{totalRevenue.toLocaleString()}</td>
                   </tr>

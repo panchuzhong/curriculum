@@ -466,7 +466,7 @@ router.get('/summary', (req, res) => {
     if (queryClassIds.length) classIds = classIds.filter(id => queryClassIds.includes(id));
   }
   if (classIds.length === 0) {
-    const empty = { count: 0, hours: 0, revenue: 0, byClass: [], bySubject: [], byGrade: [] };
+    const empty = { count: 0, hours: 0, revenue: 0, byClass: [], bySubject: [], byGrade: [], byMonth: [] };
     if (format === 'csv') {
       res.setHeader('Content-Type', 'text/csv; charset=utf-8');
       return res.send(toCSV([['班级', '年级', '学科', '课次', '课时数(小时)', '收入(元)']]));
@@ -515,7 +515,7 @@ router.get('/summary', (req, res) => {
   const byClass = Object.entries(byClassMap).map(([cid, agg]) => {
     const cls = classMap[+cid];
     const hours = agg.minutes / 60;
-    return { classId: +cid, name: cls.name, subject: cls.subject, grade: cls.grade, count: agg.count, hours, revenue: agg.revenue };
+    return { classId: +cid, name: cls.name, subject: cls.subject, grade: cls.grade, isCompetition: !!cls.isCompetition, count: agg.count, hours, revenue: agg.revenue };
   }).sort((a, b) => b.revenue - a.revenue || a.classId - b.classId);
 
   if (format === 'csv') {
@@ -541,6 +541,20 @@ router.get('/summary', (req, res) => {
     byGradeMap[b.grade].revenue += b.revenue;
   }
 
+  const byMonthMap = {};
+  for (const s of scheds) {
+    const m = s.date.slice(0, 7);
+    if (!byMonthMap[m]) byMonthMap[m] = { month: m, count: 0, minutes: 0, revenue: 0 };
+    byMonthMap[m].count++;
+    byMonthMap[m].minutes += s.durationBilling;
+    const p = matchPricing(s.classId, s.date);
+    const cls = classMap[s.classId];
+    const unit = p?.unitPrice ?? cls?.unitPrice ?? 0;
+    const cnt = p?.studentCount ?? cls?.studentCount ?? 0;
+    const disc = p?.discountAmount ?? cls?.discountAmount ?? 0;
+    byMonthMap[m].revenue += (unit * cnt - disc) * (s.durationBilling / 60);
+  }
+
   res.json({
     count: scheds.length,
     hours: scheds.reduce((s, r) => s + r.durationBilling, 0) / 60,
@@ -548,6 +562,7 @@ router.get('/summary', (req, res) => {
     byClass,
     bySubject: Object.values(bySubjectMap).sort((a, b) => b.count - a.count),
     byGrade: Object.values(byGradeMap).sort((a, b) => b.count - a.count),
+    byMonth: Object.values(byMonthMap).map(m => ({ month: m.month, count: m.count, hours: m.minutes / 60, revenue: m.revenue })).sort((a, b) => a.month.localeCompare(b.month)),
   });
 });
 

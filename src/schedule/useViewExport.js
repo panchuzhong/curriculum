@@ -60,38 +60,7 @@ export default function useViewExport({ view }) {
 
   async function exportCSV(start, end) {
     try {
-      const schedules = await api.getSchedules(start, end);
-      if (schedules.length === 0) {
-        toast('所选范围内没有排课');
-        return;
-      }
-      const rows = schedules
-        .sort((a, b) => a.date.localeCompare(b.date) || a.startTime.localeCompare(b.startTime))
-        .map(s => {
-          const d = new Date(s.date + 'T00:00:00');
-          const wd = ['周日','周一','周二','周三','周四','周五','周六'][d.getDay()];
-          return [
-            s.date, wd,
-            s.class?.name ?? '',
-            s.class?.grade ?? '',
-            s.class?.subject ?? '',
-            s.startTime, s.endTime,
-            s.durationBilling ?? '',
-            s.locationName ?? '',
-            s.class?.isCompetition ? '是' : '否',
-            s.class?.unitPrice ?? '',
-            (s.class?.studentCount ?? '').toString(),
-            (s.class?.discountAmount ?? ''),
-          ].map(v => {
-            const str = String(v);
-            const safe = /^[=+\-@\t\r]/.test(str) ? "'" + str : str;
-            return `"${safe.replace(/"/g, '""')}"`;
-          }).join(',');
-        });
-      const header = '日期,星期,班级,年级,学科,开始时间,结束时间,计费时长(分钟),上课地点,竞赛课,单价,学生人数,优惠金额';
-      const bom = '﻿';
-      const csv = bom + [header, ...rows].join('\n');
-      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+      const blob = await api.exportScheduleCSV(start, end);
       const a = document.createElement('a');
       const objUrl = URL.createObjectURL(blob);
       a.href = objUrl;

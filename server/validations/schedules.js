@@ -1,22 +1,20 @@
 import { body } from 'express-validator';
-
-const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
-const TIME_RE = /^\d{2}:\d{2}$/;
+import { isValidDate, isValidTime } from './dates.js';
 
 export const validateCreateSchedule = [
   body('classId').isInt({ min: 1 }).withMessage('classId 须为正整数'),
-  body('date').matches(DATE_RE).withMessage('日期格式须为 YYYY-MM-DD'),
-  body('startTime').matches(TIME_RE).withMessage('开始时间格式须为 HH:MM'),
-  body('endTime').matches(TIME_RE).withMessage('结束时间格式须为 HH:MM'),
+  body('date').custom(v => { if (!isValidDate(v)) throw new Error('日期格式须为有效的 YYYY-MM-DD'); return true; }),
+  body('startTime').custom(v => { if (!isValidTime(v)) throw new Error('开始时间须为有效的 HH:MM (00:00-23:59)'); return true; }),
+  body('endTime').custom(v => { if (!isValidTime(v)) throw new Error('结束时间须为有效的 HH:MM (00:00-23:59)'); return true; }),
   body('durationBilling').optional().isInt({ min: 0 }).withMessage('durationBilling 须为非负整数'),
 ];
 
 export const validateBatchCreate = [
   body('classId').isInt({ min: 1 }).withMessage('classId 须为正整数'),
-  body('startTime').matches(TIME_RE).withMessage('开始时间格式须为 HH:MM'),
-  body('endTime').matches(TIME_RE).withMessage('结束时间格式须为 HH:MM'),
+  body('startTime').custom(v => { if (!isValidTime(v)) throw new Error('开始时间须为有效的 HH:MM (00:00-23:59)'); return true; }),
+  body('endTime').custom(v => { if (!isValidTime(v)) throw new Error('结束时间须为有效的 HH:MM (00:00-23:59)'); return true; }),
   body('dates').optional().isArray({ max: 365 }).withMessage('dates 须为数组,最多 365 项'),
-  body('dates.*').optional().matches(DATE_RE).withMessage('日期格式须为 YYYY-MM-DD'),
+  body('dates.*').optional().custom(v => { if (!isValidDate(v)) throw new Error('日期格式须为有效的 YYYY-MM-DD'); return true; }),
   body('weekday').optional().isInt({ min: 0, max: 6 }).withMessage('weekday 须为0-6'),
   body('semesterId').optional().isInt({ min: 1 }).withMessage('semesterId 须为正整数'),
   body('durationBilling').optional().isInt({ min: 0 }).withMessage('durationBilling 须为非负整数'),
@@ -25,8 +23,8 @@ export const validateBatchCreate = [
 
 export const validateBatchUpdate = [
   body('classId').isInt({ min: 1 }).withMessage('classId 须为正整数'),
-  body('fromDate').optional().matches(DATE_RE).withMessage('fromDate 格式须为 YYYY-MM-DD'),
-  body('toDate').optional().matches(DATE_RE).withMessage('toDate 格式须为 YYYY-MM-DD'),
+  body('fromDate').optional().custom(v => { if (!isValidDate(v)) throw new Error('fromDate 格式须为有效的 YYYY-MM-DD'); return true; }),
+  body('toDate').optional().custom(v => { if (!isValidDate(v)) throw new Error('toDate 格式须为有效的 YYYY-MM-DD'); return true; }),
   body('weekday').optional().isInt({ min: 0, max: 6 }).withMessage('weekday 须为0-6'),
   body('semesterOnly').optional().isBoolean().withMessage('semesterOnly 须为布尔值'),
   body('updates').isObject().withMessage('updates 须为对象'),
@@ -36,17 +34,17 @@ export const validateBatchDelete = [
   body('ids').optional().isArray({ max: 500 }).withMessage('ids 最多 500 项'),
   body('ids.*').optional().isInt({ min: 1 }).withMessage('ids 元素须为正整数'),
   body('classId').optional().isInt({ min: 1 }).withMessage('classId 须为正整数'),
-  body('start').optional().matches(DATE_RE).withMessage('start 格式须为 YYYY-MM-DD'),
-  body('end').optional().matches(DATE_RE).withMessage('end 格式须为 YYYY-MM-DD'),
-  body('fromDate').optional().matches(DATE_RE).withMessage('fromDate 格式须为 YYYY-MM-DD'),
+  body('start').optional().custom(v => { if (!isValidDate(v)) throw new Error('start 格式须为有效的 YYYY-MM-DD'); return true; }),
+  body('end').optional().custom(v => { if (!isValidDate(v)) throw new Error('end 格式须为有效的 YYYY-MM-DD'); return true; }),
+  body('fromDate').optional().custom(v => { if (!isValidDate(v)) throw new Error('fromDate 格式须为有效的 YYYY-MM-DD'); return true; }),
   body('semesterOnly').optional().isBoolean().withMessage('semesterOnly 须为布尔值'),
   body('dryRun').optional().isBoolean().withMessage('dryRun 须为布尔值'),
 ];
 
 export const validateUpdateSchedule = [
   body('classId').optional().isInt({ min: 1 }).withMessage('classId 须为正整数'),
-  body('date').optional().matches(DATE_RE).withMessage('日期格式须为 YYYY-MM-DD'),
-  body('startTime').optional().matches(TIME_RE).withMessage('开始时间格式须为 HH:MM'),
-  body('endTime').optional().matches(TIME_RE).withMessage('结束时间格式须为 HH:MM'),
+  body('date').optional().custom(v => { if (!isValidDate(v)) throw new Error('日期格式须为有效的 YYYY-MM-DD'); return true; }),
+  body('startTime').optional().custom(v => { if (!isValidTime(v)) throw new Error('开始时间须为有效的 HH:MM (00:00-23:59)'); return true; }),
+  body('endTime').optional().custom(v => { if (!isValidTime(v)) throw new Error('结束时间须为有效的 HH:MM (00:00-23:59)'); return true; }),
   body('durationBilling').optional().isInt({ min: 0 }).withMessage('durationBilling 须为非负整数'),
 ];

@@ -59,7 +59,7 @@ chmod +x "$RELEASE_DIR/start.sh"
 # Create .env.example
 cat > "$RELEASE_DIR/.env.example" << 'EOF'
 PORT=8080
-JWT_SECRET=change-me-to-a-random-string
+JWT_SECRET=
 ALLOW_REGISTRATION=true
 DB_PATH=./data/data.db
 EOF
@@ -76,7 +76,6 @@ WorkingDirectory=$(pwd)/$RELEASE_DIR
 ExecStart=$(which node) server/index.js
 Restart=on-failure
 Environment=PORT=8080
-Environment=JWT_SECRET=change-me
 Environment=ALLOW_REGISTRATION=false
 Environment=DB_PATH=./data/data.db
 
