@@ -34,7 +34,15 @@ function getNavTarget(path) {
     const mo = getViewDate('month');
     if (mo) {
       const [y, m] = mo.split('-');
-      if (path === '/' || path === '') return `/?date=${y}-${String(+m + 1).padStart(2, '0')}-10`;
+      if (path === '/' || path === '') {
+        // Prefer stored week if it belongs to the current displayed month
+        const wk = getViewDate('week');
+        if (wk) {
+          const d = new Date(wk + 'T00:00:00');
+          if (d.getFullYear() === +y && d.getMonth() === +m) return `/?date=${wk}`;
+        }
+        return `/?date=${y}-${String(+m + 1).padStart(2, '0')}-10`;
+      }
       if (path === '/yearly') return `/yearly?year=${y}`;
       return `/monthly?year=${y}&month=${m}`;
     }
