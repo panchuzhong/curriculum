@@ -3,6 +3,7 @@ import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { clearToken } from '../api';
 import { setDarkMode, DarkContext } from '../utils/colors';
 import { getViewDate } from '../utils/viewDate';
+import { getNavTarget as computeNavTarget } from '../utils/navTarget';
 
 const NAV_LINKS = [
   { to: '/', label: '周课表', color: 'bg-blue-500', icon: 'M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z' },
@@ -18,65 +19,7 @@ const NAV_LINKS = [
 const SCHEDULE_PATHS = ['/', '/monthly', '/yearly'];
 
 function getNavTarget(path) {
-  const cp = window.location.pathname;
-  // FROM week → derive from week
-  if (cp === '/' || cp === '') {
-    const wk = getViewDate('week');
-    if (wk) {
-      const d = new Date(wk + 'T00:00:00');
-      if (path === '/monthly') return `/monthly?year=${d.getFullYear()}&month=${d.getMonth()}`;
-      if (path === '/yearly') return `/yearly?year=${d.getFullYear()}`;
-    }
-    if (path === '/' || path === '') return wk ? `/?date=${wk}` : '/';
-  }
-  // FROM month → derive from month
-  if (cp === '/monthly') {
-    const mo = getViewDate('month');
-    if (mo) {
-      const [y, m] = mo.split('-');
-      if (path === '/' || path === '') {
-        // Prefer stored week if it belongs to the current displayed month
-        const wk = getViewDate('week');
-        if (wk) {
-          const d = new Date(wk + 'T00:00:00');
-          if (d.getFullYear() === +y && d.getMonth() === +m) return `/?week=${wk}`;
-        }
-        return `/?date=${y}-${String(+m + 1).padStart(2, '0')}-10`;
-      }
-      if (path === '/yearly') return `/yearly?year=${y}`;
-    }
-    if (path === '/monthly') return mo ? `/monthly?year=${mo.split('-')[0]}&month=${mo.split('-')[1]}` : '/monthly';
-  }
-  // FROM year → derive from year
-  if (cp === '/yearly') {
-    const yr = getViewDate('year');
-    if (yr) {
-      const n = new Date();
-      const mm = String(n.getMonth() + 1).padStart(2, '0');
-      const dd = String(n.getDate()).padStart(2, '0');
-      if (path === '/' || path === '') return `/?date=${yr}-${mm}-${dd}`;
-      if (path === '/monthly') return `/monthly?year=${yr}&month=${n.getMonth()}`;
-    }
-    if (path === '/yearly') return yr ? `/yearly?year=${yr}` : '/yearly';
-  }
-
-  // Fallback: use target view's stored date
-  if (path === '/' || path === '') {
-    const wk = getViewDate('week');
-    if (wk) return `/?date=${wk}`;
-    return path;
-  }
-  if (path === '/monthly') {
-    const mo = getViewDate('month');
-    if (mo) { const [y, m] = mo.split('-'); return `/monthly?year=${y}&month=${m}`; }
-    return path;
-  }
-  if (path === '/yearly') {
-    const yr = getViewDate('year');
-    if (yr) return `/yearly?year=${yr}`;
-    return path;
-  }
-  return path;
+  return computeNavTarget(path, window.location.pathname, getViewDate);
 }
 
 export default function Layout({ children }) {

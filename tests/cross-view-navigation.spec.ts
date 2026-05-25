@@ -143,6 +143,25 @@ test.describe('动画功能', () => {
   });
 });
 
+test.describe('非周一weekStart的精确周保留', () => {
+  test('周视图ArrowRight推进到周二后方向键往返保持同样的周', async ({ authenticatedPage: page }) => {
+    // Start at Monday May 25
+    await page.goto('/?date=2026-05-25');
+    await expect(page.getByText(/2026-05-25 ~ 2026-05-31/)).toBeVisible();
+
+    // ArrowRight advances by 1 day → Tuesday May 26
+    await page.keyboard.press('ArrowRight');
+    await expect(page.getByText(/2026-05-26 ~ 2026-06-01/)).toBeVisible();
+
+    // ArrowDown to month → ArrowUp back
+    await page.keyboard.press('ArrowDown');
+    await page.keyboard.press('ArrowUp');
+
+    // Should still show 2026-05-26 ~ 2026-06-01 (not shifted to 05-25)
+    await expect(page.getByText(/2026-05-26 ~ 2026-06-01/)).toBeVisible();
+  });
+});
+
 test.describe('方向键跨越非课表视图', () => {
   test('从年课表方向键下可到达班级管理', async ({ authenticatedPage: page }) => {
     await page.goto('/yearly?year=2026');
