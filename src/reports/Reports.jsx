@@ -102,6 +102,24 @@ export default function Reports() {
     api.getScheduleSummary(monday, end).then(setSummary).catch(e => toast(e.message || '加载报表失败'));
   }, []);
 
+  useEffect(() => {
+    const onKey = (e) => {
+      if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.tagName === 'SELECT') return;
+      if (tab === 'week' && period) {
+        if (e.key === 'ArrowLeft') { e.preventDefault(); loadWeek(addDays(period.start, -7)); }
+        if (e.key === 'ArrowRight') { e.preventDefault(); loadWeek(addDays(period.start, 7)); }
+      } else if (tab === 'month') {
+        if (e.key === 'ArrowLeft') { e.preventDefault(); if (month === 0) { setYear(y => y - 1); setMonth(11); } else setMonth(m => m - 1); }
+        if (e.key === 'ArrowRight') { e.preventDefault(); if (month === 11) { setYear(y => y + 1); setMonth(0); } else setMonth(m => m + 1); }
+      } else if (tab === 'year') {
+        if (e.key === 'ArrowLeft') { e.preventDefault(); setYear(y => y - 1); }
+        if (e.key === 'ArrowRight') { e.preventDefault(); setYear(y => y + 1); }
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [tab, period, year, month, loadWeek]);
+
   const classMap = useMemo(() => {
     const m = {};
     classes.forEach(c => m[c.id] = c);
