@@ -162,24 +162,112 @@ test.describe('非周一weekStart的精确周保留', () => {
   });
 });
 
-test.describe('方向键跨越非课表视图', () => {
-  test('从年课表方向键下可到达班级管理', async ({ authenticatedPage: page }) => {
-    await page.goto('/yearly?year=2026');
-    await page.keyboard.press('ArrowDown');
-    await expect(page).toHaveURL(/\/classes/);
-  });
+test.describe('周→月→年→月→周全往返保留日期', () => {
+  test('8月3日周→月→年→月→周不丢失上下文', async ({ authenticatedPage: page }) => {
+    await page.goto('/?date=2026-08-03');
+    await expect(page.getByText(/2026-08-03 ~ 2026-08-09/)).toBeVisible();
 
-  test('从班级管理方向键下可到达学生管理', async ({ authenticatedPage: page }) => {
-    await page.goto('/classes');
+    // Week → Month (August)
     await page.keyboard.press('ArrowDown');
-    await expect(page).toHaveURL(/\/students/);
-  });
+    await expect(page).toHaveURL(/\/monthly\?year=2026&month=7/);
+    await expect(page.getByRole('heading', { name: '2026年8月' })).toBeVisible();
 
-  test('从年课表方向键下到班级管理再方向键上回到年课表并保留年份', async ({ authenticatedPage: page }) => {
-    await page.goto('/yearly?year=2026');
+    // Month → Year (2026)
     await page.keyboard.press('ArrowDown');
-    await expect(page).toHaveURL(/\/classes/);
-    await page.keyboard.press('ArrowUp');
     await expect(page).toHaveURL(/\/yearly\?year=2026/);
+
+    // Year → Month (should be August, not May)
+    await page.keyboard.press('ArrowUp');
+    await expect(page).toHaveURL(/\/monthly\?year=2026&month=7/);
+    await expect(page.getByRole('heading', { name: '2026年8月' })).toBeVisible();
+
+    // Month → Week (should be Aug 3, not May 4)
+    await page.keyboard.press('ArrowUp');
+    await expect(page.getByText(/2026-08-03 ~ 2026-08-09/)).toBeVisible();
+  });
+
+  test('7月周→月→年→月→周全往返', async ({ authenticatedPage: page }) => {
+    await page.goto('/?date=2026-07-13');
+    await expect(page.getByText(/2026-07-13 ~ 2026-07-19/)).toBeVisible();
+
+    await page.keyboard.press('ArrowDown'); // → July month
+    await page.keyboard.press('ArrowDown'); // → 2026 year
+    await page.keyboard.press('ArrowUp');   // → July month
+    await page.keyboard.press('ArrowUp');   // → July week
+
+    await expect(page.getByText(/2026-07-13 ~ 2026-07-19/)).toBeVisible();
+  });
+});
+
+test.describe('方向键完整循环所有侧边栏链接', () => {
+  test('从周课表连续按8次方向键下可环回周课表', async ({ authenticatedPage: page }) => {
+    await page.goto('/?date=2026-08-03');
+
+    // NAV_LINKS: /, /monthly, /yearly, /classes, /students, /semesters, /reports, /settings
+    await page.keyboard.press('ArrowDown'); // → monthly
+    await expect(page).toHaveURL(/\/monthly/);
+    await page.keyboard.press('ArrowDown'); // → yearly
+    await expect(page).toHaveURL(/\/yearly/);
+    await page.keyboard.press('ArrowDown'); // → classes
+    await expect(page).toHaveURL(/\/classes/);
+    await page.keyboard.press('ArrowDown'); // → students
+    await expect(page).toHaveURL(/\/students/);
+    await page.keyboard.press('ArrowDown'); // → semesters
+    await expect(page).toHaveURL(/\/semesters/);
+    await page.keyboard.press('ArrowDown'); // → reports
+    await expect(page).toHaveURL(/\/reports/);
+    await page.keyboard.press('ArrowDown'); // → settings
+    await expect(page).toHaveURL(/\/settings/);
+    await page.keyboard.press('ArrowDown'); // → back to week (wrap)
+    await expect(page).toHaveURL(/\/(\?|$)/);
+  });
+
+  test('从设置方向键上可回到统计报表再回到学期管理', async ({ authenticatedPage: page }) => {
+    await page.goto('/settings');
+    await page.keyboard.press('ArrowUp'); // → reports
+    await expect(page).toHaveURL(/\/reports/);
+    await page.keyboard.press('ArrowUp'); // → semesters
+    await expect(page).toHaveURL(/\/semesters/);
+    await page.keyboard.press('ArrowUp'); // → students
+    await expect(page).toHaveURL(/\/students/);
+    await page.keyboard.press('ArrowUp'); // → classes
+    await expect(page).toHaveURL(/\/classes/);
+    await page.keyboard.press('ArrowUp'); // → yearly
+    await expect(page).toHaveURL(/\/yearly/);
+    await page.keyboard.press('ArrowUp'); // → monthly
+    await expect(page).toHaveURL(/\/monthly/);
+    await page.keyboard.press('ArrowUp'); // → week
+    await expect(page).toHaveURL(/\/(\?|$)/);
+  });
+
+  test('从学生管理方向键上到班级管理再到年课表保留年份', async ({ authenticatedPage: page }) => {
+    await page.goto('/students');
+    await page.keyboard.press('ArrowUp'); // → classes
+    await expect(page).toHaveURL(/\/classes/);
+    await page.keyboard.press('ArrowUp'); // → yearly
+    await expect(page).toHaveURL(/\/yearly/);
+  });
+});
+
+test.describe('非课表页面切换后课表视图日期上下文', () => {
+  test('班级管理方向键上到年课表再上到月课表保留年份→月份', async ({ authenticatedPage: page }) => {
+    // Set up: visit August week, then month, so stored dates are August
+    await page.goto('/?date=2026-08-03');
+    await page.keyboard.press('ArrowDown'); // → August month
+    await expect(page.getByRole('heading', { name: '2026年8月' })).toBeVisible();
+
+    // Navigate down past yearly, classes, to students
+    await page.keyboard.press('ArrowDown'); // → year
+    await page.keyboard.press('ArrowDown'); // → classes
+    await page.keyboard.press('ArrowDown'); // → students
+    await expect(page).toHaveURL(/\/students/);
+
+    // Go back up: students → classes → yearly → monthly
+    await page.keyboard.press('ArrowUp'); // → classes
+    await page.keyboard.press('ArrowUp'); // → yearly (2026)
+    await expect(page).toHaveURL(/\/yearly\?year=2026/);
+    await page.keyboard.press('ArrowUp'); // → monthly (should be August)
+    await expect(page).toHaveURL(/\/monthly\?year=2026&month=7/);
+    await expect(page.getByRole('heading', { name: '2026年8月' })).toBeVisible();
   });
 });
