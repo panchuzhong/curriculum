@@ -35,9 +35,9 @@ router.post('/', authenticate, validateCreateClass, async (req, res) => { ... })
 ### 校验规则
 
 **auth.js**
-- 注册：username 3-20字符字母数字、password ≥6位、name 非空、subjects 数组元素为字符串
+- 注册：username 3-20字符字母数字、password ≥8位、name 非空、subjects 数组元素为字符串
 - 登录：username/password 非空
-- 改密码：oldPassword/newPassword 非空、newPassword ≥6位
+- 改密码：oldPassword/newPassword 非空、newPassword ≥8位
 
 **classes.js**
 - 创建：name 非空、grade 枚举(初一/初二/初三/高一/高二/高三/大学)、subject 非空、studentCount ≥1 正整数

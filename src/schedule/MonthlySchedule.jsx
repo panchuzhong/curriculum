@@ -3,7 +3,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { api } from '../api';
 import { getClassColor, getTextColor, DarkContext } from '../utils/colors';
 import { isHoliday, getHolidayName, isWorkday } from '../utils/holidays';
-import { todayStr, getMonday } from '../utils/date';
+import { todayStr } from '../utils/date';
 import { toMin, findConflictGroups, assignColumns } from '../utils/schedule';
 import { useSimpleSwipe } from '../hooks/useSimpleSwipe';
 import { useToast } from '../components/ToastProvider';
@@ -134,9 +134,9 @@ export default function MonthlySchedule() {
           const isToday = dateStr === todayStr();
           return (
             <div key={day} onClick={() => {
-              const monday = getMonday(dateStr);
-              navigate(`/?week=${monday}`);
+              navigate(`/?date=${dateStr}`);
             }}
+              aria-label={`查看${dateStr}课表`}
               className={`px-1 py-0.5 sm:p-1.5 rounded cursor-pointer overflow-hidden flex flex-col ${
                 isToday ? 'bg-blue-100 dark:bg-blue-900/30 ring-1 ring-blue-400' :
                 holiday ? 'bg-red-50 dark:bg-red-900/20' :

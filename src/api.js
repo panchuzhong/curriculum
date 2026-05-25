@@ -8,8 +8,26 @@ export function setToken(token) {
   localStorage.setItem('token', token);
 }
 
+const SCHEDULE_CACHE_TTL_MS = 60_000;
+const scheduleCache = new Map();
+
+function clearScheduleCache() {
+  scheduleCache.clear();
+}
+
+function scheduleCacheKey(start, end, classId) {
+  return `${start}|${end}|${classId || ''}`;
+}
+
+async function withScheduleInvalidation(promise) {
+  const result = await promise;
+  clearScheduleCache();
+  return result;
+}
+
 export function clearToken() {
   localStorage.removeItem('token');
+  clearScheduleCache();
 }
 
 async function request(method, path, body, { noAuth = false } = {}) {
@@ -39,6 +57,24 @@ async function request(method, path, body, { noAuth = false } = {}) {
   try { return JSON.parse(text); } catch { return text; }
 }
 
+async function requestBlob(path) {
+  const res = await fetch(`${API_BASE}${path}`, {
+    headers: { Authorization: `Bearer ${getToken()}` },
+  });
+  if (res.status === 401) {
+    clearToken();
+    window.location.href = `${import.meta.env.BASE_URL}login`;
+    throw new Error('登录已过期,请重新登录');
+  }
+  if (!res.ok) {
+    const text = await res.text();
+    let message = text;
+    try { const p = JSON.parse(text); message = p.error || message; } catch {}
+    throw new Error(message || '请求失败');
+  }
+  return res.blob();
+}
+
 export const api = {
   // Auth
   login: (data) => request('POST', '/auth/login', data, { noAuth: true }),
@@ -50,9 +86,9 @@ export const api = {
 
   // Classes
   getClasses: () => request('GET', '/classes'),
-  createClass: (data) => request('POST', '/classes', data),
-  updateClass: (id, data) => request('PUT', `/classes/${id}`, data),
-  deleteClass: (id) => request('DELETE', `/classes/${id}`),
+  createClass: (data) => withScheduleInvalidation(request('POST', '/classes', data)),
+  updateClass: (id, data) => withScheduleInvalidation(request('PUT', `/classes/${id}`, data)),
+  deleteClass: (id) => withScheduleInvalidation(request('DELETE', `/classes/${id}`)),
 
   // Students
   getAllStudents: () => request('GET', '/students'),
@@ -68,9 +104,9 @@ export const api = {
 
   // Class pricing history
   getClassPricing: (classId) => request('GET', `/classes/${classId}/pricing`),
-  createClassPricing: (classId, data) => request('POST', `/classes/${classId}/pricing`, data),
-  updateClassPricing: (classId, id, data) => request('PUT', `/classes/${classId}/pricing/${id}`, data),
-  deleteClassPricing: (classId, id) => request('DELETE', `/classes/${classId}/pricing/${id}`),
+  createClassPricing: (classId, data) => withScheduleInvalidation(request('POST', `/classes/${classId}/pricing`, data)),
+  updateClassPricing: (classId, id, data) => withScheduleInvalidation(request('PUT', `/classes/${classId}/pricing/${id}`, data)),
+  deleteClassPricing: (classId, id) => withScheduleInvalidation(request('DELETE', `/classes/${classId}/pricing/${id}`)),
 
   // Pricing Tiers
   getPricingTiers: () => request('GET', '/pricing-tiers'),
@@ -82,26 +118,55 @@ export const api = {
   getSchedules: (start, end, classId) => {
     let url = `/schedules?start=${start}&end=${end}`;
     if (classId) url += `&classId=${classId}`;
-    return request('GET', url);
+    const key = scheduleCacheKey(start, end, classId);
+    const cached = scheduleCache.get(key);
+    const now = Date.now();
+    if (cached && now - cached.time <= SCHEDULE_CACHE_TTL_MS) {
+      return cached.promise || Promise.resolve(cached.data);
+    }
+
+    const promise = request('GET', url)
+      .then(data => {
+        scheduleCache.set(key, { data, time: Date.now() });
+        return data;
+      })
+      .catch(err => {
+        scheduleCache.delete(key);
+        throw err;
+      });
+    scheduleCache.set(key, { promise, time: now });
+    return promise;
   },
   getScheduleSummary: (start, end, classId) => {
     let url = `/schedules/summary?start=${start}&end=${end}`;
     if (classId) url += `&classId=${classId}`;
     return request('GET', url);
   },
-  exportScheduleCSV: async (start, end, classId) => {
-    let url = `${API_BASE}/schedules/export?format=csv&start=${start}&end=${end}`;
+  exportScheduleCSV: (start, end, classId) => {
+    let url = `/schedules/export?format=csv&start=${start}&end=${end}`;
     if (classId) url += `&classId=${classId}`;
-    const res = await fetch(url, { headers: { Authorization: `Bearer ${getToken()}` } });
-    if (res.status === 401) { clearToken(); throw new Error('登录已过期,请重新登录'); }
-    if (!res.ok) throw new Error('导出失败');
-    return res.blob();
+    return requestBlob(url);
   },
-  createSchedule: (data) => request('POST', '/schedules', data),
-  batchSchedules: (data) => request('POST', '/schedules/batch', data),
-  batchDeleteSchedules: (data) => request('DELETE', '/schedules/batch', data),
-  updateSchedule: (id, data) => request('PUT', `/schedules/${id}`, data),
-  deleteSchedule: (id) => request('DELETE', `/schedules/${id}`),
+
+  // Image export (blob)
+  exportScheduleImage: (start, end) => requestBlob(`/schedule-image?start=${start}&end=${end}`),
+  exportMonthlyImage: (year, month, endYear, endMonth) => {
+    let url = `/schedule-image/monthly?year=${year}&month=${month}`;
+    if (endYear != null && endMonth != null && (endYear !== year || endMonth !== month)) {
+      url += `&endYear=${endYear}&endMonth=${endMonth}`;
+    }
+    return requestBlob(url);
+  },
+  exportYearlyImage: (year, endYear) => {
+    let url = `/schedule-image/yearly?year=${year}`;
+    if (endYear != null && endYear !== year) url += `&endYear=${endYear}`;
+    return requestBlob(url);
+  },
+  createSchedule: (data) => withScheduleInvalidation(request('POST', '/schedules', data)),
+  batchSchedules: (data) => withScheduleInvalidation(request('POST', '/schedules/batch', data)),
+  batchDeleteSchedules: (data) => withScheduleInvalidation(request('DELETE', '/schedules/batch', data)),
+  updateSchedule: (id, data) => withScheduleInvalidation(request('PUT', `/schedules/${id}`, data)),
+  deleteSchedule: (id) => withScheduleInvalidation(request('DELETE', `/schedules/${id}`)),
 
   // Semesters
   getSemesters: () => request('GET', '/semesters'),
@@ -116,4 +181,7 @@ export const api = {
   updateHoliday: (id, data) => request('PUT', `/holidays/${id}`, data),
   deleteHoliday: (id) => request('DELETE', `/holidays/${id}`),
   batchImportHolidays: (items) => request('POST', '/holidays/batch', { items }),
+
+  // Audit log maintenance
+  cleanupAuditLog: (keep) => request('DELETE', `/audit-log/cleanup${keep == null ? '' : `?keep=${keep}`}`),
 };

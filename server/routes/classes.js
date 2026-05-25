@@ -5,6 +5,7 @@ import { eq, and, inArray, desc } from 'drizzle-orm';
 import { authMiddleware } from '../middleware/auth.js';
 import { getDefaultPrice } from '../db/seed.js';
 import { logAudit } from '../services/audit.js';
+import { clearReportCache } from '../services/report-cache.js';
 import handle from '../validations/handle.js';
 import { validateCreateClass, validateUpdateClass, validateClassStudent, validateCreatePricing, validateUpdatePricing } from '../validations/classes.js';
 
@@ -74,6 +75,7 @@ router.post('/', validateCreateClass, handle, (req, res) => {
   })();
 
   const created = drizzleDb.select().from(classes).where(eq(classes.id, newId)).get();
+  clearReportCache(req.teacherId);
   logAudit({ teacherId: req.teacherId, action: 'CREATE', tableName: 'classes', recordId: newId,
     after: { name, grade, subject, studentCount, unitPrice: price } });
   res.json({ ...created, isDeleted: !!created.deleted });
@@ -89,6 +91,7 @@ router.put('/:id', validateUpdateClass, handle, (req, res) => {
   if (Object.keys(safeUpdates).length === 0) return res.status(400).json({ error: 'No valid fields' });
   drizzleDb.update(classes).set(safeUpdates).where(eq(classes.id, +id)).run();
   const updated = drizzleDb.select().from(classes).where(eq(classes.id, +id)).get();
+  clearReportCache(req.teacherId);
   logAudit({ teacherId: req.teacherId, action: 'UPDATE', tableName: 'classes', recordId: +id, before: existing, after: safeUpdates });
   res.json({ ...updated, isDeleted: !!updated.deleted });
 });
@@ -99,6 +102,7 @@ router.delete('/:id', (req, res) => {
     .where(and(eq(classes.id, +id), eq(classes.teacherId, req.teacherId))).get();
   if (!existing) return res.status(404).json({ error: 'Not found' });
   drizzleDb.update(classes).set({ deleted: true }).where(eq(classes.id, +id)).run();
+  clearReportCache(req.teacherId);
   logAudit({ teacherId: req.teacherId, action: 'DELETE', tableName: 'classes', recordId: +id, before: existing });
   res.json({ ok: true });
 });
@@ -112,6 +116,7 @@ router.post('/:id/restore', (req, res) => {
   if (!existing.deleted) return res.status(400).json({ error: '该班级未被删除,无需恢复' });
   drizzleDb.update(classes).set({ deleted: false }).where(eq(classes.id, +id)).run();
   const restored = drizzleDb.select().from(classes).where(eq(classes.id, +id)).get();
+  clearReportCache(req.teacherId);
   logAudit({ teacherId: req.teacherId, action: 'UPDATE', tableName: 'classes', recordId: +id, before: existing, after: { deleted: false } });
   res.json({ ...restored, isDeleted: !!restored.deleted });
 });
@@ -235,6 +240,7 @@ pricingRouter.post('/', validateCreatePricing, handle, (req, res) => {
   }
 
   const created = drizzleDb.select().from(classPricing).where(eq(classPricing.id, Number(result.lastInsertRowid))).get();
+  clearReportCache(req.teacherId);
   logAudit({ teacherId: req.teacherId, action: 'CREATE', tableName: 'class_pricing', recordId: created.id, after: created });
   res.json(created);
 });
@@ -278,6 +284,7 @@ pricingRouter.put('/:pricingId', validateUpdatePricing, handle, (req, res) => {
   }
 
   const updated = drizzleDb.select().from(classPricing).where(eq(classPricing.id, pricingId)).get();
+  clearReportCache(req.teacherId);
   logAudit({ teacherId: req.teacherId, action: 'UPDATE', tableName: 'class_pricing', recordId: pricingId, before: record, after: updates });
   res.json(updated);
 });
@@ -312,6 +319,7 @@ pricingRouter.delete('/:pricingId', (req, res) => {
     }).where(eq(classes.id, record.classId)).run();
   }
 
+  clearReportCache(req.teacherId);
   logAudit({ teacherId: req.teacherId, action: 'DELETE', tableName: 'class_pricing', recordId: pricingId, before: record });
   res.json({ ok: true });
 });

@@ -3,12 +3,14 @@ import request from 'supertest';
 import { eq } from 'drizzle-orm';
 import { setupApp, makeUser, auth } from './route-helpers.js';
 import { clearSemesterCache } from '../services/schedule-helpers.js';
+import { clearReportCache } from '../services/report-cache.js';
 vi.mock('../services/holidays.js', () => ({ isHoliday: () => false, getHolidayName: () => '' }));
 
 let app, drizzleDb, token, classId, teacherId;
 
 beforeEach(async () => {
   clearSemesterCache();
+  clearReportCache();
   ({ app, drizzleDb } = await setupApp('/api/schedules', '../routes/schedules.js'));
   const user = await makeUser(drizzleDb);
   token = user.token;
@@ -69,6 +71,23 @@ describe('GET /api/schedules', () => {
     const res = await request(app).get('/api/schedules?start=2026-05-01&end=2026-05-31&classId=99999').set(auth(token));
     expect(res.status).toBe(200);
     expect(res.body).toHaveLength(0);
+  });
+
+  it('accepts repeated classId query parameters', async () => {
+    const { classes } = await import('../db/schema.js');
+    const r2 = drizzleDb.insert(classes).values({
+      teacherId, name: '物理班', grade: '高一', subject: '物理', studentCount: 2, unitPrice: 120,
+    }).run();
+    const classId2 = Number(r2.lastInsertRowid);
+
+    await request(app).post('/api/schedules').set(auth(token))
+      .send({ classId, date: '2026-05-04', startTime: '09:00', endTime: '10:30' });
+    await request(app).post('/api/schedules').set(auth(token))
+      .send({ classId: classId2, date: '2026-05-05', startTime: '09:00', endTime: '10:30' });
+
+    const res = await request(app).get(`/api/schedules?start=2026-05-01&end=2026-05-31&classId=${classId}&classId=${classId2}`).set(auth(token));
+    expect(res.status).toBe(200);
+    expect(res.body).toHaveLength(2);
   });
 
   it('requires start/end params', async () => {
@@ -327,6 +346,33 @@ describe('GET /api/schedules/summary', () => {
     expect(res.body.hours).toBe(1.5);
     expect(res.body.byClass).toHaveLength(1);
     expect(res.body.byClass[0].count).toBe(1);
+  });
+
+  it('caches JSON summary responses', async () => {
+    await request(app).post('/api/schedules').set(auth(token))
+      .send({ classId, date: '2026-05-04', startTime: '09:00', endTime: '10:30' });
+
+    const first = await request(app).get('/api/schedules/summary?start=2026-05-01&end=2026-05-31').set(auth(token));
+    expect(first.status).toBe(200);
+    expect(first.headers['x-report-cache']).toBe('miss');
+
+    const second = await request(app).get('/api/schedules/summary?start=2026-05-01&end=2026-05-31').set(auth(token));
+    expect(second.status).toBe(200);
+    expect(second.headers['x-report-cache']).toBe('hit');
+    expect(second.body).toEqual(first.body);
+  });
+
+  it('invalidates cached summary after schedule write', async () => {
+    const first = await request(app).get('/api/schedules/summary?start=2026-05-01&end=2026-05-31').set(auth(token));
+    expect(first.headers['x-report-cache']).toBe('miss');
+
+    await request(app).post('/api/schedules').set(auth(token))
+      .send({ classId, date: '2026-05-04', startTime: '09:00', endTime: '10:30' });
+
+    const second = await request(app).get('/api/schedules/summary?start=2026-05-01&end=2026-05-31').set(auth(token));
+    expect(second.status).toBe(200);
+    expect(second.headers['x-report-cache']).toBe('miss');
+    expect(second.body.count).toBe(1);
   });
 
   it('requires start/end params', async () => {

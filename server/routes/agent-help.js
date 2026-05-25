@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { authMiddleware } from '../middleware/auth.js';
 const router = Router();
-router.get('/agent/help', authMiddleware, (req, res) => {
+router.get('/help', authMiddleware, (req, res) => {
   res.json({
     name: '课表管理系统 API',
     version: '1.7.8',
@@ -109,13 +109,14 @@ router.get('/agent/help', authMiddleware, (req, res) => {
       },
       backup: {
         'GET /api/backup': '导出教师全量数据为 JSON，返回 {version:1, timestamp, classes, pricingTiers, students, classStudents, schedules, holidays, semesters, classPricing, auditLog}，触发浏览器下载',
-        'POST /api/backup/restore': '从备份 JSON 原子还原（先清空再写入，事务保证）；校验 version 字段必须为 1；teacherId 强制覆盖为当前认证教师；还原范围包括 classes、pricingTiers、students、classStudents、schedules、holidays、semesters、classPricing、auditLog；自动校验 schedules、classStudents、classPricing 关联的 classId 是否存在于恢复后的班级中，classStudents 同时校验 studentId 是否存在，无效关联自动跳过;非数组字段按空数组处理;事务失败返回 500 含具体原因(原数据保留);成功返回 {ok:true, restored:{classes,students,schedules,semesters,auditLog}}（restored 仅统计这 5 项，其余表同样已还原但不计数字段中）',
+        'POST /api/backup/restore': '从备份 JSON 原子还原（先清空再写入，事务保证）；校验 version 字段必须为 1；teacherId 强制覆盖为当前认证教师；还原范围包括 classes、pricingTiers、students、classStudents、schedules、holidays、semesters、classPricing、auditLog；自动校验 schedules、classStudents、classPricing 关联的 classId 是否存在于恢复后的班级中，classStudents 同时校验 studentId 是否存在，无效关联自动跳过;非数组字段按空数组处理;事务失败返回 500（原数据保留）;成功返回 {ok:true, restored:{classes,students,schedules,semesters,auditLog}}（restored 仅统计这 5 项，其余表同样已还原但不计数字段中）',
       },
       auditLog: {
         'GET /api/audit-log': '查询操作日志（默认最新 100 条,按 id 倒序;返回的 beforeData/afterData 已 JSON.parse 还原为对象）',
         'GET /api/audit-log?limit=N': '最多返回 N 条（默认 100,上限 500,负数/NaN 自动 clamp）',
         'GET /api/audit-log?table=X': '按数据表过滤,枚举: schedules/classes/students/holidays/class_students/pricing_tiers/semesters/teachers/class_pricing;非法值返回 400',
         'GET /api/audit-log?action=X': '按操作类型过滤,枚举: CREATE/UPDATE/DELETE/BATCH_CREATE/BATCH_UPDATE/BATCH_DELETE;非法值返回 400',
+        'DELETE /api/audit-log/cleanup?keep=N': '清理当前教师较旧操作日志,默认保留最近 10000 条;keep 须为非负整数',
       },
     },
     batchScheduleModes: {
@@ -186,6 +187,7 @@ router.get('/agent/help', authMiddleware, (req, res) => {
         byClass: '按班级分组 [{classId, name, subject, grade, count, hours, revenue}]，按收入降序',
         bySubject: '按学科分组 [{subject, count, hours, revenue}]，按次数降序',
         byGrade: '按年级分组 [{grade, count, hours, revenue}]，按次数降序',
+        byMonth: '按月份分组 [{month: "YYYY-MM", count, hours, revenue}]，按时间升序',
       },
       revenueFormula: '按排课日期匹配 class_pricing 中的对应版本：(classPricing.unitPrice × classPricing.studentCount - classPricing.discountAmount) × (durationBilling 分钟 / 60)；当日无 class_pricing 时回退到班级表当前值；discount 大于课时基价时收入会为负数',
     },
@@ -261,7 +263,7 @@ router.get('/agent/help', authMiddleware, (req, res) => {
     notes: [
       '【写接口返回体约定】单资源 POST/PUT 统一返回完整资源对象（含 id 与所有派生字段，如 classes 的 isDeleted、students 的 classIds、schedules 的 class 与 warnings）；DELETE 单资源返回 {ok:true}；批量端点（POST/PUT/DELETE /api/*/batch、POST /api/holidays/batch）返回 {count, ids?, ...}；前端不依赖 ok 字段，只看 HTTP 状态码',
       '所有 JSON 响应的 Content-Type 均为 application/json; charset=utf-8（CSV 导出时为 text/csv; charset=utf-8）',
-      '请求体大小限制 50 MB(覆盖备份还原最大场景);超出返回 413',
+      '请求体大小限制：全局 1 MB，备份还原端点 50 MB（超出返回 413）',
       '排课冲突不会被服务端阻止，前端并排显示并红色高亮；可用 GET /api/schedules/conflicts 查询已有冲突',
       'GET /api/schedules、summary、export 均支持 range=today|tomorrow|week|month 快捷参数（与 start/end 互斥），week=本周周一到周日',
       '日期相关接口（range、free-slots、conflicts 的 today 默认值等）基于服务器系统时区；部署时请确认 TZ=Asia/Shanghai 或等值中国时区。所有"今天"判断(批量排课、图片高亮、备份文件名)统一使用本地时区,不依赖 UTC',
@@ -281,9 +283,9 @@ router.get('/agent/help', authMiddleware, (req, res) => {
       '学生可属于多个班级，通过 classIds 数组关联；DELETE /api/students/:id 删除学生实体并清理所有关联，DELETE /api/classes/:classId/students/:studentId 仅从指定班级移除。POST /api/classes/:classId/students 接受 name/birthDate/phone/parentPhone/parentName/note 字段（与 POST /api/students 一致，但不接受 classIds）',
       'PUT /api/students/:id 采用部分更新语义：仅写入请求体中包含且值非 undefined 的字段，未传字段保持原值；classIds 传入时全量替换班级关联',
       'POST/PUT /api/holidays 变更日期时会检查是否与已有节假日记录重复，重复则返回 409 {error:"该日期已有记录"}',
-      '审计日志（audit_log）覆盖：排课 CREATE/UPDATE/DELETE/BATCH_CREATE/BATCH_UPDATE/BATCH_DELETE；班级 CREATE/UPDATE/DELETE（含恢复操作）；学生 CREATE/UPDATE/DELETE（含子路由 POST/DELETE /api/classes/:cid/students）；节假日 CREATE/UPDATE/DELETE/BATCH_CREATE；定价阶梯 CREATE/UPDATE/DELETE；学期 CREATE/UPDATE/DELETE；班级定价（class_pricing）CREATE/UPDATE/DELETE；教师（teachers）API Key 轮换/密码修改/学科更新。日志超过 10000 条时自动删除最旧记录',
+      '审计日志（audit_log）覆盖：排课 CREATE/UPDATE/DELETE/BATCH_CREATE/BATCH_UPDATE/BATCH_DELETE；班级 CREATE/UPDATE/DELETE（含恢复操作）；学生 CREATE/UPDATE/DELETE（含子路由 POST/DELETE /api/classes/:cid/students）；节假日 CREATE/UPDATE/DELETE/BATCH_CREATE；定价阶梯 CREATE/UPDATE/DELETE；学期 CREATE/UPDATE/DELETE；班级定价（class_pricing）CREATE/UPDATE/DELETE；教师（teachers）API Key 轮换/密码修改/学科更新。每个教师超过 10000 条时自动删除最旧记录，也可调用 DELETE /api/audit-log/cleanup?keep=N 手动维护',
       '注册成功后系统自动将 ALLOW_REGISTRATION 设为 false，单用户设计',
-      'rate limiting：POST /api/auth/register 与 POST /api/auth/login 启用 60 次/分钟限速；PUT /api/auth/api-key 与 PUT /api/auth/password 同样受 auth 限速保护；GET /api/backup 启用 10 次/分钟限速；GET /api/schedule-image（含 /monthly、/yearly）启用 30 次/分钟限速；其余认证后端点不限速',
+      'rate limiting：POST /api/auth/register 与 POST /api/auth/login 启用 60 次/分钟限速；PUT /api/auth/api-key 与 PUT /api/auth/password 同样受 auth 限速保护；GET /api/backup 启用 10 次/分钟限速；GET /api/schedule-image（含 /monthly、/yearly）启用 30 次/分钟限速；所有认证后数据修改端点（POST/PUT/DELETE）启用 100 次/分钟限速',
       '所有写接口均使用 express-validator 校验输入（POST /api/backup/restore 和 PUT /api/auth/api-key 因无标准字段或 payload 特殊，采用手动校验），校验失败返回 400 {error: "提示信息"}，详见下方 validationRules',
       'GET /api/schedules 和 GET /api/schedules/export 的 classId 参数支持逗号分隔多值（如 classId=1,2,3），与 summary 端点一致',
       '批量创建/删除/更新返回 {count, ids} 汇总；单条操作（GET/POST/PUT）返回完整的排课对象（含 class 字段）',

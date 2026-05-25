@@ -7,6 +7,8 @@ export const validateCreateSchedule = [
   body('startTime').custom(v => { if (!isValidTime(v)) throw new Error('开始时间须为有效的 HH:MM (00:00-23:59)'); return true; }),
   body('endTime').custom(v => { if (!isValidTime(v)) throw new Error('结束时间须为有效的 HH:MM (00:00-23:59)'); return true; }),
   body('durationBilling').optional().isInt({ min: 0 }).withMessage('durationBilling 须为非负整数'),
+  body('locationLat').optional().isFloat({ min: -90, max: 90 }).withMessage('纬度须为 -90 到 90'),
+  body('locationLng').optional().isFloat({ min: -180, max: 180 }).withMessage('经度须为 -180 到 180'),
 ];
 
 export const validateBatchCreate = [
@@ -47,4 +49,6 @@ export const validateUpdateSchedule = [
   body('startTime').optional().custom(v => { if (!isValidTime(v)) throw new Error('开始时间须为有效的 HH:MM (00:00-23:59)'); return true; }),
   body('endTime').optional().custom(v => { if (!isValidTime(v)) throw new Error('结束时间须为有效的 HH:MM (00:00-23:59)'); return true; }),
   body('durationBilling').optional().isInt({ min: 0 }).withMessage('durationBilling 须为非负整数'),
+  body('locationLat').optional().isFloat({ min: -90, max: 90 }).withMessage('纬度须为 -90 到 90'),
+  body('locationLng').optional().isFloat({ min: -180, max: 180 }).withMessage('经度须为 -180 到 180'),
 ];

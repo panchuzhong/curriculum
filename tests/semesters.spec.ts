@@ -28,10 +28,11 @@ test.describe('学期CRUD', () => {
   test('新建学期并验证显示', async ({ authenticatedPage: page }) => {
     await page.goto('/semesters');
     const uniqueName = `E2E学期_${Date.now()}`;
+    const year = 2100 + Math.floor(Date.now() % 1000);
     await page.getByRole('button', { name: '新建学期' }).click();
     await page.getByPlaceholder('如：2026春季').fill(uniqueName);
-    await page.locator('input[type="date"]').first().fill('2027-02-01');
-    await page.locator('input[type="date"]').last().fill('2027-06-30');
+    await page.locator('input[type="date"]').first().fill(`${year}-02-01`);
+    await page.locator('input[type="date"]').last().fill(`${year}-06-30`);
     await page.getByRole('button', { name: '保存' }).click();
     await expect(page.getByText(uniqueName)).toBeVisible();
   });
@@ -50,10 +51,11 @@ test.describe('学期CRUD', () => {
     // Create a semester first so we can delete it
     await page.goto('/semesters');
     const uniqueName = `待删除_${Date.now()}`;
+    const year = 3100 + Math.floor(Date.now() % 1000);
     await page.getByRole('button', { name: '新建学期' }).click();
     await page.getByPlaceholder('如：2026春季').fill(uniqueName);
-    await page.locator('input[type="date"]').first().fill('2028-01-01');
-    await page.locator('input[type="date"]').last().fill('2028-03-31');
+    await page.locator('input[type="date"]').first().fill(`${year}-01-01`);
+    await page.locator('input[type="date"]').last().fill(`${year}-03-31`);
     await page.getByRole('button', { name: '保存' }).click();
     await expect(page.getByText(uniqueName)).toBeVisible();
 

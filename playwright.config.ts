@@ -1,5 +1,7 @@
 import { defineConfig, devices } from '@playwright/test';
 
+process.env.DB_PATH ??= './data/e2e.db';
+
 export default defineConfig({
   testDir: './tests',
   fullyParallel: false,
@@ -19,8 +21,9 @@ export default defineConfig({
   ],
   webServer: {
     command: 'npm run dev',
+    env: { DB_PATH: process.env.DB_PATH },
     url: 'http://127.0.0.1:5174',
-    reuseExistingServer: true,
+    reuseExistingServer: false,
     timeout: 30000,
   },
 });

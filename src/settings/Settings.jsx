@@ -203,8 +203,8 @@ function PasswordSection() {
       setError('两次输入的新密码不一致');
       return;
     }
-    if (form.newPassword.length < 6) {
-      setError('新密码至少6位');
+    if (form.newPassword.length < 8) {
+      setError('新密码至少8位');
       return;
     }
     try {

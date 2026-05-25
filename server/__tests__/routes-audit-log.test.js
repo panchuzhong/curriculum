@@ -116,4 +116,36 @@ describe('GET /api/audit-log', () => {
     expect(res.status).toBe(200);
     expect(res.body).toHaveLength(0);
   });
+
+  it('cleanup keeps newest logs for the current teacher only', async () => {
+    const { auditLog } = await import('../db/schema.js');
+    const { id: teacherId1, token: tokenA } = await makeUser(drizzleDb, 'teacherA');
+    const { id: teacherId2, token: tokenB } = await makeUser(drizzleDb, 'teacherB');
+
+    for (let i = 0; i < 5; i++) {
+      drizzleDb.insert(auditLog).values({
+        teacherId: teacherId1, action: 'CREATE', tableName: 'classes', recordId: i, timestamp: new Date().toISOString(),
+      }).run();
+    }
+    for (let i = 0; i < 2; i++) {
+      drizzleDb.insert(auditLog).values({
+        teacherId: teacherId2, action: 'CREATE', tableName: 'classes', recordId: i, timestamp: new Date().toISOString(),
+      }).run();
+    }
+
+    const cleanup = await request(app).delete('/api/audit-log/cleanup?keep=2').set(auth(tokenB));
+    expect(cleanup.status).toBe(200);
+    expect(cleanup.body.deleted).toBe(0);
+    expect(cleanup.body.remaining).toBe(2);
+
+    const cleanupA = await request(app).delete('/api/audit-log/cleanup?keep=2').set(auth(tokenA));
+    expect(cleanupA.status).toBe(200);
+    expect(cleanupA.body.deleted).toBe(3);
+    expect(cleanupA.body.remaining).toBe(2);
+  });
+
+  it('cleanup rejects invalid keep value', async () => {
+    const res = await request(app).delete('/api/audit-log/cleanup?keep=-1').set(auth(token));
+    expect(res.status).toBe(400);
+  });
 });

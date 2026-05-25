@@ -195,10 +195,11 @@ export function initDb() {
   const applied = new Set(
     db.prepare(`SELECT version FROM _migrations`).all().map(r => r.version)
   );
+  const hasClassPricing = db.prepare(`SELECT name FROM sqlite_master WHERE type='table' AND name='class_pricing'`).get();
 
   // Existing database (migrations table empty but tables already exist):
   // mark all current migrations as applied since the old code handled them
-  if (applied.size === 0) {
+  if (applied.size === 0 && hasClassPricing) {
     const hasTeachers = db.prepare(`SELECT name FROM sqlite_master WHERE type='table' AND name='teachers'`).get();
     if (hasTeachers) {
       for (const m of migrations) {
@@ -206,6 +207,10 @@ export function initDb() {
         applied.add(m.version);
       }
     }
+  }
+  if (applied.has(3) && !hasClassPricing) {
+    db.prepare(`DELETE FROM _migrations WHERE version = 3`).run();
+    applied.delete(3);
   }
 
   for (const m of migrations) {
@@ -221,6 +226,7 @@ export function initDb() {
     CREATE INDEX IF NOT EXISTS idx_schedules_classId ON schedules(class_id);
     CREATE INDEX IF NOT EXISTS idx_schedules_date_classId ON schedules(date, class_id);
     CREATE INDEX IF NOT EXISTS idx_schedules_classId_date ON schedules(class_id, date);
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_schedules_unique ON schedules(class_id, date, start_time);
     CREATE INDEX IF NOT EXISTS idx_classes_teacherId_deleted ON classes(teacher_id, deleted);
     CREATE INDEX IF NOT EXISTS idx_students_teacherId ON students(teacher_id);
     CREATE INDEX IF NOT EXISTS idx_holidays_teacherId_date ON holidays(teacher_id, date);

@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import request from 'supertest';
 import { setupApp, makeUser, auth } from './route-helpers.js';
+import { clearReportCache, getReportCache, setReportCache } from '../services/report-cache.js';
 
 vi.mock('fs', async () => {
   const actual = await vi.importActual('fs');
@@ -10,6 +11,7 @@ vi.mock('fs', async () => {
 let app, drizzleDb, token, teacherId;
 
 beforeEach(async () => {
+  clearReportCache();
   ({ app, drizzleDb } = await setupApp('/api/backup', '../routes/backup.js'));
   ({ id: teacherId, token } = await makeUser(drizzleDb));
 });
@@ -174,5 +176,25 @@ describe('POST /api/backup/restore', () => {
     const exportB = await request(app).get('/api/backup').set(auth(token2));
     expect(exportB.body.classes).toHaveLength(1);
     expect(exportB.body.classes[0].name).toBe('B的班级');
+  });
+
+  it('clears report cache after restore', async () => {
+    const cacheKey = { teacherId, start: '2026-05-01', end: '2026-05-31' };
+    setReportCache(cacheKey, { count: 99 });
+    expect(getReportCache(cacheKey)).toEqual({ count: 99 });
+
+    const res = await request(app).post('/api/backup/restore').set(auth(token)).send({
+      version: 1,
+      classes: [],
+      students: [],
+      schedules: [],
+      classStudents: [],
+      holidays: [],
+      semesters: [],
+      pricingTiers: [],
+    });
+
+    expect(res.status).toBe(200);
+    expect(getReportCache(cacheKey)).toBeNull();
   });
 });

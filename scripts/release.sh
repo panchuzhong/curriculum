@@ -14,7 +14,7 @@ rm -rf dist
 
 # Install dependencies
 echo "[2/4] 安装依赖..."
-npm install --production=false
+npm install
 
 # Build frontend
 echo "[3/4] 构建前端..."
@@ -48,21 +48,15 @@ echo ""
 # Install production dependencies if needed
 if [ ! -d "node_modules" ]; then
   echo "Installing dependencies..."
-  npm install --production
+  npm install --omit=dev
 fi
 
-# Start server
-ALLOW_REGISTRATION=${ALLOW_REGISTRATION:-false} node server/index.js
+# Start server. Configuration is loaded from .env by server/index.js.
+node server/index.js
 EOF
 chmod +x "$RELEASE_DIR/start.sh"
 
-# Create .env.example
-cat > "$RELEASE_DIR/.env.example" << 'EOF'
-PORT=8080
-JWT_SECRET=
-ALLOW_REGISTRATION=true
-DB_PATH=./data/data.db
-EOF
+cp .env.example "$RELEASE_DIR/.env.example"
 
 # Create systemd service file
 cat > "$RELEASE_DIR/curriculum-scheduler.service" << EOF
@@ -72,12 +66,10 @@ After=network.target
 
 [Service]
 Type=simple
-WorkingDirectory=$(pwd)/$RELEASE_DIR
-ExecStart=$(which node) server/index.js
+WorkingDirectory=/opt/curriculum-scheduler
+EnvironmentFile=/opt/curriculum-scheduler/.env
+ExecStart=$(which node) /opt/curriculum-scheduler/server/index.js
 Restart=on-failure
-Environment=PORT=8080
-Environment=ALLOW_REGISTRATION=false
-Environment=DB_PATH=./data/data.db
 
 [Install]
 WantedBy=multi-user.target
@@ -98,6 +90,9 @@ echo "  2. 编辑 .env 文件（修改 JWT_SECRET）"
 echo "  3. 运行 ./start.sh"
 echo ""
 echo "或使用 systemd:"
+echo "  sudo mkdir -p /opt/curriculum-scheduler"
+echo "  sudo cp -r curriculum-scheduler-v${VERSION}/* /opt/curriculum-scheduler/"
+echo "  sudo vim /opt/curriculum-scheduler/.env"
 echo "  sudo cp curriculum-scheduler.service /etc/systemd/system/"
 echo "  sudo systemctl enable curriculum-scheduler"
 echo "  sudo systemctl start curriculum-scheduler"

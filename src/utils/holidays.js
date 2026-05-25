@@ -1,3 +1,5 @@
+import { api, getToken } from '../api.js';
+
 // Built-in fallback data (used when DB has no data for a year)
 const BUILT_IN_HOLIDAYS = {
   '2025': ['01-01', '01-28', '01-29', '01-30', '01-31', '02-01', '02-02', '02-03', '02-04',
@@ -40,15 +42,9 @@ let dbLoaded = false;
 
 async function loadDbHolidays() {
   try {
-    const token = localStorage.getItem('token');
-    if (!token) return;
-    const res = await fetch('/api/holidays', {
-      headers: { Authorization: `Bearer ${token}` },
-    });
-    if (res.ok) {
-      dbHolidays = await res.json();
-      dbLoaded = true;
-    }
+    if (!getToken()) return;
+    dbHolidays = await api.getHolidays();
+    dbLoaded = true;
   } catch {}
 }
 

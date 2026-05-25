@@ -19,6 +19,24 @@ vi.mock('../db/seed.js', () => ({
 }));
 vi.mock('../services/audit.js', () => ({
   logAudit: vi.fn(),
+  MAX_AUDIT_ROWS: 10000,
+  trimAuditLog: vi.fn(({ teacherId, keep = 10000 }) => {
+    const keepCount = Math.max(0, Math.min(Number(keep) || 0, 10000));
+    const count = container.db.prepare('SELECT COUNT(*) as c FROM audit_log WHERE teacher_id = ?').get(teacherId).c;
+    const deleteCount = Math.max(0, count - keepCount);
+    if (deleteCount > 0) {
+      container.db.prepare(
+        `DELETE FROM audit_log
+         WHERE id IN (
+           SELECT id FROM audit_log
+           WHERE teacher_id = ?
+           ORDER BY id ASC
+           LIMIT ?
+         )`
+      ).run(teacherId, deleteCount);
+    }
+    return { keep: keepCount, before: count, deleted: deleteCount, remaining: count - deleteCount };
+  }),
 }));
 
 function signToken(teacherId) {

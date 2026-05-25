@@ -35,7 +35,7 @@
 - 周报/月报/年报/自定义日期范围，按学科、年级、班级、月份统计
 - 支持按班级筛选，切换班级后所有图表联动
 - 排课次数、教学时长、预估收入
-- 服务端汇总接口 `GET /api/schedules/summary`，支持 `classId` 过滤、`format=csv` 导出
+- 服务端汇总接口 `GET /api/schedules/summary`，支持 `classId` 过滤、`format=csv` 导出，带 60s 服务端缓存（写操作自动失效，响应头 `X-Report-Cache` 标示命中）
 - 排课明细导出 `GET /api/schedules/export`，支持 `format=csv`（Excel 兼容 UTF-8 BOM）
 
 ### 操作日志
@@ -50,7 +50,7 @@
 - 修改密码
 
 ### 数据备份与还原
-- `GET /api/backup`：导出全量数据为 JSON（班级、学生、班级-学生关联、排课、学期、节假日、定价阶梯、班级定价历史、操作日志）
+- `GET /api/backup`：导出全量数据为 JSON（班级、学生、班级-学生关联、排课、学期、节假日、定价阶梯、班级定价历史、操作日志），超过 50MB 返回 413
 - `POST /api/backup/restore`：事务原子还原，teacherId 自动绑定当前账号防止越权
 
 ### 主题
@@ -113,7 +113,7 @@ TZ=Asia/Shanghai                       # 服务器时区（影响 range=today �
 npm run dev
 ```
 
-- 前端热更新：http://localhost:5173
+- 前端热更新：http://localhost:5174
 - 后端 API：http://localhost:8443
 
 ### 生产部署
@@ -124,6 +124,15 @@ ALLOW_REGISTRATION=true node server/index.js
 ```
 
 访问 http://localhost:8443，注册第一个账号后系统自动关闭注册。
+
+### 测试
+
+```bash
+npm test
+npx playwright test
+```
+
+Playwright 端到端测试会启动本地开发服务，并默认使用 `data/e2e.db` 准备测试账号和稳定种子数据；也可以通过 `DB_PATH=... npx playwright test` 指定独立测试库。
 
 ### 服务器依赖（Ubuntu）
 
@@ -155,6 +164,9 @@ vim .env        # 修改 JWT_SECRET
 ### systemd 服务
 
 ```bash
+sudo mkdir -p /opt/curriculum-scheduler
+sudo cp -r curriculum-scheduler-v1.7.8/* /opt/curriculum-scheduler/
+sudo vim /opt/curriculum-scheduler/.env
 sudo cp curriculum-scheduler.service /etc/systemd/system/
 sudo systemctl daemon-reload
 sudo systemctl enable curriculum-scheduler
@@ -237,7 +249,7 @@ sudo systemctl start curriculum-scheduler
 | GET | /api/schedules?start=&end= | 获取日期范围内排课（含班级信息）；支持 &classId=1,2,3 逗号分隔多班级过滤、&studentId=N 按学生所属班级过滤、&limit=N&offset=N 分页（limit 上限 1000） |
 | GET | /api/schedules?range=today\|tomorrow\|week\|month | 快捷范围查询 |
 | GET | /api/schedules/:id | 获取单条排课详情 |
-| POST | /api/schedules | 创建单次排课，返回完整对象 |
+| POST | /api/schedules | 创建单次排课，返回完整对象（同一 classId+date+startTime 重复返回 409） |
 | PUT | /api/schedules/:id | 更新排课，返回完整对象 |
 | DELETE | /api/schedules/:id | 删除单条排课 |
 | DELETE | /api/schedules/batch | 批量删除（byIds / byClassId+fromDate / byDateRange 三种模式） |
@@ -245,8 +257,8 @@ sudo systemctl start curriculum-scheduler
 | PUT | /api/schedules/batch | 批量调整时间/地点（同班级同星期几，指定日期起） |
 | GET | /api/schedules/summary?start=&end= | 课时与收入汇总统计（同样支持 range 快捷参数；可加 &classId=1,2,3 按班级过滤、&format=csv 导出） |
 | GET | /api/schedules/export?start=&end= | 排课明细导出（同样支持 range 快捷参数；可加 &classId=1,2,3 按班级过滤、&format=csv 导出） |
-| GET | /api/schedules/free-slots?date= | 查询单日空闲时段（可加 after=&before= 限制时段、&minDuration=N 过滤最短时长） |
-| GET | /api/schedules/free-slots?start=&end= | 查询多日空闲时段（可加 after=&before=、&minDuration=N） |
+| GET | /api/schedules/free-slots?date= | 查询单日空闲时段（可加 after=&before= 或 dayStart=&dayEnd= 限制时段、&minDuration=N 过滤最短时长） |
+| GET | /api/schedules/free-slots?start=&end= | 查询多日空闲时段（可加 after=&before= 或 dayStart=&dayEnd=、&minDuration=N） |
 | GET | /api/schedules/conflicts | 查询冲突排课分组（可加 start=&end=&limit=&classId=1,2,3 按班级过滤） |
 
 **学期**
@@ -263,7 +275,7 @@ sudo systemctl start curriculum-scheduler
 | GET | /api/holidays | 所有节假日记录 |
 | GET | /api/holidays/:year | 指定年份节假日 |
 | POST | /api/holidays | 添加节假日/调休 |
-| POST | /api/holidays/batch | 批量导入 |
+| POST | /api/holidays/batch | 批量导入（最多 365 项） |
 | PUT | /api/holidays/:id | 更新 |
 | DELETE | /api/holidays/:id | 删除 |
 
@@ -285,7 +297,8 @@ sudo systemctl start curriculum-scheduler
 **操作日志**
 | 方法 | 路径 | 说明 |
 |------|------|------|
-| GET | /api/audit-log | 查询操作日志，支持 limit / table / action 过滤（action: CREATE/UPDATE/DELETE/BATCH_CREATE/BATCH_UPDATE/BATCH_DELETE） |
+| GET | /api/audit-log | 查询操作日志，支持 limit（默认 100，上限 500）/ table / action 过滤（action: CREATE/UPDATE/DELETE/BATCH_CREATE/BATCH_UPDATE/BATCH_DELETE） |
+| DELETE | /api/audit-log/cleanup?keep= | 清理当前老师较旧的操作日志，默认保留最近 10000 条 |
 
 **备份**
 | 方法 | 路径 | 说明 |
@@ -307,7 +320,7 @@ POST /api/schedules/batch
 }
 ```
 
-**日期模式**：
+**日期模式**（最多 365 项）：
 ```json
 POST /api/schedules/batch
 {
@@ -327,7 +340,7 @@ POST /api/schedules/batch
 DELETE /api/schedules/batch
 {"ids": [10, 11, 12]}
 ```
-返回 `{"count": 3, "ids": [10, 11, 12]}`
+返回 `{"count": 3, "ids": [10, 11, 12]}`（ids 最多 500 项）
 
 **按班级+起始日期（默认学期保护）**：
 ```json
@@ -389,7 +402,7 @@ curl -X POST -H "X-API-Key: <key>" -H "Content-Type: application/json" \
   http://localhost:8443/api/backup/restore -d @backup.json
 ```
 
-还原为事务原子操作：先删除当前教师所有数据，再按原 ID 重新写入。还原时 `teacherId` 强制覆盖为当前认证账号。
+还原为事务原子操作：先删除当前教师所有数据，再按原 ID 重新写入。还原时 `teacherId` 强制覆盖为当前认证账号。成功返回 `{ok: true, restored: {classes, students, schedules, semesters, auditLog}}`。还原前自动保存当前数据快照到 `data/backup_pre_restore_<timestamp>.json`。
 
 ### 汇总统计响应示例
 
@@ -402,10 +415,11 @@ GET /api/schedules/summary?start=2026-05-01&end=2026-05-31
   "revenue": 10800,
   "byClass": [
     {"classId": 1, "name": "高三甲", "subject": "数学", "grade": "高三",
-     "count": 8, "hours": 16, "revenue": 7200}
+     "isCompetition": false, "count": 8, "hours": 16, "revenue": 7200}
   ],
   "bySubject": [{"subject": "数学", "count": 8, "hours": 16, "revenue": 7200}],
-  "byGrade":   [{"grade": "高三",  "count": 8, "hours": 16, "revenue": 7200}]
+  "byGrade":   [{"grade": "高三",  "count": 8, "hours": 16, "revenue": 7200}],
+  "byMonth":   [{"month": "2026-05", "count": 12, "hours": 24.0, "revenue": 10800}]
 }
 ```
 

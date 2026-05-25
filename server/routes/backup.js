@@ -1,4 +1,4 @@
-import { Router } from 'express';
+import express, { Router } from 'express';
 import rateLimit from 'express-rate-limit';
 import { drizzleDb, db } from '../db/index.js';
 import { classes, pricingTiers, students, classStudents, schedules, holidays, semesters, auditLog, classPricing } from '../db/schema.js';
@@ -6,6 +6,7 @@ import { eq, inArray } from 'drizzle-orm';
 import { authMiddleware } from '../middleware/auth.js';
 import { writeFileSync } from 'fs';
 import { clearSemesterCache } from '../services/schedule-helpers.js';
+import { clearReportCache } from '../services/report-cache.js';
 
 const BACKUP_VERSION = 1;
 
@@ -52,7 +53,7 @@ router.get('/', (req, res) => {
   res.type('json').send(json);
 });
 
-router.post('/restore', (req, res) => {
+router.post('/restore', express.json({ limit: '50mb' }), (req, res) => {
   const tid = req.teacherId;
   const data = req.body;
 
@@ -111,16 +112,36 @@ router.post('/restore', (req, res) => {
   }));
 
   const arr = (v) => Array.isArray(v) ? v : [];
+
+  // Strip unexpected fields from each record to prevent injection
+  const pick = (record, allowed) => {
+    const out = {};
+    for (const key of allowed) {
+      if (record[key] !== undefined) out[key] = record[key];
+    }
+    return out;
+  };
+
+  const classFields = ['id', 'teacherId', 'name', 'grade', 'subject', 'studentCount', 'unitPrice', 'discountAmount', 'discountReason', 'isCompetition', 'defaultLocationName', 'defaultLocationLat', 'defaultLocationLng', 'deleted', 'createdAt'];
+  const studentFields = ['id', 'teacherId', 'name', 'birthDate', 'phone', 'parentName', 'parentPhone', 'note', 'createdAt'];
+  const scheduleFields = ['id', 'classId', 'date', 'startTime', 'endTime', 'durationBilling', 'locationName', 'locationLat', 'locationLng', 'createdAt'];
+  const semesterFields = ['id', 'teacherId', 'name', 'type', 'startDate', 'endDate', 'createdAt'];
+  const holidayFields = ['id', 'teacherId', 'date', 'type', 'name'];
+  const pricingTierFields = ['id', 'teacherId', 'minStudents', 'maxStudents', 'pricePerStudentPerHour', 'createdAt'];
+  const classPricingFields = ['id', 'classId', 'studentCount', 'unitPrice', 'discountAmount', 'discountReason', 'effectiveFrom', 'createdAt'];
+  const classStudentFields = ['classId', 'studentId'];
+  const auditLogFields = ['id', 'teacherId', 'timestamp', 'action', 'tableName', 'recordId', 'beforeData', 'afterData'];
+
   const restoreData = {
-    classes: fixTimestamps(forceOwner(arr(data.classes))),
-    pricingTiers: fixTimestamps(forceOwner(arr(data.pricingTiers))),
-    students: fixTimestamps(forceOwner(arr(data.students))),
-    classStudents: arr(data.classStudents),
-    schedules: fixTimestamps(arr(data.schedules)),
-    holidays: forceOwner(arr(data.holidays)),
-    semesters: fixTimestamps(forceOwner(arr(data.semesters))),
-    classPricing: arr(data.classPricing),
-    auditLog: forceOwner(arr(data.auditLog)),
+    classes: fixTimestamps(forceOwner(arr(data.classes))).map(r => pick(r, classFields)),
+    pricingTiers: fixTimestamps(forceOwner(arr(data.pricingTiers))).map(r => pick(r, pricingTierFields)),
+    students: fixTimestamps(forceOwner(arr(data.students))).map(r => pick(r, studentFields)),
+    classStudents: arr(data.classStudents).map(r => pick(r, classStudentFields)),
+    schedules: fixTimestamps(arr(data.schedules)).map(r => pick(r, scheduleFields)),
+    holidays: forceOwner(arr(data.holidays)).map(r => pick(r, holidayFields)),
+    semesters: fixTimestamps(forceOwner(arr(data.semesters))).map(r => pick(r, semesterFields)),
+    classPricing: arr(data.classPricing).map(r => pick(r, classPricingFields)),
+    auditLog: forceOwner(arr(data.auditLog)).map(r => pick(r, auditLogFields)),
   };
 
   // Validate schedule, classStudents, classPricing references point to restored classes
@@ -172,6 +193,8 @@ router.post('/restore', (req, res) => {
     return res.status(500).json({ error: '还原失败，事务已回滚，原数据保留' });
   }
 
+  clearSemesterCache();
+  clearReportCache(tid);
   res.json({ ok: true, restored: counts });
 });
 

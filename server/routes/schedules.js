@@ -1,17 +1,27 @@
 import { Router } from 'express';
 import { drizzleDb, db } from '../db/index.js';
 import { schedules, classes, semesters, holidays, classStudents, classPricing } from '../db/schema.js';
-import { eq, and, gte, lte, inArray } from 'drizzle-orm';
+import { eq, and, gte, lte, inArray, sql, ne } from 'drizzle-orm';
 import { authMiddleware } from '../middleware/auth.js';
 import { isHoliday } from '../services/holidays.js';
 import handle from '../validations/handle.js';
 import { validateCreateSchedule, validateBatchCreate, validateBatchUpdate, validateBatchDelete, validateUpdateSchedule } from '../validations/schedules.js';
 import { logAudit } from '../services/audit.js';
 import { toLocalDateStr, toMin, resolveRange, toCSV, detectConflictGroups, getScheduleWithClass, calcDurationBilling, getTeacherSemesters } from '../services/schedule-helpers.js';
+import { clearReportCache, getReportCache, setReportCache } from '../services/report-cache.js';
 import { students as studentsTable } from '../db/schema.js';
 
 const router = Router();
 router.use(authMiddleware);
+
+function normalizeMultiParam(value) {
+  if (value == null) return '';
+  return Array.isArray(value) ? value.join(',') : String(value);
+}
+
+function parseClassIdsParam(value) {
+  return normalizeMultiParam(value).split(',').map(Number).filter(Boolean);
+}
 
 function getConflictsForSchedule(scheduleId, teacherId) {
   const s = drizzleDb.select().from(schedules).where(eq(schedules.id, scheduleId)).get();
@@ -52,7 +62,7 @@ router.get('/', (req, res) => {
   let classIds = teacherClasses.map(c => c.id);
   if (classIds.length === 0) return res.json([]);
   if (classId) {
-    const queryClassIds = classId.split(',').map(Number).filter(Boolean);
+    const queryClassIds = parseClassIdsParam(classId);
     if (queryClassIds.length) classIds = classIds.filter(id => queryClassIds.includes(id));
   }
   if (studentId) {
@@ -95,6 +105,7 @@ router.post('/', validateCreateSchedule, handle, (req, res) => {
     locationLng: locationLng ?? cls.defaultLocationLng,
   }).run();
   const created = getScheduleWithClass(Number(result.lastInsertRowid), req.teacherId);
+  clearReportCache(req.teacherId);
   logAudit({ teacherId: req.teacherId, action: 'CREATE', tableName: 'schedules', recordId: created.id, after: created });
   const warnings = getConflictsForSchedule(created.id, req.teacherId);
   res.json({ ...created, warnings: warnings.length > 0 ? warnings : undefined });
@@ -169,16 +180,24 @@ router.post('/batch', validateBatchCreate, handle, (req, res) => {
   // Chunk inserts to stay within SQLite's default 999-parameter limit
   const CHUNK = 50;
   const idList = [];
-  db.transaction(() => {
-    for (let i = 0; i < allValues.length; i += CHUNK) {
-      const result = drizzleDb.insert(schedules).values(allValues.slice(i, i + CHUNK)).run();
-      const firstId = Number(result.lastInsertRowid);
-      for (let j = 0; j < Math.min(CHUNK, allValues.length - i); j++) {
-        idList.push(firstId + j);
+  try {
+    db.transaction(() => {
+      for (let i = 0; i < allValues.length; i += CHUNK) {
+        const result = drizzleDb.insert(schedules).values(allValues.slice(i, i + CHUNK)).run();
+        const firstId = Number(result.lastInsertRowid);
+        for (let j = 0; j < Math.min(CHUNK, allValues.length - i); j++) {
+          idList.push(firstId + j);
+        }
       }
+    })();
+  } catch (e) {
+    if (e.message?.includes('UNIQUE constraint failed')) {
+      return res.status(409).json({ error: '部分日期同一时间已有排课，请检查冲突' });
     }
-  })();
+    throw e;
+  }
   logAudit({ teacherId: req.teacherId, action: 'BATCH_CREATE', tableName: 'schedules', after: { count: idList.length, ids: idList } });
+  clearReportCache(req.teacherId);
   res.json({ count: idList.length, ids: idList });
 });
 
@@ -268,6 +287,7 @@ router.put('/batch', validateBatchUpdate, handle, (req, res) => {
     teacherId: req.teacherId, action: 'BATCH_UPDATE', tableName: 'schedules',
     after: { count: updatedIds.length, ids: updatedIds, classId, updates: safeUpdates },
   });
+  clearReportCache(req.teacherId);
   const resp = { count: updatedIds.length, ids: updatedIds };
   if (semesterFiltered > 0) {
     resp.semesterFiltered = semesterFiltered;
@@ -302,7 +322,10 @@ router.delete('/batch', validateBatchDelete, handle, (req, res) => {
 
     const toDelete = candidates.map(s => s.id);
     if (!dryRun) {
-      if (toDelete.length > 0) drizzleDb.delete(schedules).where(inArray(schedules.id, toDelete)).run();
+      db.transaction(() => {
+        if (toDelete.length > 0) drizzleDb.delete(schedules).where(inArray(schedules.id, toDelete)).run();
+      })();
+      if (toDelete.length > 0) clearReportCache(req.teacherId);
       logAudit({ teacherId: req.teacherId, action: 'BATCH_DELETE', tableName: 'schedules', after: { count: toDelete.length, ids: toDelete } });
     }
     const resp = { count: toDelete.length, ids: toDelete };
@@ -346,7 +369,10 @@ router.delete('/batch', validateBatchDelete, handle, (req, res) => {
 
     const toDelete = candidates.map(s => s.id);
     if (!dryRun) {
-      drizzleDb.delete(schedules).where(inArray(schedules.id, toDelete)).run();
+      db.transaction(() => {
+        drizzleDb.delete(schedules).where(inArray(schedules.id, toDelete)).run();
+      })();
+      clearReportCache(req.teacherId);
       logAudit({
         teacherId: req.teacherId, action: 'BATCH_DELETE', tableName: 'schedules',
         after: { count: toDelete.length, ids: toDelete, classId, fromDate },
@@ -365,7 +391,7 @@ router.delete('/batch', validateBatchDelete, handle, (req, res) => {
       .where(and(eq(classes.teacherId, req.teacherId), eq(classes.deleted, false))).all();
     let classIds = teacherClasses.map(c => c.id);
     if (classId) {
-      const queryClassIds = String(classId).split(',').map(Number).filter(Boolean);
+      const queryClassIds = parseClassIdsParam(classId);
       if (queryClassIds.length) classIds = classIds.filter(id => queryClassIds.includes(id));
     }
     if (classIds.length === 0) {
@@ -390,7 +416,10 @@ router.delete('/batch', validateBatchDelete, handle, (req, res) => {
 
     const toDelete = candidates.map(s => s.id);
     if (!dryRun) {
-      if (toDelete.length > 0) drizzleDb.delete(schedules).where(inArray(schedules.id, toDelete)).run();
+      db.transaction(() => {
+        if (toDelete.length > 0) drizzleDb.delete(schedules).where(inArray(schedules.id, toDelete)).run();
+      })();
+      if (toDelete.length > 0) clearReportCache(req.teacherId);
       logAudit({ teacherId: req.teacherId, action: 'BATCH_DELETE', tableName: 'schedules', after: { count: toDelete.length, ids: toDelete, start, end } });
     }
     const resp = { count: toDelete.length, ids: toDelete };
@@ -432,8 +461,15 @@ router.put('/:id', validateUpdateSchedule, handle, (req, res) => {
       updates.durationBilling,
     );
   }
+  const effectiveClassId = updates.classId ?? existing.classId;
+  const effectiveDate = updates.date ?? existing.date;
+  const effectiveStartTime = updates.startTime ?? existing.startTime;
+  const dup = drizzleDb.select().from(schedules)
+    .where(and(eq(schedules.classId, effectiveClassId), eq(schedules.date, effectiveDate), eq(schedules.startTime, effectiveStartTime), ne(schedules.id, +id))).get();
+  if (dup) return res.status(409).json({ error: '该班级在此日期的同一时间已有排课' });
   drizzleDb.update(schedules).set(updates).where(eq(schedules.id, +id)).run();
   const updated = getScheduleWithClass(+id, req.teacherId);
+  clearReportCache(req.teacherId);
   logAudit({ teacherId: req.teacherId, action: 'UPDATE', tableName: 'schedules', recordId: +id, before: existing, after: updated });
   const warnings = getConflictsForSchedule(+id, req.teacherId);
   res.json({ ...updated, warnings: warnings.length > 0 ? warnings : undefined });
@@ -446,6 +482,7 @@ router.delete('/:id', (req, res) => {
     .where(and(eq(classes.id, existing.classId), eq(classes.teacherId, req.teacherId), eq(classes.deleted, false))).get();
   if (!cls) return res.status(403).json({ error: 'Forbidden' });
   drizzleDb.delete(schedules).where(eq(schedules.id, +req.params.id)).run();
+  clearReportCache(req.teacherId);
   logAudit({ teacherId: req.teacherId, action: 'DELETE', tableName: 'schedules', recordId: +req.params.id, before: existing });
   res.json({ ok: true });
 });
@@ -462,7 +499,7 @@ router.get('/summary', (req, res) => {
   teacherClasses.forEach(c => classMap[c.id] = c);
   let classIds = teacherClasses.map(c => c.id);
   if (req.query.classId) {
-    const queryClassIds = req.query.classId.split(',').map(Number).filter(Boolean);
+    const queryClassIds = parseClassIdsParam(req.query.classId);
     if (queryClassIds.length) classIds = classIds.filter(id => queryClassIds.includes(id));
   }
   if (classIds.length === 0) {
@@ -472,6 +509,15 @@ router.get('/summary', (req, res) => {
       return res.send(toCSV([['班级', '年级', '学科', '课次', '课时数(小时)', '收入(元)']]));
     }
     return res.json(empty);
+  }
+
+  if (format !== 'csv') {
+    const cacheClassId = normalizeMultiParam(req.query.classId);
+    const cached = getReportCache({ teacherId: req.teacherId, start, end, classId: cacheClassId });
+    if (cached) {
+      res.setHeader('X-Report-Cache', 'hit');
+      return res.json(cached);
+    }
   }
 
   const scheds = drizzleDb.select().from(schedules)
@@ -555,7 +601,7 @@ router.get('/summary', (req, res) => {
     byMonthMap[m].revenue += (unit * cnt - disc) * (s.durationBilling / 60);
   }
 
-  res.json({
+  const response = {
     count: scheds.length,
     hours: scheds.reduce((s, r) => s + r.durationBilling, 0) / 60,
     revenue: byClass.reduce((s, b) => s + b.revenue, 0),
@@ -563,7 +609,12 @@ router.get('/summary', (req, res) => {
     bySubject: Object.values(bySubjectMap).sort((a, b) => b.count - a.count),
     byGrade: Object.values(byGradeMap).sort((a, b) => b.count - a.count),
     byMonth: Object.values(byMonthMap).map(m => ({ month: m.month, count: m.count, hours: m.minutes / 60, revenue: m.revenue })).sort((a, b) => a.month.localeCompare(b.month)),
-  });
+  };
+  if (format !== 'csv') {
+    setReportCache({ teacherId: req.teacherId, start, end, classId: normalizeMultiParam(req.query.classId) }, response);
+    res.setHeader('X-Report-Cache', 'miss');
+  }
+  res.json(response);
 });
 
 router.get('/export', (req, res) => {
@@ -575,7 +626,7 @@ router.get('/export', (req, res) => {
     .where(and(eq(classes.teacherId, req.teacherId), eq(classes.deleted, false))).all();
   let cIds = teacherClasses.map(c => c.id);
   if (classId) {
-    const queryClassIds = classId.split(',').map(Number).filter(Boolean);
+    const queryClassIds = parseClassIdsParam(classId);
     if (queryClassIds.length) cIds = cIds.filter(id => queryClassIds.includes(id));
   }
 
@@ -751,7 +802,7 @@ router.get('/conflicts', (req, res) => {
   let classIds = teacherClasses.map(c => c.id);
   const { classId } = req.query;
   if (classId) {
-    const queryClassIds = classId.split(',').map(Number).filter(Boolean);
+    const queryClassIds = parseClassIdsParam(classId);
     if (queryClassIds.length) classIds = classIds.filter(id => queryClassIds.includes(id));
   }
   if (classIds.length === 0) return res.json({ total: 0, groups: [] });

@@ -73,7 +73,13 @@
       "Bash(xargs kill)",
       "Bash(lsof -i :8443 -sTCP:LISTEN -t)",
       "mcp__plugin_playwright_playwright__browser_close",
-      "Bash(awk '{print $5, $NF}')"
+      "Bash(awk '{print $5, $NF}')",
+      "Bash(xxd /home/pcz/workspace/curriculum/server/routes/schedules.js)",
+      "Bash(xxd)",
+      "Bash(python3 *)",
+      "Bash(npm test *)",
+      "Bash(npm rebuild *)",
+      "Bash(grep *)"
     ]
   }
 }

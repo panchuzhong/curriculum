@@ -1,6 +1,15 @@
 import { useState } from 'react';
-import { api, API_BASE, getToken } from '../api';
+import { api } from '../api';
 import { useToast } from '../components/ToastProvider';
+
+function downloadBlob(blob, filename) {
+  const objUrl = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = objUrl;
+  a.download = filename;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(objUrl), 1000);
+}
 
 export default function useScheduleExport({ weekStart, visibleDays, addDays }) {
   const toast = useToast();
@@ -18,19 +27,8 @@ export default function useScheduleExport({ weekStart, visibleDays, addDays }) {
   async function exportPNG(start, end) {
     setExporting(true);
     try {
-      const token = getToken();
-      if (!token) throw new Error('未登录');
-      const res = await fetch(`${API_BASE}/schedule-image?start=${start}&end=${end}`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      if (!res.ok) throw new Error('导出失败');
-      const blob = await res.blob();
-      const objUrl = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = objUrl;
-      a.download = `课表_${start}_${end}.png`;
-      a.click();
-      setTimeout(() => URL.revokeObjectURL(objUrl), 1000);
+      const blob = await api.exportScheduleImage(start, end);
+      downloadBlob(blob, `课表_${start}_${end}.png`);
     } catch (e) { toast('导出失败'); } finally {
       setExporting(false);
     }
@@ -40,12 +38,7 @@ export default function useScheduleExport({ weekStart, visibleDays, addDays }) {
     setExporting(true);
     try {
       const blob = await api.exportScheduleCSV(start, end);
-      const objUrl = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = objUrl;
-      a.download = `课表_${start}_${end}.csv`;
-      a.click();
-      setTimeout(() => URL.revokeObjectURL(objUrl), 1000);
+      downloadBlob(blob, `课表_${start}_${end}.csv`);
     } catch (e) { toast(e.message || '导出失败'); }
     finally { setExporting(false); }
   }

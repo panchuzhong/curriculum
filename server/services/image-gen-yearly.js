@@ -1,6 +1,10 @@
 import { getBrowser } from './browser.js';
 import { getCategoryColor } from './colors.js';
 
+function escapeHtml(s) {
+  return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
 // ── Category logic — mirrors frontend YearlySchedule ──────────────
 function getCategory(cls) {
   if (!cls) return '未知';
@@ -116,13 +120,13 @@ function renderYearHtml(schedulesWithClasses, year, { theme }) {
     let chipsHtml = displayEntries.map(entry => {
       const [label, h, dominantCat] = condensed ? entry : [entry[0], entry[1]];
       const color = resolveColor(label, dominantCat, isDark);
-      return `<span style="display:inline-flex;align-items:center;padding:2px 6px;border-radius:4px;background:${color};color:#fff;font-size:10px;margin-right:4px;margin-bottom:3px">${label} ${h.toFixed(1)}h</span>`;
+      return `<span style="display:inline-flex;align-items:center;padding:2px 6px;border-radius:4px;background:${color};color:#fff;font-size:10px;margin-right:4px;margin-bottom:3px">${escapeHtml(label)} ${h.toFixed(1)}h</span>`;
     }).join('');
 
     let barHtml = displayEntries.map(entry => {
       const [label, h, dominantCat] = condensed ? entry : [entry[0], entry[1]];
       const color = resolveColor(label, dominantCat, isDark);
-      return `<div style="height:100%;width:${(h / totalHours) * 100}%;background:${color};border-radius:3px" title="${label}"></div>`;
+      return `<div style="height:100%;width:${(h / totalHours) * 100}%;background:${color};border-radius:3px" title="${escapeHtml(label)}"></div>`;
     }).join('');
 
     return `<div style="background:${c.cardBg};border-radius:8px;padding:12px;display:flex;flex-direction:column;justify-content:space-between">
@@ -146,7 +150,7 @@ function renderYearHtml(schedulesWithClasses, year, { theme }) {
       const [label, h, dominantCat] = yearCondensed ? entry : [entry[0], entry[1]];
       const color = resolveColor(label, dominantCat, isDark);
       return `<div style="display:flex;align-items:center;gap:8px;margin-bottom:3px">
-        <span style="width:80px;text-align:right;font-size:11px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis">${label}</span>
+        <span style="width:80px;text-align:right;font-size:11px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis">${escapeHtml(label)}</span>
         <div style="flex:1;height:14px;background:${c.barBg};border-radius:4px;overflow:hidden">
           <div style="height:100%;width:${(h / yearMaxHours) * 100}%;background:${color};border-radius:4px"></div>
         </div>

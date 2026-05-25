@@ -1,7 +1,9 @@
 import { test, expect } from '@playwright/test';
+import { ensureTestUser, TEST_USER } from './auth';
 
 test.describe('登录页', () => {
   test.beforeEach(async ({ page }) => {
+    ensureTestUser();
     await page.goto('/login');
   });
 
@@ -29,15 +31,15 @@ test.describe('登录页', () => {
   });
 
   test('错误密码时提示错误', async ({ page }) => {
-    await page.getByRole('textbox', { name: '请输入用户名' }).fill('pcz');
+    await page.getByRole('textbox', { name: '请输入用户名' }).fill(TEST_USER.username);
     await page.getByRole('textbox', { name: '请输入密码' }).fill('wrongpassword');
     await page.getByRole('button', { name: '登录' }).click();
-    await expect(page.getByText('用户名或密码错误')).toBeVisible();
+    await expect(page.getByText('Invalid credentials')).toBeVisible();
   });
 
   test('正确凭据登录后跳转到首页', async ({ page }) => {
-    await page.getByRole('textbox', { name: '请输入用户名' }).fill('pcz');
-    await page.getByRole('textbox', { name: '请输入密码' }).fill('test1234');
+    await page.getByRole('textbox', { name: '请输入用户名' }).fill(TEST_USER.username);
+    await page.getByRole('textbox', { name: '请输入密码' }).fill(TEST_USER.password);
     await page.getByRole('button', { name: '登录' }).click();
     await page.waitForURL('/');
     await expect(page.getByRole('link', { name: '周课表' })).toBeVisible();
@@ -56,7 +58,7 @@ test.describe('注册页', () => {
   test('注册表单包含必要字段', async ({ page }) => {
     await expect(page.getByPlaceholder('请输入姓名')).toBeVisible();
     await expect(page.getByPlaceholder('请输入用户名')).toBeVisible();
-    await expect(page.getByPlaceholder('至少6位')).toBeVisible();
+    await expect(page.getByPlaceholder('至少8位')).toBeVisible();
     await expect(page.getByRole('button', { name: '注册' })).toBeVisible();
   });
 });

@@ -36,6 +36,14 @@ test.describe('月课表', () => {
     await page.getByRole('button', { name: '本月' }).click();
     await expect(page.getByText('今')).toBeVisible();
   });
+
+  test('移动端点击日期跳转到当天开始的周视图', async ({ authenticatedPage: page }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.goto('/monthly?year=2026&month=4');
+    await page.getByLabel('查看2026-05-13课表').click();
+    await expect(page).toHaveURL(/\/\?date=2026-05-13$/);
+    await expect(page.locator('main').getByText('05-13 ~ 05-14')).toBeVisible();
+  });
 });
 
 test.describe('年课表', () => {

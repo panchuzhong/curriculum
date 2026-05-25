@@ -5,7 +5,7 @@ let app, token;
 
 beforeAll(async () => {
   const { setupApp, makeUser, auth } = await import('./route-helpers.js');
-  const result = await setupApp('/api', '../routes/agent-help.js');
+  const result = await setupApp('/api/agent', '../routes/agent-help.js');
   app = result.app;
   const user = await makeUser(result.drizzleDb);
   token = user.token;

@@ -40,7 +40,9 @@ export default function useWeekNavigation({ searchParams }) {
   const visibleDays = isMobile ? 2 : 7;
 
   const initialWeek = searchParams.get('week') || (() => {
+    const selectedDate = searchParams.get('date');
     const { mobile } = getOrientation();
+    if (selectedDate) return mobile ? selectedDate : getMonday(selectedDate);
     return mobile ? todayStr() : getMonday(todayStr());
   })();
 
@@ -91,10 +93,14 @@ export default function useWeekNavigation({ searchParams }) {
     }
   }
 
+  const mountedRef = useRef(true);
+  useEffect(() => () => { mountedRef.current = false; }, []);
+
   async function animateToOffset(pct) {
     if (!gridRef.current) return;
     gridRef.current.style.setProperty('--day-transition', `transform ${ANIM_MS}ms cubic-bezier(0.4, 0, 0.2, 1)`);
     await new Promise(r => requestAnimationFrame(r));
+    if (!mountedRef.current || !gridRef.current) return;
     gridRef.current.style.setProperty('--day-offset', `${pct}%`);
     await new Promise(r => setTimeout(r, ANIM_MS + 16));
   }
