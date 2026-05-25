@@ -117,7 +117,7 @@ export default function Layout({ children }) {
       const next = e.key === 'ArrowUp'
         ? (idx - 1 + NAV_LINKS.length) % NAV_LINKS.length
         : (idx + 1) % NAV_LINKS.length;
-      navigate(NAV_LINKS[next].to);
+      navigate(getNavTarget(NAV_LINKS[next].to));
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
