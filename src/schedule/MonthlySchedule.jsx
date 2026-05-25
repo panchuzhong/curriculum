@@ -78,6 +78,9 @@ export default function MonthlySchedule() {
     const nm = month === 0 ? 11 : month - 1;
     const ny = month === 0 ? year - 1 : year;
     setViewDate('month', `${ny}-${nm}`);
+    const url = new URL(window.location);
+    url.searchParams.set('year', ny); url.searchParams.set('month', nm);
+    window.history.replaceState(null, '', url);
     if (month === 0) { setYear(y => y - 1); setMonth(11); }
     else setMonth(m => m - 1);
     setAnimKey(k => k + 1);
@@ -88,6 +91,9 @@ export default function MonthlySchedule() {
     const nm = month === 11 ? 0 : month + 1;
     const ny = month === 11 ? year + 1 : year;
     setViewDate('month', `${ny}-${nm}`);
+    const url = new URL(window.location);
+    url.searchParams.set('year', ny); url.searchParams.set('month', nm);
+    window.history.replaceState(null, '', url);
     if (month === 11) { setYear(y => y + 1); setMonth(0); }
     else setMonth(m => m + 1);
     setAnimKey(k => k + 1);
@@ -115,7 +121,7 @@ export default function MonthlySchedule() {
         <button onClick={prevMonth} className={navBtn}><span className="sm:hidden">‹</span><span className="hidden sm:inline">上月</span></button>
         <h2 className="text-base sm:text-xl font-medium">{year}年{month + 1}月</h2>
         <div className="flex gap-1 sm:gap-2">
-          <button onClick={() => { const n = new Date(); setViewDate('month', `${n.getFullYear()}-${n.getMonth()}`); setYear(n.getFullYear()); setMonth(n.getMonth()); }}
+          <button onClick={() => { const n = new Date(); const ny = n.getFullYear(); const nm = n.getMonth(); setViewDate('month', `${ny}-${nm}`); const u = new URL(window.location); u.searchParams.set('year', ny); u.searchParams.set('month', nm); window.history.replaceState(null, '', u); setYear(ny); setMonth(nm); }}
             className={`${navBtn} px-3 sm:px-4`}>本月</button>
           <button onClick={nextMonth} className={navBtn}><span className="sm:hidden">›</span><span className="hidden sm:inline">下月</span></button>
           <div className="flex gap-1 ml-1 sm:ml-2">

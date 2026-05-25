@@ -119,6 +119,10 @@ export default function useWeekNavigation({ searchParams }) {
   // Instant buffer swap: update dates centered on newCenter, snap offset to 0
   function navigateToWeek(newCenter) {
     setViewDate('week', newCenter);
+    const url = new URL(window.location);
+    url.searchParams.set('date', newCenter);
+    url.searchParams.delete('week');
+    window.history.replaceState(null, '', url);
     centerRef.current = newCenter;
     setWeekStart(newCenter);
     const newDates = getAllDates(newCenter);
@@ -134,6 +138,7 @@ export default function useWeekNavigation({ searchParams }) {
     if (navLockRef.current) return;
     const days = daysBetween(centerRef.current, newWeekStart);
     if (days === 0) return;
+    setViewDate('week', newWeekStart);
 
     if (Math.abs(days) <= BUFFER) {
       navLockRef.current = true;
@@ -150,6 +155,7 @@ export default function useWeekNavigation({ searchParams }) {
     applyPendingSchedules();
     if (dayOffset === 0) return;
     const newCenter = addDays(centerRef.current, dayOffset);
+    setViewDate('week', newCenter);
     navigateToWeek(newCenter);
   };
 

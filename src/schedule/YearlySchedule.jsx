@@ -153,7 +153,11 @@ export default function YearlySchedule() {
 
   function changeYear(delta) {
     animDir.current = delta;
-    setViewDate('year', String(year + delta));
+    const ny = year + delta;
+    setViewDate('year', String(ny));
+    const url = new URL(window.location);
+    url.searchParams.set('year', ny);
+    window.history.replaceState(null, '', url);
     setYear(y => y + delta);
     setAnimKey(k => k + 1);
   }
@@ -173,7 +177,7 @@ export default function YearlySchedule() {
         <button onClick={() => changeYear(-1)} className={navBtn}><span className="sm:hidden">‹</span><span className="hidden sm:inline">上一年</span></button>
         <h2 className="text-base sm:text-xl font-medium">{year}年</h2>
         <div className="flex gap-1 sm:gap-2">
-          <button onClick={() => { const ny = new Date().getFullYear(); setViewDate('year', String(ny)); animDir.current = 0; setYear(ny); setAnimKey(k => k + 1); }} className={`${navBtn} px-3 sm:px-4`}>今年</button>
+          <button onClick={() => { const ny = new Date().getFullYear(); setViewDate('year', String(ny)); const u = new URL(window.location); u.searchParams.set('year', ny); window.history.replaceState(null, '', u); animDir.current = 0; setYear(ny); setAnimKey(k => k + 1); }} className={`${navBtn} px-3 sm:px-4`}>今年</button>
           <button onClick={() => changeYear(1)} className={navBtn}><span className="sm:hidden">›</span><span className="hidden sm:inline">下一年</span></button>
           <div className="flex gap-1 ml-1 sm:ml-2">
             <button onClick={() => setShowBatch(true)} className={actBtn + ' bg-green-600 hover:bg-green-700'}>
