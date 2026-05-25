@@ -1,11 +1,15 @@
 import { test, expect } from './auth';
 
+const thisYear = new Date().getFullYear();
+const thisYearName = `${thisYear}年`;
+const nextYearName = `${thisYear + 1}年`;
+
 test.describe('月课表', () => {
   test.use({ baseURL: 'http://127.0.0.1:5174' });
 
   test('显示月视图标题和导航', async ({ authenticatedPage: page }) => {
     await page.goto('/monthly');
-    await expect(page.getByRole('heading', { name: /2026年\d+月/ })).toBeVisible();
+    await expect(page.getByRole('heading', { name: new RegExp(`${thisYear}年\\d+月`) })).toBeVisible();
     await expect(page.getByRole('button', { name: '上月' })).toBeVisible();
     await expect(page.getByRole('button', { name: '本月' })).toBeVisible();
     await expect(page.getByRole('button', { name: '下月' })).toBeVisible();
@@ -24,10 +28,13 @@ test.describe('月课表', () => {
   });
 
   test('切换月份', async ({ authenticatedPage: page }) => {
-    await page.goto('/monthly');
+    // Use a known month (July 2026) to avoid today-dependency
+    await page.goto('/monthly?year=2026&month=6');
+    await expect(page.getByRole('heading', { name: '2026年7月' })).toBeVisible();
     await page.getByRole('button', { name: '下月' }).click();
-    await expect(page.getByRole('heading', { name: /2026年/ })).toBeVisible();
+    await expect(page.getByRole('heading', { name: '2026年8月' })).toBeVisible();
     await page.getByRole('button', { name: '上月' }).click();
+    await expect(page.getByRole('heading', { name: '2026年7月' })).toBeVisible();
   });
 
   test('点击本月回到当前月', async ({ authenticatedPage: page }) => {
@@ -51,7 +58,7 @@ test.describe('年课表', () => {
 
   test('显示年度标题和导航', async ({ authenticatedPage: page }) => {
     await page.goto('/yearly');
-    await expect(page.getByRole('heading', { name: '2026年' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: thisYearName })).toBeVisible();
     await expect(page.getByRole('button', { name: '上一年' })).toBeVisible();
     await expect(page.getByRole('button', { name: '今年' })).toBeVisible();
     await expect(page.getByRole('button', { name: '下一年' })).toBeVisible();
@@ -59,7 +66,7 @@ test.describe('年课表', () => {
 
   test('显示12个月卡片', async ({ authenticatedPage: page }) => {
     await page.goto('/yearly');
-    await expect(page.getByRole('heading', { name: '2026年' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: thisYearName })).toBeVisible();
     const main = page.locator('main');
     await expect(main.getByText('3月')).toBeVisible();
     await expect(main.getByText('9月')).toBeVisible();
@@ -78,9 +85,9 @@ test.describe('年课表', () => {
   test('切换年份', async ({ authenticatedPage: page }) => {
     await page.goto('/yearly');
     await page.getByRole('button', { name: '下一年' }).click();
-    await expect(page.getByRole('heading', { name: '2027年' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: nextYearName })).toBeVisible();
     await page.getByRole('button', { name: '今年' }).click();
-    await expect(page.getByRole('heading', { name: '2026年' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: thisYearName })).toBeVisible();
   });
 });
 

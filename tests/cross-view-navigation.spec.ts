@@ -1,5 +1,24 @@
 import { test, expect } from './auth';
 
+// Date helpers — compute dynamic values so tests don't break as time passes
+function pad(n: number) { return String(n).padStart(2, '0'); }
+function todayYear() { return new Date().getFullYear(); }
+function todayMonthIdx() { return new Date().getMonth(); }
+function todayYearStr() { return `${todayYear()}年`; }
+function todayMonthStr() { return `${todayYear()}年${todayMonthIdx() + 1}月`; }
+function nextYearStr() { return `${todayYear() + 1}年`; }
+function prevYearStr() { return `${todayYear() - 1}年`; }
+function todayMonday() {
+  const d = new Date(); d.setDate(d.getDate() - (d.getDay() || 7) + 1); return d;
+}
+function todayWeekText() {
+  const m = todayMonday(); const s = new Date(m); s.setDate(m.getDate() + 6);
+  return `${m.getFullYear()}-${pad(m.getMonth() + 1)}-${pad(m.getDate())} ~ ${s.getFullYear()}-${pad(s.getMonth() + 1)}-${pad(s.getDate())}`;
+}
+function todayWeekRegExp() {
+  return new RegExp(todayWeekText().replace(/[.~ -]/g, '\\$&'));
+}
+
 test.describe('跨视图键盘导航', () => {
   test('方向键上下切换周/月视图并保持月份上下文', async ({ authenticatedPage: page }) => {
     // Navigate to a specific week
@@ -106,9 +125,9 @@ test.describe('Home键快捷方式', () => {
   });
 
   test('年视图按Home键回到今年', async ({ authenticatedPage: page }) => {
-    await page.goto('/yearly?year=2027');
+    await page.goto(`/yearly?year=${todayYear() + 1}`);
     await page.keyboard.press('Home');
-    await expect(page.getByRole('heading', { name: '2026年' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: todayYearStr() })).toBeVisible();
   });
 });
 
@@ -293,59 +312,58 @@ test.describe('非周一weekStart完整循环保留', () => {
 
 test.describe('Home键重置后跨视图导航', () => {
   test('月视图Home后ArrowUp应回到今天所在的周', async ({ authenticatedPage: page }) => {
-    // Start far from today: August month
+    // Use August as a date far from any possible today
     await page.goto('/monthly?year=2026&month=7');
     await expect(page.getByRole('heading', { name: '2026年8月' })).toBeVisible();
 
-    // Home → today's month (May)
+    // Home → today's month
     await page.keyboard.press('Home');
-    await expect(page.getByRole('heading', { name: /2026年5月/ })).toBeVisible();
+    await expect(page.getByRole('heading', { name: todayMonthStr() })).toBeVisible();
 
-    // ArrowUp → should be today's week (May 25-31, not May 4-10)
+    // ArrowUp → should be today's week (not day-10 week from stale data)
     await page.keyboard.press('ArrowUp');
-    await expect(page.getByText(/2026-05-25 ~ 2026-05-31/)).toBeVisible();
+    await expect(page.getByText(todayWeekRegExp())).toBeVisible();
   });
 
   test('年视图Home后ArrowDown到月再ArrowDown到周显示今天', async ({ authenticatedPage: page }) => {
     // Start far from today
-    await page.goto('/yearly?year=2025');
+    await page.goto(`/yearly?year=${todayYear() - 1}`);
 
-    // Home → 2026
+    // Home → current year
     await page.keyboard.press('Home');
-    await expect(page.getByRole('heading', { name: '2026年' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: todayYearStr() })).toBeVisible();
 
-    // ArrowDown → month (should be May, not stale month)
+    // ArrowDown → month (should be today's month, not stale)
     await page.keyboard.press('ArrowDown');
-    await expect(page.getByRole('heading', { name: /2026年5月/ })).toBeVisible();
+    await expect(page.getByRole('heading', { name: todayMonthStr() })).toBeVisible();
 
-    // ArrowDown → week (should be today's week)
+    // ArrowDown → week (should be today's week, not stale)
     await page.keyboard.press('ArrowDown');
-    await expect(page.getByText(/2026-05-25 ~ 2026-05-31/)).toBeVisible();
+    await expect(page.getByText(todayWeekRegExp())).toBeVisible();
   });
 
   test('周视图Home后ArrowDown到月再ArrowDown到年再ArrowUp回到周保留今天', async ({ authenticatedPage: page }) => {
     // Start far from today
-    await page.goto('/?date=2025-12-25');
+    await page.goto(`/?date=${todayYear() - 1}-12-25`);
 
     // Home → today's week
     await page.keyboard.press('Home');
     await expect(page.getByText('今天')).toBeVisible();
-    await expect(page.getByText(/2026-05-25 ~ 2026-05-31/)).toBeVisible();
 
-    // ArrowDown → month (May)
+    // ArrowDown → month
     await page.keyboard.press('ArrowDown');
-    await expect(page.getByRole('heading', { name: /2026年5月/ })).toBeVisible();
+    await expect(page.getByRole('heading', { name: todayMonthStr() })).toBeVisible();
 
-    // ArrowDown → year (2026)
+    // ArrowDown → year
     await page.keyboard.press('ArrowDown');
-    await expect(page.getByRole('heading', { name: '2026年' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: todayYearStr() })).toBeVisible();
 
-    // ArrowUp → month (May, not stale)
+    // ArrowUp → month (today, not stale)
     await page.keyboard.press('ArrowUp');
-    await expect(page.getByRole('heading', { name: /2026年5月/ })).toBeVisible();
+    await expect(page.getByRole('heading', { name: todayMonthStr() })).toBeVisible();
 
     // ArrowUp → week (today, not stale)
     await page.keyboard.press('ArrowUp');
-    await expect(page.getByText(/2026-05-25 ~ 2026-05-31/)).toBeVisible();
+    await expect(page.getByText(todayWeekRegExp())).toBeVisible();
   });
 });
