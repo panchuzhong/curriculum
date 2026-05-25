@@ -271,3 +271,81 @@ test.describe('非课表页面切换后课表视图日期上下文', () => {
     await expect(page.getByRole('heading', { name: '2026年8月' })).toBeVisible();
   });
 });
+
+test.describe('非周一weekStart完整循环保留', () => {
+  test('周三weekStart循环8个页面后保留同样的周', async ({ authenticatedPage: page }) => {
+    // Set up: navigate to Wednesday June 3 (3 days past Monday June 1 → two ArrowRight clicks)
+    await page.goto('/?date=2026-06-01');
+    await page.keyboard.press('ArrowRight');
+    await page.keyboard.press('ArrowRight');
+    await expect(page.getByText(/2026-06-03 ~ 2026-06-09/)).toBeVisible();
+
+    // Full ArrowDown cycle through all 8 links back to week
+    for (let i = 0; i < 8; i++) {
+      await page.keyboard.press('ArrowDown');
+    }
+
+    // Should preserve the exact same week, not shift to Monday
+    await expect(page).toHaveURL(/\/\?week=2026-06-03/);
+    await expect(page.getByText(/2026-06-03 ~ 2026-06-09/)).toBeVisible();
+  });
+});
+
+test.describe('Home键重置后跨视图导航', () => {
+  test('月视图Home后ArrowUp应回到今天所在的周', async ({ authenticatedPage: page }) => {
+    // Start far from today: August month
+    await page.goto('/monthly?year=2026&month=7');
+    await expect(page.getByRole('heading', { name: '2026年8月' })).toBeVisible();
+
+    // Home → today's month (May)
+    await page.keyboard.press('Home');
+    await expect(page.getByRole('heading', { name: /2026年5月/ })).toBeVisible();
+
+    // ArrowUp → should be today's week (May 25-31, not May 4-10)
+    await page.keyboard.press('ArrowUp');
+    await expect(page.getByText(/2026-05-25 ~ 2026-05-31/)).toBeVisible();
+  });
+
+  test('年视图Home后ArrowDown到月再ArrowDown到周显示今天', async ({ authenticatedPage: page }) => {
+    // Start far from today
+    await page.goto('/yearly?year=2025');
+
+    // Home → 2026
+    await page.keyboard.press('Home');
+    await expect(page.getByRole('heading', { name: '2026年' })).toBeVisible();
+
+    // ArrowDown → month (should be May, not stale month)
+    await page.keyboard.press('ArrowDown');
+    await expect(page.getByRole('heading', { name: /2026年5月/ })).toBeVisible();
+
+    // ArrowDown → week (should be today's week)
+    await page.keyboard.press('ArrowDown');
+    await expect(page.getByText(/2026-05-25 ~ 2026-05-31/)).toBeVisible();
+  });
+
+  test('周视图Home后ArrowDown到月再ArrowDown到年再ArrowUp回到周保留今天', async ({ authenticatedPage: page }) => {
+    // Start far from today
+    await page.goto('/?date=2025-12-25');
+
+    // Home → today's week
+    await page.keyboard.press('Home');
+    await expect(page.getByText('今天')).toBeVisible();
+    await expect(page.getByText(/2026-05-25 ~ 2026-05-31/)).toBeVisible();
+
+    // ArrowDown → month (May)
+    await page.keyboard.press('ArrowDown');
+    await expect(page.getByRole('heading', { name: /2026年5月/ })).toBeVisible();
+
+    // ArrowDown → year (2026)
+    await page.keyboard.press('ArrowDown');
+    await expect(page.getByRole('heading', { name: '2026年' })).toBeVisible();
+
+    // ArrowUp → month (May, not stale)
+    await page.keyboard.press('ArrowUp');
+    await expect(page.getByRole('heading', { name: /2026年5月/ })).toBeVisible();
+
+    // ArrowUp → week (today, not stale)
+    await page.keyboard.press('ArrowUp');
+    await expect(page.getByText(/2026-05-25 ~ 2026-05-31/)).toBeVisible();
+  });
+});
