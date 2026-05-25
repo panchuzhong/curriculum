@@ -142,3 +142,25 @@ test.describe('动画功能', () => {
     expect(before).not.toBe(after);
   });
 });
+
+test.describe('方向键跨越非课表视图', () => {
+  test('从年课表方向键下可到达班级管理', async ({ authenticatedPage: page }) => {
+    await page.goto('/yearly?year=2026');
+    await page.keyboard.press('ArrowDown');
+    await expect(page).toHaveURL(/\/classes/);
+  });
+
+  test('从班级管理方向键下可到达学生管理', async ({ authenticatedPage: page }) => {
+    await page.goto('/classes');
+    await page.keyboard.press('ArrowDown');
+    await expect(page).toHaveURL(/\/students/);
+  });
+
+  test('从年课表方向键下到班级管理再方向键上回到年课表并保留年份', async ({ authenticatedPage: page }) => {
+    await page.goto('/yearly?year=2026');
+    await page.keyboard.press('ArrowDown');
+    await expect(page).toHaveURL(/\/classes/);
+    await page.keyboard.press('ArrowUp');
+    await expect(page).toHaveURL(/\/yearly\?year=2026/);
+  });
+});
