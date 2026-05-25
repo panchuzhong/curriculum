@@ -120,8 +120,8 @@ export default function useWeekNavigation({ searchParams }) {
   function navigateToWeek(newCenter) {
     setViewDate('week', newCenter);
     const url = new URL(window.location);
-    url.searchParams.set('date', newCenter);
-    url.searchParams.delete('week');
+    url.searchParams.set('week', newCenter);
+    url.searchParams.delete('date');
     window.history.replaceState(null, '', url);
     centerRef.current = newCenter;
     setWeekStart(newCenter);

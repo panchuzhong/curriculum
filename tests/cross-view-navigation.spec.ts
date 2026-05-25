@@ -55,7 +55,7 @@ test.describe('跨视图键盘导航', () => {
 
     // Ctrl+ArrowRight to next week
     await page.keyboard.press('Control+ArrowRight');
-    await expect(page).toHaveURL(/\/\?date=2026-07-27/);
+    await expect(page).toHaveURL(/\/\?week=2026-07-27/);
     await expect(page.getByText(/2026-07-27 ~ 2026-08-02/)).toBeVisible();
 
     // ArrowDown should go to July (the week still starts in July)
@@ -132,10 +132,10 @@ test.describe('Home键快捷方式', () => {
 });
 
 test.describe('URL栏实时更新', () => {
-  test('周视图Ctrl+左右键导航后URL同步更新', async ({ authenticatedPage: page }) => {
+  test('周视图Ctrl+左右键导航后URL同步更新为week=参数', async ({ authenticatedPage: page }) => {
     await page.goto('/?date=2026-07-20');
     await page.keyboard.press('Control+ArrowRight');
-    await expect(page).toHaveURL(/\/\?date=2026-07-27/);
+    await expect(page).toHaveURL(/\/\?week=2026-07-27/);
   });
 
   test('月视图左右键导航后URL同步更新', async ({ authenticatedPage: page }) => {

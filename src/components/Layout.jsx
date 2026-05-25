@@ -70,7 +70,7 @@ export default function Layout({ children }) {
 
   useEffect(() => {
     if (isMobile) setSidebarOpen(false);
-  }, [location.pathname]);
+  }, [location.pathname, isMobile]);
 
   const [sidebarWidth, setSidebarWidth] = useState(() => {
     const tablet = window.innerWidth >= 768 && window.innerWidth < 1280;
