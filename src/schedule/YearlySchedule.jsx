@@ -89,6 +89,13 @@ export default function YearlySchedule() {
     return () => window.removeEventListener('keydown', onKey);
   }, [year]);
 
+  // Sync year to URL for cross-view navigation
+  useEffect(() => {
+    const url = new URL(window.location);
+    url.searchParams.set('year', year);
+    window.history.replaceState(null, '', url);
+  }, [year]);
+
   const { classMap, byMonth, yearDisplayEntries, yearCategoryEntries, yearMaxHours, yearCondensed, yearTotalHours, yearDates, monthData } = useMemo(() => {
     const cm = {};
     classes.forEach(c => cm[c.id] = c);

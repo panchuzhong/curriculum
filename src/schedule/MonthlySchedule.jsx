@@ -94,6 +94,14 @@ export default function MonthlySchedule() {
 
   const swipe = useSimpleSwipe({ onPrev: prevMonth, onNext: nextMonth });
 
+  // Sync year/month to URL for cross-view navigation
+  useEffect(() => {
+    const url = new URL(window.location);
+    url.searchParams.set('year', year);
+    url.searchParams.set('month', month);
+    window.history.replaceState(null, '', url);
+  }, [year, month]);
+
   const dayRows = Math.ceil(dates.length / 7);
 
   return (

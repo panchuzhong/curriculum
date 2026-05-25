@@ -94,7 +94,10 @@ export default function useWeekNavigation({ searchParams }) {
   }
 
   const mountedRef = useRef(true);
-  useEffect(() => () => { mountedRef.current = false; }, []);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => { mountedRef.current = false; };
+  }, []);
 
   async function animateToOffset(pct) {
     if (!gridRef.current) return;
@@ -159,6 +162,14 @@ export default function useWeekNavigation({ searchParams }) {
     const target = isMobile ? todayStr() : getMonday(todayStr());
     navigateTo(target);
   }
+
+  // Sync weekStart to URL for cross-view navigation
+  useEffect(() => {
+    const url = new URL(window.location);
+    url.searchParams.set('week', weekStart);
+    url.searchParams.delete('date');
+    window.history.replaceState(null, '', url);
+  }, [weekStart]);
 
   return {
     gridRef, weekStart, allDates, allSchedules, isMobile, visibleDays,

@@ -14,38 +14,37 @@ const NAV_LINKS = [
   { to: '/settings', label: '设置', color: 'bg-gray-500', icon: 'M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.066 2.573c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.573 1.066c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.066-2.573c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z M15 12a3 3 0 11-6 0 3 3 0 016 0z' },
 ];
 
+const SCHEDULE_PATHS = ['/', '/monthly', '/yearly'];
+
+function getNavTarget(path) {
+  const sp = new URLSearchParams(window.location.search);
+  const pathname = window.location.pathname;
+  let refDate = null;
+  if (pathname === '/' || pathname === '') {
+    refDate = sp.get('week') || sp.get('date');
+  } else if (pathname === '/monthly') {
+    const y = sp.get('year'), m = sp.get('month');
+    if (y && m != null) refDate = `${y}-${String(+m + 1).padStart(2, '0')}-15`;
+  } else if (pathname === '/yearly') {
+    const y = sp.get('year');
+    if (y) {
+      const now = new Date();
+      refDate = `${y}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+    }
+  }
+  if (!refDate) return path;
+  const d = new Date(refDate + 'T00:00:00');
+  if (isNaN(d.getTime())) return path;
+  if (path === '/' || path === '') return `/?date=${refDate}`;
+  if (path === '/monthly') return `/monthly?year=${d.getFullYear()}&month=${d.getMonth()}`;
+  if (path === '/yearly') return `/yearly?year=${d.getFullYear()}`;
+  return path;
+}
+
 export default function Layout({ children }) {
   const location = useLocation();
   const navigate = useNavigate();
-  const searchParams = new URLSearchParams(location.search);
 
-  // Derive a reference date from the current view for cross-view navigation
-  let refDate;
-  if (location.pathname === '/' || location.pathname === '') {
-    const week = searchParams.get('week');
-    const date = searchParams.get('date');
-    refDate = week || date;
-  } else if (location.pathname === '/monthly') {
-    const y = searchParams.get('year');
-    const m = searchParams.get('month');
-    if (y && m != null) {
-      const d = new Date(+y, +m, 15);
-      refDate = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
-    }
-  }
-
-  function navLinkTo(path) {
-    if (!refDate) return path;
-    if (path === '/monthly') {
-      const d = new Date(refDate + 'T00:00:00');
-      return `/monthly?year=${d.getFullYear()}&month=${d.getMonth()}`;
-    }
-    if (path === '/yearly') {
-      const d = new Date(refDate + 'T00:00:00');
-      return `/yearly?year=${d.getFullYear()}`;
-    }
-    return path;
-  }
   const [mode, setMode] = useState(() => {
     const saved = localStorage.getItem('theme');
     if (saved === 'dark') return 'dark';
@@ -191,8 +190,10 @@ export default function Layout({ children }) {
       <div className="flex-1 min-h-0 p-3 space-y-0.5 overflow-auto thin-scroll">
         {NAV_LINKS.map(l => {
           const active = location.pathname === l.to;
+          const isSchedule = SCHEDULE_PATHS.includes(l.to);
           return (
-            <Link key={l.to} to={navLinkTo(l.to)}
+            <Link key={l.to} to={l.to}
+              onClick={isSchedule ? (e) => { e.preventDefault(); navigate(getNavTarget(l.to)); } : undefined}
               className={`flex items-center gap-3 pr-3 py-2.5 rounded-xl text-sm transition-all duration-150 ${
                 active
                   ? 'pl-[9px] border-l-[3px] border-blue-500 bg-blue-50 dark:bg-blue-900/20 font-semibold text-blue-700 dark:text-blue-300'
