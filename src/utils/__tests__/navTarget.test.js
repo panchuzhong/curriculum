@@ -20,9 +20,9 @@ describe('getNavTarget', () => {
       expect(result).toBe('/yearly?year=2026');
     });
 
-    it('week → week: returns current week date', () => {
+    it('week → week: returns current week via week= param', () => {
       const result = getNavTarget('/', cp, dates({ week: '2026-07-20' }));
-      expect(result).toBe('/?date=2026-07-20');
+      expect(result).toBe('/?week=2026-07-20');
     });
 
     it('week → classes: returns path unchanged (non-schedule target)', () => {
@@ -155,9 +155,9 @@ describe('getNavTarget', () => {
       expect(result).toBe('/monthly?year=2026&month=6');
     });
 
-    it('classes → week: uses stored week as fallback', () => {
+    it('classes → week: uses stored week as fallback via week= param', () => {
       const result = getNavTarget('/', '/classes', dates({ week: '2026-07-20' }));
-      expect(result).toBe('/?date=2026-07-20');
+      expect(result).toBe('/?week=2026-07-20');
     });
 
     it('classes → year: uses stored year as fallback', () => {

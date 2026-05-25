@@ -13,7 +13,7 @@ export function getNavTarget(path, currentPath, getDate) {
       if (path === '/monthly') return `/monthly?year=${d.getFullYear()}&month=${d.getMonth()}`;
       if (path === '/yearly') return `/yearly?year=${d.getFullYear()}`;
     }
-    if (path === '/' || path === '') return wk ? `/?date=${wk}` : '/';
+    if (path === '/' || path === '') return wk ? `/?week=${wk}` : '/';
   }
   // FROM month → derive from month
   if (cp === '/monthly') {
@@ -66,7 +66,7 @@ export function getNavTarget(path, currentPath, getDate) {
   // Fallback: use target view's stored date
   if (path === '/' || path === '') {
     const wk = getDate('week');
-    if (wk) return `/?date=${wk}`;
+    if (wk) return `/?week=${wk}`;
     return path;
   }
   if (path === '/monthly') {
