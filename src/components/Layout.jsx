@@ -39,7 +39,7 @@ function getNavTarget(path) {
         const wk = getViewDate('week');
         if (wk) {
           const d = new Date(wk + 'T00:00:00');
-          if (d.getFullYear() === +y && d.getMonth() === +m) return `/?date=${wk}`;
+          if (d.getFullYear() === +y && d.getMonth() === +m) return `/?week=${wk}`;
         }
         return `/?date=${y}-${String(+m + 1).padStart(2, '0')}-10`;
       }
