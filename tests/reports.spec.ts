@@ -1,5 +1,15 @@
 import { test, expect } from './auth';
 
+function pad(n: number) { return String(n).padStart(2, '0'); }
+function todayYear() { return new Date().getFullYear(); }
+const thisYearStr = `${todayYear()}年`;
+const thisMonthStr = `${todayYear()}年${new Date().getMonth() + 1}月`;
+function todayRangeRegExp() {
+  const d = new Date(); d.setDate(d.getDate() - (d.getDay() || 7) + 1);
+  const s = new Date(d); s.setDate(d.getDate() + 6);
+  return new RegExp(`${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ~ ${s.getFullYear()}-${pad(s.getMonth() + 1)}-${pad(s.getDate())}`);
+}
+
 test.describe('统计报表', () => {
   test.use({ baseURL: 'http://127.0.0.1:5174' });
 
@@ -92,5 +102,78 @@ test.describe('报表数据验证', () => {
     // Should have at least header + 1 data row
     const count = await rows.count();
     expect(count).toBeGreaterThanOrEqual(2);
+  });
+});
+
+test.describe('报表页面键盘导航', () => {
+  test('周报左右方向键切换周', async ({ authenticatedPage: page }) => {
+    await page.goto('/reports');
+    const before = await page.getByText(/^\d{4}-\d{2}-\d{2} ~ \d{4}-\d{2}-\d{2}$/).textContent();
+    await page.keyboard.press('ArrowRight');
+    const after = await page.getByText(/^\d{4}-\d{2}-\d{2} ~ \d{4}-\d{2}-\d{2}$/).textContent();
+    expect(before).not.toBe(after);
+  });
+
+  test('月报左右方向键切换月份', async ({ authenticatedPage: page }) => {
+    await page.goto('/reports');
+    await page.getByRole('button', { name: '月报' }).click();
+    const before = await page.getByText(/^\d{4}年\d+月$/).textContent();
+    await page.keyboard.press('ArrowRight');
+    const after = await page.getByText(/^\d{4}年\d+月$/).textContent();
+    expect(before).not.toBe(after);
+  });
+
+  test('年报左右方向键切换年份', async ({ authenticatedPage: page }) => {
+    await page.goto('/reports');
+    await page.getByRole('button', { name: '年报' }).click();
+    const before = await page.getByText(/^\d{4}年$/).textContent();
+    await page.keyboard.press('ArrowRight');
+    const after = await page.getByText(/^\d{4}年$/).textContent();
+    expect(before).not.toBe(after);
+  });
+
+  test('周报Home键回到本周', async ({ authenticatedPage: page }) => {
+    await page.goto('/reports');
+    // Navigate away from current week
+    await page.keyboard.press('ArrowRight');
+    await page.keyboard.press('ArrowRight');
+    // Home → back to current week
+    await page.keyboard.press('Home');
+    await expect(page.getByText(todayRangeRegExp())).toBeVisible();
+  });
+
+  test('月报Home键回到本月', async ({ authenticatedPage: page }) => {
+    await page.goto('/reports');
+    await page.getByRole('button', { name: '月报' }).click();
+    // Navigate away
+    await page.keyboard.press('ArrowRight');
+    // Home
+    await page.keyboard.press('Home');
+    await expect(page.getByText(thisMonthStr)).toBeVisible();
+  });
+
+  test('年报Home键回到今年', async ({ authenticatedPage: page }) => {
+    await page.goto('/reports');
+    await page.getByRole('button', { name: '年报' }).click();
+    // Navigate away: go to prev year
+    await page.keyboard.press('ArrowLeft');
+    await expect(page.getByText(`${todayYear() - 1}年`)).toBeVisible();
+    // Home
+    await page.keyboard.press('Home');
+    await expect(page.getByText(thisYearStr)).toBeVisible();
+  });
+
+  test('自定义Home键回到今天', async ({ authenticatedPage: page }) => {
+    await page.goto('/reports');
+    await page.getByRole('button', { name: '自定义' }).click();
+    // Change the start date to something else
+    const inputs = page.locator('input[type="date"]');
+    const startInput = inputs.first();
+    await startInput.fill('2026-01-01');
+    // Home
+    await page.keyboard.press('Home');
+    // Both inputs should be today
+    const today = `${todayYear()}-${pad(new Date().getMonth() + 1)}-${pad(new Date().getDate())}`;
+    await expect(startInput).toHaveValue(today);
   });
 });
