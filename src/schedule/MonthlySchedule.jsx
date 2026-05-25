@@ -53,8 +53,21 @@ export default function MonthlySchedule() {
 
   useEffect(() => { containerRef.current?.focus(); }, []);
 
+  function goToThisMonth() {
+    const n = new Date();
+    const ny = n.getFullYear(), nm = n.getMonth();
+    setViewDate('month', `${ny}-${nm}`);
+    const u = new URL(window.location);
+    u.searchParams.set('year', ny); u.searchParams.set('month', nm);
+    window.history.replaceState(null, '', u);
+    setYear(ny); setMonth(nm);
+    animDir.current = 0; setAnimKey(k => k + 1);
+  }
+
   useEffect(() => {
     const onKey = (e) => {
+      if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.tagName === 'SELECT') return;
+      if (e.key === 'Home') { e.preventDefault(); goToThisMonth(); return; }
       if (e.key === 'ArrowLeft') { e.preventDefault(); prevMonth(); }
       if (e.key === 'ArrowRight') { e.preventDefault(); nextMonth(); }
     };
@@ -121,8 +134,7 @@ export default function MonthlySchedule() {
         <button onClick={prevMonth} className={navBtn}><span className="sm:hidden">‹</span><span className="hidden sm:inline">上月</span></button>
         <h2 className="text-base sm:text-xl font-medium">{year}年{month + 1}月</h2>
         <div className="flex gap-1 sm:gap-2">
-          <button onClick={() => { const n = new Date(); const ny = n.getFullYear(); const nm = n.getMonth(); setViewDate('month', `${ny}-${nm}`); const u = new URL(window.location); u.searchParams.set('year', ny); u.searchParams.set('month', nm); window.history.replaceState(null, '', u); setYear(ny); setMonth(nm); }}
-            className={`${navBtn} px-3 sm:px-4`}>本月</button>
+          <button onClick={goToThisMonth} className={`${navBtn} px-3 sm:px-4`}>本月</button>
           <button onClick={nextMonth} className={navBtn}><span className="sm:hidden">›</span><span className="hidden sm:inline">下月</span></button>
           <div className="flex gap-1 ml-1 sm:ml-2">
             <button onClick={() => setShowBatch(true)} className={actBtn + ' bg-green-600 hover:bg-green-700'}>

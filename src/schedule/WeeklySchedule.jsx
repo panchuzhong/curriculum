@@ -30,8 +30,9 @@ export default function WeeklySchedule() {
 
   useEffect(() => {
     const onKey = (e) => {
-      if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
       if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.tagName === 'SELECT') return;
+      if (e.key === 'Home') { e.preventDefault(); goToThisWeek(); return; }
+      if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
       e.preventDefault();
       const delta = e.ctrlKey || e.metaKey ? (visibleDays || 7) * (e.key === 'ArrowLeft' ? -1 : 1)
         : e.key === 'ArrowLeft' ? -1 : 1;
@@ -39,7 +40,7 @@ export default function WeeklySchedule() {
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [weekStart, visibleDays, navigateTo]);
+  }, [weekStart, visibleDays, navigateTo, goToThisWeek]);
 
   return (
     <div ref={containerRef} tabIndex={-1} className="outline-none h-full flex flex-col">
