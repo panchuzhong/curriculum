@@ -3,7 +3,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { api } from '../api';
 import { getClassColor, getTextColor, DarkContext } from '../utils/colors';
 import { isHoliday, getHolidayName, isWorkday } from '../utils/holidays';
-import { todayStr } from '../utils/date';
+import { todayStr, getMonday } from '../utils/date';
 import { toMin, findConflictGroups, assignColumns } from '../utils/schedule';
 import { setViewDate } from '../utils/viewDate';
 import { useSimpleSwipe } from '../hooks/useSimpleSwipe';
@@ -57,6 +57,7 @@ export default function MonthlySchedule() {
     const n = new Date();
     const ny = n.getFullYear(), nm = n.getMonth();
     setViewDate('month', `${ny}-${nm}`);
+    setViewDate('week', getMonday(todayStr()));
     const u = new URL(window.location);
     u.searchParams.set('year', ny); u.searchParams.set('month', nm);
     window.history.replaceState(null, '', u);

@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useContext, useCallback, useMemo } from 'r
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { api } from '../api';
 import { getCategoryColor, DarkContext } from '../utils/colors';
-import { toHoursAbs } from '../utils/date';
+import { toHoursAbs, todayStr, getMonday } from '../utils/date';
 import { setViewDate } from '../utils/viewDate';
 import { useSimpleSwipe } from '../hooks/useSimpleSwipe';
 import { useToast } from '../components/ToastProvider';
@@ -83,8 +83,11 @@ export default function YearlySchedule() {
   }, []);
 
   function goToThisYear() {
-    const ny = new Date().getFullYear();
+    const n = new Date();
+    const ny = n.getFullYear();
     setViewDate('year', String(ny));
+    setViewDate('month', `${ny}-${n.getMonth()}`);
+    setViewDate('week', getMonday(todayStr()));
     const u = new URL(window.location);
     u.searchParams.set('year', ny);
     window.history.replaceState(null, '', u);

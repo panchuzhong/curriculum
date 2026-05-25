@@ -169,6 +169,9 @@ export default function useWeekNavigation({ searchParams }) {
 
   function goToThisWeek() {
     const target = isMobile ? todayStr() : getMonday(todayStr());
+    const n = new Date();
+    setViewDate('month', `${n.getFullYear()}-${n.getMonth()}`);
+    setViewDate('year', String(n.getFullYear()));
     navigateTo(target);
   }
 
