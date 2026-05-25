@@ -46,7 +46,7 @@ export default function BatchScheduleDialog({ onClose, onSaved }) {
   const selectedSemester = semesters.find(s => s.id === +form.semesterId);
 
   function generateRangeDates() {
-    if (!rangeStart || !rangeEnd) return;
+    if (!rangeStart || !rangeEnd || rangeStep <= 0) return;
     const dates = [];
     const d = new Date(rangeStart + 'T00:00:00');
     const end = new Date(rangeEnd + 'T00:00:00');

@@ -325,7 +325,7 @@ test.describe('Home键重置后跨视图导航', () => {
     await expect(page.getByText(todayWeekRegExp())).toBeVisible();
   });
 
-  test('年视图Home后ArrowDown到月再ArrowDown到周显示今天', async ({ authenticatedPage: page }) => {
+  test('年视图Home后ArrowUp到月再ArrowUp到周显示今天', async ({ authenticatedPage: page }) => {
     // Start far from today
     await page.goto(`/yearly?year=${todayYear() - 1}`);
 
@@ -333,12 +333,12 @@ test.describe('Home键重置后跨视图导航', () => {
     await page.keyboard.press('Home');
     await expect(page.getByRole('heading', { name: todayYearStr() })).toBeVisible();
 
-    // ArrowDown → month (should be today's month, not stale)
-    await page.keyboard.press('ArrowDown');
+    // ArrowUp → month (should be today's month, not stale)
+    await page.keyboard.press('ArrowUp');
     await expect(page.getByRole('heading', { name: todayMonthStr() })).toBeVisible();
 
-    // ArrowDown → week (should be today's week, not stale)
-    await page.keyboard.press('ArrowDown');
+    // ArrowUp → week (should be today's week, not stale)
+    await page.keyboard.press('ArrowUp');
     await expect(page.getByText(todayWeekRegExp())).toBeVisible();
   });
 

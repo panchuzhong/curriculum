@@ -156,6 +156,16 @@ export const test = base.extend<{ authenticatedPage: Page }>({
     await page.addInitScript(value => {
       localStorage.setItem('token', value);
     }, token);
+    const rawGoto = page.goto.bind(page);
+    page.goto = async (...args) => {
+      const response = await rawGoto(...args);
+      const path = new URL(page.url()).pathname;
+      if (path !== '/login' && path !== '/register') {
+        await page.locator('nav').waitFor({ state: 'visible' });
+        await page.locator('main').waitFor({ state: 'visible' });
+      }
+      return response;
+    };
     await page.goto('/');
     await use(page);
   },

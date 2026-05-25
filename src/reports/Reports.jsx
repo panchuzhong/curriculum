@@ -1,4 +1,4 @@
-import { useState, useEffect, useContext, useCallback, useMemo } from 'react';
+import { useState, useEffect, useLayoutEffect, useContext, useCallback, useMemo } from 'react';
 import { api } from '../api';
 import { getClassColor, DarkContext } from '../utils/colors';
 import { SUBJECT_HUES } from '../utils/constants';
@@ -102,9 +102,8 @@ export default function Reports() {
     api.getScheduleSummary(monday, end).then(setSummary).catch(e => toast(e.message || '加载报表失败'));
   }, []);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     const onKey = (e) => {
-      if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.tagName === 'SELECT') return;
       if (e.key === 'Home') {
         e.preventDefault();
         if (tab === 'week') { loadWeek(getMonday(todayStr())); }
@@ -113,6 +112,7 @@ export default function Reports() {
         else { setCustomStart(todayStr()); setCustomEnd(todayStr()); }
         return;
       }
+      if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.tagName === 'SELECT') return;
       if (tab === 'week' && period) {
         if (e.key === 'ArrowLeft') { e.preventDefault(); loadWeek(addDays(period.start, -7)); }
         if (e.key === 'ArrowRight') { e.preventDefault(); loadWeek(addDays(period.start, 7)); }

@@ -42,7 +42,7 @@ async function request(method, path, body, { noAuth = false } = {}) {
   const res = await fetch(`${API_BASE}${path}`, opts);
   if (!noAuth && res.status === 401) {
     clearToken();
-    window.location.href = `${import.meta.env.BASE_URL}login`;
+    window.location.href = import.meta.env.BASE_URL.replace(/\/?$/, '/') + 'login';
     throw new Error('登录已过期,请重新登录');
   }
   const text = await res.text();
@@ -68,7 +68,7 @@ async function requestBlob(path) {
   });
   if (res.status === 401) {
     clearToken();
-    window.location.href = `${import.meta.env.BASE_URL}login`;
+    window.location.href = import.meta.env.BASE_URL.replace(/\/?$/, '/') + 'login';
     throw new Error('登录已过期,请重新登录');
   }
   if (!res.ok) {

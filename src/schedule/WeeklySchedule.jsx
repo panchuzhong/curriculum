@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useLayoutEffect, useRef } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { addDays } from '../utils/date';
 import ScheduleGrid from './ScheduleGrid';
@@ -15,7 +15,7 @@ export default function WeeklySchedule() {
 
   const {
     gridRef, weekStart, allDates, allSchedules, isMobile, visibleDays,
-    navigateTo, goToThisWeek, reload,
+    navigateTo, navigateByDays, goToThisWeek, reload,
   } = useWeekNavigation({ searchParams });
 
   const [dialog, setDialog] = useState(null);
@@ -28,7 +28,7 @@ export default function WeeklySchedule() {
 
   useEffect(() => { containerRef.current?.focus(); }, []);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     const onKey = (e) => {
       if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.tagName === 'SELECT') return;
       if (e.key === 'Home') { e.preventDefault(); goToThisWeek(); return; }
@@ -36,11 +36,11 @@ export default function WeeklySchedule() {
       e.preventDefault();
       const delta = e.ctrlKey || e.metaKey ? (visibleDays || 7) * (e.key === 'ArrowLeft' ? -1 : 1)
         : e.key === 'ArrowLeft' ? -1 : 1;
-      navigateTo(addDays(weekStart, delta));
+      navigateByDays(delta);
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [weekStart, visibleDays, navigateTo, goToThisWeek]);
+  }, [visibleDays, navigateByDays, goToThisWeek]);
 
   return (
     <div ref={containerRef} tabIndex={-1} className="outline-none h-full flex flex-col">

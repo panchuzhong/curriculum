@@ -18,8 +18,8 @@ test.describe('设置页面', () => {
 
   test('显示快速添加学科按钮', async ({ authenticatedPage: page }) => {
     await page.goto('/settings');
-    await expect(page.getByRole('button', { name: '+ 化学' })).toBeVisible();
-    await expect(page.getByRole('button', { name: '+ 英语' })).toBeVisible();
+    await expect(page.getByRole('button', { name: '+ 信息技术' })).toBeVisible();
+    await expect(page.getByRole('button', { name: '+ 美术' })).toBeVisible();
   });
 
   test('显示节假日管理区', async ({ authenticatedPage: page }) => {

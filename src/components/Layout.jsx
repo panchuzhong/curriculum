@@ -80,13 +80,14 @@ export default function Layout({ children }) {
   });
   const [resizing, setResizing] = useState(false);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (isMobile) return;
     const onKey = (e) => {
       if (e.key !== 'ArrowUp' && e.key !== 'ArrowDown') return;
       if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.tagName === 'SELECT') return;
       e.preventDefault();
-      const idx = NAV_LINKS.findIndex(l => l.to === location.pathname);
+      const currentPath = window.location.pathname || '/';
+      const idx = NAV_LINKS.findIndex(l => l.to === currentPath);
       if (idx === -1) return;
       const next = e.key === 'ArrowUp'
         ? (idx - 1 + NAV_LINKS.length) % NAV_LINKS.length
@@ -95,7 +96,7 @@ export default function Layout({ children }) {
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [isMobile, location.pathname, navigate]);
+  }, [isMobile, navigate]);
 
   function sidebarStorageKey() {
     const w = window.innerWidth;

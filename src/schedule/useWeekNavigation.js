@@ -175,6 +175,10 @@ export default function useWeekNavigation({ searchParams }) {
     navigateTo(target);
   }
 
+  function navigateByDays(days) {
+    navigateToWeek(addDays(centerRef.current, days));
+  }
+
   // Sync weekStart to viewDate store for cross-view navigation
   useEffect(() => {
     setViewDate('week', weekStart);
@@ -182,6 +186,6 @@ export default function useWeekNavigation({ searchParams }) {
 
   return {
     gridRef, weekStart, allDates, allSchedules, isMobile, visibleDays,
-    navigateTo, goToThisWeek, reload,
+    navigateTo, navigateByDays, goToThisWeek, reload,
   };
 }

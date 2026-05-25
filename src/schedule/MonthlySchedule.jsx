@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useContext, useCallback, useMemo } from 'react';
+import { useState, useEffect, useLayoutEffect, useRef, useContext, useCallback, useMemo } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { api } from '../api';
 import { getClassColor, getTextColor, DarkContext } from '../utils/colors';
@@ -65,7 +65,7 @@ export default function MonthlySchedule() {
     animDir.current = 0; setAnimKey(k => k + 1);
   }
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     const onKey = (e) => {
       if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.tagName === 'SELECT') return;
       if (e.key === 'Home') { e.preventDefault(); goToThisMonth(); return; }

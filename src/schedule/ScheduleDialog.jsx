@@ -40,6 +40,7 @@ export default function ScheduleDialog({ date, startTime, schedule, onClose, onS
 
   useEffect(() => {
     if (schedule) {
+      setMode('existing');
       setForm({
         classId: schedule.classId,
         date: schedule.date,
@@ -282,7 +283,7 @@ export default function ScheduleDialog({ date, startTime, schedule, onClose, onS
               <button onClick={handleCreateClassAndSchedule}
                 className="flex-1 p-2 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50"
                 disabled={saving || !newClass.name}>{saving ? '创建中...' : '创建并排课'}</button>
-              <button onClick={() => setMode('existing')} disabled={saving}
+              <button onClick={() => { setMode('existing'); setForm(f => ({ ...f, classId: '' })); }} disabled={saving}
                 className="p-2 bg-gray-300 dark:bg-gray-600 rounded disabled:opacity-50">返回</button>
             </div>
           </div>
