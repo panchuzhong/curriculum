@@ -90,18 +90,46 @@ describe('getNavTarget', () => {
   describe('FROM year view', () => {
     const cp = '/yearly';
 
-    it('year → week: uses today-in-year', () => {
-      // Mock Date.now to get deterministic result
+    it('year → week: prefers stored week in same year', () => {
+      const result = getNavTarget('/', cp, dates({ year: '2026', week: '2026-08-03' }));
+      expect(result).toBe('/?week=2026-08-03');
+    });
+
+    it('year → week: prefers stored month in same year when no week', () => {
+      const result = getNavTarget('/', cp, dates({ year: '2026', month: '2026-7' }));
+      expect(result).toBe('/?date=2026-08-10'); // July→August, day 10
+    });
+
+    it('year → week: ignores stored week from different year', () => {
+      vi.setSystemTime(new Date('2026-05-26'));
+      const result = getNavTarget('/', cp, dates({ year: '2026', week: '2025-12-01' }));
+      expect(result).toBe('/?date=2026-05-26'); // falls back to today-in-year
+      vi.useRealTimers();
+    });
+
+    it('year → week: uses today-in-year when no stored data', () => {
       vi.setSystemTime(new Date('2026-05-26'));
       const result = getNavTarget('/', cp, dates({ year: '2026' }));
       expect(result).toBe('/?date=2026-05-26');
       vi.useRealTimers();
     });
 
-    it('year → month: uses current month in that year', () => {
+    it('year → month: prefers stored month in same year', () => {
+      const result = getNavTarget('/monthly', cp, dates({ year: '2026', month: '2026-7' }));
+      expect(result).toBe('/monthly?year=2026&month=7'); // August preserved
+    });
+
+    it('year → month: ignores stored month from different year', () => {
+      vi.setSystemTime(new Date('2026-05-26'));
+      const result = getNavTarget('/monthly', cp, dates({ year: '2026', month: '2025-3' }));
+      expect(result).toBe('/monthly?year=2026&month=4'); // May
+      vi.useRealTimers();
+    });
+
+    it('year → month: uses current month in year when no stored month', () => {
       vi.setSystemTime(new Date('2026-05-26'));
       const result = getNavTarget('/monthly', cp, dates({ year: '2026' }));
-      expect(result).toBe('/monthly?year=2026&month=4'); // May = month 4
+      expect(result).toBe('/monthly?year=2026&month=4'); // May
       vi.useRealTimers();
     });
 

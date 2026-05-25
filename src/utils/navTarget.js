@@ -38,10 +38,27 @@ export function getNavTarget(path, currentPath, getDate) {
     const yr = getDate('year');
     if (yr) {
       const n = new Date();
-      const mm = String(n.getMonth() + 1).padStart(2, '0');
-      const dd = String(n.getDate()).padStart(2, '0');
-      if (path === '/' || path === '') return `/?date=${yr}-${mm}-${dd}`;
-      if (path === '/monthly') return `/monthly?year=${yr}&month=${n.getMonth()}`;
+      if (path === '/' || path === '') {
+        // Prefer stored week if in same year
+        const wk = getDate('week');
+        if (wk && new Date(wk + 'T00:00:00').getFullYear() === +yr) return `/?week=${wk}`;
+        // Prefer stored month if in same year
+        const mo = getDate('month');
+        if (mo) {
+          const [my, mm] = mo.split('-');
+          if (my === yr) return `/?date=${yr}-${String(+mm + 1).padStart(2, '0')}-10`;
+        }
+        return `/?date=${yr}-${String(n.getMonth() + 1).padStart(2, '0')}-${String(n.getDate()).padStart(2, '0')}`;
+      }
+      if (path === '/monthly') {
+        // Prefer stored month if in same year
+        const mo = getDate('month');
+        if (mo) {
+          const [my, mm] = mo.split('-');
+          if (my === yr) return `/monthly?year=${yr}&month=${mm}`;
+        }
+        return `/monthly?year=${yr}&month=${n.getMonth()}`;
+      }
     }
     if (path === '/yearly') return yr ? `/yearly?year=${yr}` : '/yearly';
   }
