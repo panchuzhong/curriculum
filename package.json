@@ -1,8 +1,11 @@
 {
   "name": "new_curriculum",
   "version": "1.8.0",
-  "description": "",
-  "main": "index.js",
+  "description": "课表管理系统 - Schedule Management System",
+  "main": "server/index.js",
+  "engines": {
+    "node": ">=18.0.0"
+  },
   "directories": {
     "doc": "docs"
   },

@@ -11,8 +11,9 @@ export default defineConfig({
   server: {
     host: true,
     port: 5174,
+    strictPort: true,
     proxy: {
-      '/api': 'http://localhost:8443'
+      '/api': `http://localhost:${process.env.PORT || 8443}`
     }
   },
   build: {

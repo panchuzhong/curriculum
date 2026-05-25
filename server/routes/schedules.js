@@ -11,6 +11,23 @@ import { toLocalDateStr, toMin, resolveRange, toCSV, detectConflictGroups, getSc
 import { clearReportCache, getReportCache, setReportCache } from '../services/report-cache.js';
 import { students as studentsTable } from '../db/schema.js';
 
+function filterBySemesters(candidates, { semesterOnly, drizzleDb, teacherId }) {
+  let filtered = 0;
+  if (semesterOnly !== false) {
+    const teacherSemesters = getTeacherSemesters(drizzleDb, teacherId);
+    if (teacherSemesters.length > 0) {
+      const inSemester = candidates.filter(s =>
+        teacherSemesters.some(sem => s.date >= sem.startDate && s.date <= sem.endDate)
+      );
+      if (inSemester.length > 0 && inSemester.length < candidates.length) {
+        filtered = candidates.length - inSemester.length;
+        candidates = inSemester;
+      }
+    }
+  }
+  return { candidates, filtered };
+}
+
 const router = Router();
 router.use(authMiddleware);
 
@@ -236,21 +253,9 @@ router.put('/batch', validateBatchUpdate, handle, (req, res) => {
     candidates = candidates.filter(s => new Date(s.date + 'T00:00:00').getDay() === +weekday);
   }
 
-  let semesterFiltered = 0;
-  if (semesterOnly) {
-    const teacherSemesters = getTeacherSemesters(drizzleDb, req.teacherId);
-    if (teacherSemesters.length > 0) {
-      const inSemester = candidates.filter(s =>
-        teacherSemesters.some(sem => s.date >= sem.startDate && s.date <= sem.endDate)
-      );
-      // Only filter when the candidate set straddles semester boundaries.
-      // All-in or all-out scopes reflect a clear user intent and should pass through.
-      if (inSemester.length > 0 && inSemester.length < candidates.length) {
-        semesterFiltered = candidates.length - inSemester.length;
-        candidates = inSemester;
-      }
-    }
-  }
+  const sr = filterBySemesters(candidates, { semesterOnly, drizzleDb, teacherId: req.teacherId });
+  candidates = sr.candidates;
+  let semesterFiltered = sr.filtered;
 
   if (candidates.length === 0) {
     const resp = { count: 0, ids: [] };
@@ -306,19 +311,9 @@ router.delete('/batch', validateBatchDelete, handle, (req, res) => {
     let candidates = ownedClassIds.length === 0 ? [] : drizzleDb.select({ id: schedules.id, classId: schedules.classId, date: schedules.date })
       .from(schedules).where(and(inArray(schedules.id, ids.map(Number)), inArray(schedules.classId, ownedClassIds))).all();
 
-    let semesterFiltered = 0;
-    if (semesterOnly !== false) {
-      const teacherSemesters = getTeacherSemesters(drizzleDb, req.teacherId);
-      if (teacherSemesters.length > 0) {
-        const inSemester = candidates.filter(s =>
-          teacherSemesters.some(sem => s.date >= sem.startDate && s.date <= sem.endDate)
-        );
-        if (inSemester.length > 0 && inSemester.length < candidates.length) {
-          semesterFiltered = candidates.length - inSemester.length;
-          candidates = inSemester;
-        }
-      }
-    }
+    const sr = filterBySemesters(candidates, { semesterOnly: semesterOnly !== false, drizzleDb, teacherId: req.teacherId });
+    candidates = sr.candidates;
+    let semesterFiltered = sr.filtered;
 
     const toDelete = candidates.map(s => s.id);
     if (!dryRun) {
@@ -344,19 +339,9 @@ router.delete('/batch', validateBatchDelete, handle, (req, res) => {
     let candidates = drizzleDb.select({ id: schedules.id, date: schedules.date })
       .from(schedules).where(and(eq(schedules.classId, classId), gte(schedules.date, fromDate))).all();
 
-    let semesterFiltered = 0;
-    if (semesterOnly !== false) {
-      const teacherSemesters = getTeacherSemesters(drizzleDb, req.teacherId);
-      if (teacherSemesters.length > 0) {
-        const inSemester = candidates.filter(s =>
-          teacherSemesters.some(sem => s.date >= sem.startDate && s.date <= sem.endDate)
-        );
-        if (inSemester.length > 0 && inSemester.length < candidates.length) {
-          semesterFiltered = candidates.length - inSemester.length;
-          candidates = inSemester;
-        }
-      }
-    }
+    const sr = filterBySemesters(candidates, { semesterOnly: semesterOnly !== false, drizzleDb, teacherId: req.teacherId });
+    candidates = sr.candidates;
+    let semesterFiltered = sr.filtered;
 
     if (candidates.length === 0) {
       const resp = { count: 0, ids: [] };
@@ -400,19 +385,9 @@ router.delete('/batch', validateBatchDelete, handle, (req, res) => {
     let candidates = drizzleDb.select({ id: schedules.id, classId: schedules.classId, date: schedules.date })
       .from(schedules).where(and(gte(schedules.date, start), lte(schedules.date, end), inArray(schedules.classId, classIds))).all();
 
-    let semesterFiltered = 0;
-    if (semesterOnly !== false) {
-      const teacherSemesters = getTeacherSemesters(drizzleDb, req.teacherId);
-      if (teacherSemesters.length > 0) {
-        const inSemester = candidates.filter(s =>
-          teacherSemesters.some(sem => s.date >= sem.startDate && s.date <= sem.endDate)
-        );
-        if (inSemester.length > 0 && inSemester.length < candidates.length) {
-          semesterFiltered = candidates.length - inSemester.length;
-          candidates = inSemester;
-        }
-      }
-    }
+    const sr = filterBySemesters(candidates, { semesterOnly: semesterOnly !== false, drizzleDb, teacherId: req.teacherId });
+    candidates = sr.candidates;
+    let semesterFiltered = sr.filtered;
 
     const toDelete = candidates.map(s => s.id);
     if (!dryRun) {

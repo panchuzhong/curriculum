@@ -14,15 +14,15 @@ const BOTTOM_OFFSET_MIN = 30;
 const HEADER_HEIGHT = 52;
 
 import { toMin, findConflictGroups, assignColumns } from '../utils/schedule';
-let _touchTime = 0;
 
 function useTouchTime() {
+  const ref = useRef(0);
   useEffect(() => {
-    const handler = () => { _touchTime = Date.now(); };
+    const handler = () => { ref.current = Date.now(); };
     window.addEventListener('touchstart', handler, { passive: true });
     return () => window.removeEventListener('touchstart', handler);
   }, []);
-  return () => Date.now() - _touchTime < 300;
+  return () => Date.now() - ref.current < 300;
 }
 
 function NowLine({ rowHeight, topGapHeight, firstLabelMin }) {

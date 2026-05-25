@@ -4,6 +4,7 @@ import { GRADES } from '../utils/constants';
 import { useToast } from '../components/ToastProvider';
 
 function getDefaultEndTime(start) {
+  if (!start) return '10:00';
   const [h, m] = start.split(':').map(Number);
   const endH = Math.min(h + 2, 23);
   return `${String(endH).padStart(2, '0')}:${String(m).padStart(2, '0')}`;

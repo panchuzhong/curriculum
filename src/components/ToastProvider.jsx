@@ -1,5 +1,6 @@
-import { createContext, useCallback, useContext, useState } from 'react';
+import { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
 
+const MAX_TOASTS = 5;
 const ToastContext = createContext(() => {});
 
 export function useToast() {
@@ -8,11 +9,21 @@ export function useToast() {
 
 export default function ToastProvider({ children }) {
   const [toasts, setToasts] = useState([]);
+  const timers = useRef(new Set());
+
+  useEffect(() => () => {
+    for (const id of timers.current) clearTimeout(id);
+    timers.current.clear();
+  }, []);
 
   const showToast = useCallback((message, type = 'error') => {
     const id = Date.now() + Math.random();
-    setToasts(prev => [...prev, { id, message, type }]);
-    setTimeout(() => setToasts(prev => prev.filter(t => t.id !== id)), 3000);
+    setToasts(prev => [...prev.slice(-(MAX_TOASTS - 1)), { id, message, type }]);
+    const timer = setTimeout(() => {
+      timers.current.delete(timer);
+      setToasts(prev => prev.filter(t => t.id !== id));
+    }, 3000);
+    timers.current.add(timer);
   }, []);
 
   return (
