@@ -34,7 +34,7 @@ function getNavTarget(path) {
     const mo = getViewDate('month');
     if (mo) {
       const [y, m] = mo.split('-');
-      if (path === '/' || path === '') return `/?date=${y}-${String(+m + 1).padStart(2, '0')}-01`;
+      if (path === '/' || path === '') return `/?date=${y}-${String(+m + 1).padStart(2, '0')}-10`;
       if (path === '/yearly') return `/yearly?year=${y}`;
       return `/monthly?year=${y}&month=${m}`;
     }
