@@ -152,13 +152,60 @@ test.describe('URL栏实时更新', () => {
 });
 
 test.describe('动画功能', () => {
-  test('周视图下一周按钮触发滑动动画', async ({ authenticatedPage: page }) => {
+  test('周视图按钮切换触发CSS滑动动画', async ({ authenticatedPage: page }) => {
     await page.goto('/');
-    const before = await page.locator('main').getByText(/\d{4}-\d{2}-\d{2} ~ \d{4}-\d{2}-\d{2}/).textContent();
+    // Inject spy on style.setProperty to verify animation sequence
+    await page.evaluate(() => {
+      const divs = document.querySelectorAll('div');
+      let t = null;
+      for (const d of divs) { if (d.style.getPropertyValue('--day-offset')) { t = d; break; } }
+      (window as any).__animLog = [];
+      const orig = t!.style.setProperty.bind(t!.style);
+      t!.style.setProperty = function(p: string, v: string, pr?: string) {
+        (window as any).__animLog.push({ tm: performance.now(), p, v });
+        return orig(p, v, pr);
+      };
+    });
+
     await page.getByRole('button', { name: '下一周' }).click();
-    await page.waitForTimeout(300); // animation completes in ~260ms
-    const after = await page.locator('main').getByText(/\d{4}-\d{2}-\d{2} ~ \d{4}-\d{2}-\d{2}/).textContent();
-    expect(before).not.toBe(after);
+    await page.waitForTimeout(300);
+
+    const log = await page.evaluate(() => (window as any).__animLog);
+    // Expect: transition-set → target-offset-set → snap-to-init-offset
+    const transitions = log.filter((e: any) => e.p === '--day-transition');
+    const offsets = log.filter((e: any) => e.p === '--day-offset');
+    expect(transitions.length).toBeGreaterThanOrEqual(2); // animation + snap
+    expect(offsets.length).toBeGreaterThanOrEqual(2);
+    // First transition should be the animation value
+    expect(transitions[0].v).toContain('220ms');
+    // After animation, transition should be 'none' (snap)
+    expect(transitions[transitions.length - 1].v).toBe('none');
+  });
+
+  test('键盘Ctrl+左右方向键也触发动画', async ({ authenticatedPage: page }) => {
+    await page.goto('/?date=2026-07-20');
+    // Set up animation spy
+    await page.evaluate(() => {
+      const divs = document.querySelectorAll('div');
+      let t = null;
+      for (const d of divs) { if (d.style.getPropertyValue('--day-offset')) { t = d; break; } }
+      (window as any).__animLog2 = [];
+      const orig = t!.style.setProperty.bind(t!.style);
+      t!.style.setProperty = function(p: string, v: string, pr?: string) {
+        (window as any).__animLog2.push({ tm: performance.now(), p, v });
+        return orig(p, v, pr);
+      };
+    });
+
+    await page.keyboard.press('Control+ArrowRight');
+    await page.waitForTimeout(300);
+
+    const log = await page.evaluate(() => (window as any).__animLog2);
+    const transitions = log.filter((e: any) => e.p === '--day-transition');
+    // Must have at least 2 transitions: animation start + snap
+    expect(transitions.length).toBeGreaterThanOrEqual(2);
+    expect(transitions[0].v).toContain('220ms');
+    expect(transitions[transitions.length - 1].v).toBe('none');
   });
 });
 
