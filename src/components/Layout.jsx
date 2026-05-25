@@ -26,8 +26,8 @@ function getNavTarget(path) {
       const d = new Date(wk + 'T00:00:00');
       if (path === '/monthly') return `/monthly?year=${d.getFullYear()}&month=${d.getMonth()}`;
       if (path === '/yearly') return `/yearly?year=${d.getFullYear()}`;
-      return `/?date=${wk}`;
     }
+    if (path === '/' || path === '') return wk ? `/?date=${wk}` : '/';
   }
   // FROM month → derive from month
   if (cp === '/monthly') {
@@ -44,8 +44,8 @@ function getNavTarget(path) {
         return `/?date=${y}-${String(+m + 1).padStart(2, '0')}-10`;
       }
       if (path === '/yearly') return `/yearly?year=${y}`;
-      return `/monthly?year=${y}&month=${m}`;
     }
+    if (path === '/monthly') return mo ? `/monthly?year=${mo.split('-')[0]}&month=${mo.split('-')[1]}` : '/monthly';
   }
   // FROM year → derive from year
   if (cp === '/yearly') {
@@ -56,8 +56,8 @@ function getNavTarget(path) {
       const dd = String(n.getDate()).padStart(2, '0');
       if (path === '/' || path === '') return `/?date=${yr}-${mm}-${dd}`;
       if (path === '/monthly') return `/monthly?year=${yr}&month=${n.getMonth()}`;
-      return `/yearly?year=${yr}`;
     }
+    if (path === '/yearly') return yr ? `/yearly?year=${yr}` : '/yearly';
   }
 
   // Fallback: use target view's stored date
