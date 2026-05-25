@@ -105,6 +105,14 @@ export default function Reports() {
   useEffect(() => {
     const onKey = (e) => {
       if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.tagName === 'SELECT') return;
+      if (e.key === 'Home') {
+        e.preventDefault();
+        if (tab === 'week') { loadWeek(getMonday(todayStr())); }
+        else if (tab === 'month') { const n = new Date(); setYear(n.getFullYear()); setMonth(n.getMonth()); }
+        else if (tab === 'year') { setYear(new Date().getFullYear()); }
+        else { setCustomStart(todayStr()); setCustomEnd(todayStr()); }
+        return;
+      }
       if (tab === 'week' && period) {
         if (e.key === 'ArrowLeft') { e.preventDefault(); loadWeek(addDays(period.start, -7)); }
         if (e.key === 'ArrowRight') { e.preventDefault(); loadWeek(addDays(period.start, 7)); }
