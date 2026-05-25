@@ -2,6 +2,7 @@ import { useState, useEffect, useLayoutEffect } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { clearToken } from '../api';
 import { setDarkMode, DarkContext } from '../utils/colors';
+import { getViewDate } from '../utils/viewDate';
 
 const NAV_LINKS = [
   { to: '/', label: '周课表', color: 'bg-blue-500', icon: 'M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z' },
@@ -17,27 +18,33 @@ const NAV_LINKS = [
 const SCHEDULE_PATHS = ['/', '/monthly', '/yearly'];
 
 function getNavTarget(path) {
-  const sp = new URLSearchParams(window.location.search);
-  const pathname = window.location.pathname;
-  let refDate = null;
-  if (pathname === '/' || pathname === '') {
-    refDate = sp.get('week') || sp.get('date');
-  } else if (pathname === '/monthly') {
-    const y = sp.get('year'), m = sp.get('month');
-    if (y && m != null) refDate = `${y}-${String(+m + 1).padStart(2, '0')}-15`;
-  } else if (pathname === '/yearly') {
-    const y = sp.get('year');
-    if (y) {
-      const now = new Date();
-      refDate = `${y}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
-    }
+  if (path === '/' || path === '') {
+    const wk = getViewDate('week');
+    if (wk) return `/?date=${wk}`;
+    const mo = getViewDate('month');
+    if (mo) { const [y, m] = mo.split('-'); return `/?date=${y}-${String(+m + 1).padStart(2, '0')}-01`; }
+    const yr = getViewDate('year');
+    if (yr) { const n = new Date(); return `/?date=${yr}-${String(n.getMonth() + 1).padStart(2, '0')}-${String(n.getDate()).padStart(2, '0')}`; }
+    return path;
   }
-  if (!refDate) return path;
-  const d = new Date(refDate + 'T00:00:00');
-  if (isNaN(d.getTime())) return path;
-  if (path === '/' || path === '') return `/?date=${refDate}`;
-  if (path === '/monthly') return `/monthly?year=${d.getFullYear()}&month=${d.getMonth()}`;
-  if (path === '/yearly') return `/yearly?year=${d.getFullYear()}`;
+  if (path === '/monthly') {
+    const mo = getViewDate('month');
+    if (mo) { const [y, m] = mo.split('-'); return `/monthly?year=${y}&month=${m}`; }
+    const wk = getViewDate('week');
+    if (wk) { const d = new Date(wk + 'T00:00:00'); return `/monthly?year=${d.getFullYear()}&month=${d.getMonth()}`; }
+    const yr = getViewDate('year');
+    if (yr) { const n = new Date(); return `/monthly?year=${yr}&month=${n.getMonth()}`; }
+    return path;
+  }
+  if (path === '/yearly') {
+    const yr = getViewDate('year');
+    if (yr) return `/yearly?year=${yr}`;
+    const wk = getViewDate('week');
+    if (wk) { const d = new Date(wk + 'T00:00:00'); return `/yearly?year=${d.getFullYear()}`; }
+    const mo = getViewDate('month');
+    if (mo) { const [y] = mo.split('-'); return `/yearly?year=${y}`; }
+    return path;
+  }
   return path;
 }
 

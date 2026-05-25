@@ -2,6 +2,7 @@ import { useState, useEffect, useLayoutEffect, useRef } from 'react';
 import { flushSync } from 'react-dom';
 import { api } from '../api';
 import { parseDateStr, todayStr, getMonday, addDays } from '../utils/date';
+import { setViewDate } from '../utils/viewDate';
 import useSwipeNavigation from '../hooks/useSwipeNavigation';
 import { useToast } from '../components/ToastProvider';
 
@@ -48,6 +49,7 @@ export default function useWeekNavigation({ searchParams }) {
 
   const [weekStart, setWeekStart] = useState(initialWeek);
   const [allDates, setAllDates] = useState(() => getAllDates(initialWeek));
+  setViewDate('week', weekStart); // sync before paint (render-time, safe module-level write)
   const [allSchedules, setAllSchedules] = useState([]);
 
   const gridRef = useRef(null);
@@ -116,6 +118,7 @@ export default function useWeekNavigation({ searchParams }) {
 
   // Instant buffer swap: update dates centered on newCenter, snap offset to 0
   function navigateToWeek(newCenter) {
+    setViewDate('week', newCenter);
     centerRef.current = newCenter;
     setWeekStart(newCenter);
     const newDates = getAllDates(newCenter);
@@ -163,12 +166,9 @@ export default function useWeekNavigation({ searchParams }) {
     navigateTo(target);
   }
 
-  // Sync weekStart to URL for cross-view navigation
+  // Sync weekStart to viewDate store for cross-view navigation
   useEffect(() => {
-    const url = new URL(window.location);
-    url.searchParams.set('week', weekStart);
-    url.searchParams.delete('date');
-    window.history.replaceState(null, '', url);
+    setViewDate('week', weekStart);
   }, [weekStart]);
 
   return {

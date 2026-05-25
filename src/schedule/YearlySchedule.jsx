@@ -3,6 +3,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { api } from '../api';
 import { getCategoryColor, DarkContext } from '../utils/colors';
 import { toHoursAbs } from '../utils/date';
+import { setViewDate } from '../utils/viewDate';
 import { useSimpleSwipe } from '../hooks/useSimpleSwipe';
 import { useToast } from '../components/ToastProvider';
 import BatchScheduleDialog from './BatchScheduleDialog';
@@ -56,6 +57,7 @@ export default function YearlySchedule() {
   const dark = useContext(DarkContext);
   const [searchParams] = useSearchParams();
   const [year, setYear] = useState(searchParams.get('year') ? +searchParams.get('year') : new Date().getFullYear());
+  setViewDate('year', String(year));
   const [schedules, setSchedules] = useState([]);
   const [classes, setClasses] = useState([]);
   const [animKey, setAnimKey] = useState(0);
@@ -89,11 +91,9 @@ export default function YearlySchedule() {
     return () => window.removeEventListener('keydown', onKey);
   }, [year]);
 
-  // Sync year to URL for cross-view navigation
+  // Sync year to viewDate store for cross-view navigation
   useEffect(() => {
-    const url = new URL(window.location);
-    url.searchParams.set('year', year);
-    window.history.replaceState(null, '', url);
+    setViewDate('year', String(year));
   }, [year]);
 
   const { classMap, byMonth, yearDisplayEntries, yearCategoryEntries, yearMaxHours, yearCondensed, yearTotalHours, yearDates, monthData } = useMemo(() => {
@@ -153,6 +153,7 @@ export default function YearlySchedule() {
 
   function changeYear(delta) {
     animDir.current = delta;
+    setViewDate('year', String(year + delta));
     setYear(y => y + delta);
     setAnimKey(k => k + 1);
   }
@@ -172,7 +173,7 @@ export default function YearlySchedule() {
         <button onClick={() => changeYear(-1)} className={navBtn}><span className="sm:hidden">‹</span><span className="hidden sm:inline">上一年</span></button>
         <h2 className="text-base sm:text-xl font-medium">{year}年</h2>
         <div className="flex gap-1 sm:gap-2">
-          <button onClick={() => { animDir.current = 0; setYear(new Date().getFullYear()); setAnimKey(k => k + 1); }} className={`${navBtn} px-3 sm:px-4`}>今年</button>
+          <button onClick={() => { const ny = new Date().getFullYear(); setViewDate('year', String(ny)); animDir.current = 0; setYear(ny); setAnimKey(k => k + 1); }} className={`${navBtn} px-3 sm:px-4`}>今年</button>
           <button onClick={() => changeYear(1)} className={navBtn}><span className="sm:hidden">›</span><span className="hidden sm:inline">下一年</span></button>
           <div className="flex gap-1 ml-1 sm:ml-2">
             <button onClick={() => setShowBatch(true)} className={actBtn + ' bg-green-600 hover:bg-green-700'}>

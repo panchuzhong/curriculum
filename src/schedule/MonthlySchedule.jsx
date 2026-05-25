@@ -5,6 +5,7 @@ import { getClassColor, getTextColor, DarkContext } from '../utils/colors';
 import { isHoliday, getHolidayName, isWorkday } from '../utils/holidays';
 import { todayStr } from '../utils/date';
 import { toMin, findConflictGroups, assignColumns } from '../utils/schedule';
+import { setViewDate } from '../utils/viewDate';
 import { useSimpleSwipe } from '../hooks/useSimpleSwipe';
 import { useToast } from '../components/ToastProvider';
 import BatchScheduleDialog from './BatchScheduleDialog';
@@ -33,6 +34,7 @@ export default function MonthlySchedule() {
   const now = new Date();
   const [year, setYear] = useState(searchParams.get('year') ? +searchParams.get('year') : now.getFullYear());
   const [month, setMonth] = useState(searchParams.get('month') != null ? +searchParams.get('month') : now.getMonth());
+  setViewDate('month', `${year}-${month}`);
   const [schedules, setSchedules] = useState([]);
   const [animKey, setAnimKey] = useState(0);
   const animDir = useRef(1);
@@ -73,6 +75,9 @@ export default function MonthlySchedule() {
 
   function prevMonth() {
     animDir.current = -1;
+    const nm = month === 0 ? 11 : month - 1;
+    const ny = month === 0 ? year - 1 : year;
+    setViewDate('month', `${ny}-${nm}`);
     if (month === 0) { setYear(y => y - 1); setMonth(11); }
     else setMonth(m => m - 1);
     setAnimKey(k => k + 1);
@@ -80,6 +85,9 @@ export default function MonthlySchedule() {
 
   function nextMonth() {
     animDir.current = 1;
+    const nm = month === 11 ? 0 : month + 1;
+    const ny = month === 11 ? year + 1 : year;
+    setViewDate('month', `${ny}-${nm}`);
     if (month === 11) { setYear(y => y + 1); setMonth(0); }
     else setMonth(m => m + 1);
     setAnimKey(k => k + 1);
@@ -94,12 +102,9 @@ export default function MonthlySchedule() {
 
   const swipe = useSimpleSwipe({ onPrev: prevMonth, onNext: nextMonth });
 
-  // Sync year/month to URL for cross-view navigation
+  // Sync year/month to viewDate store for cross-view navigation
   useEffect(() => {
-    const url = new URL(window.location);
-    url.searchParams.set('year', year);
-    url.searchParams.set('month', month);
-    window.history.replaceState(null, '', url);
+    setViewDate('month', `${year}-${month}`);
   }, [year, month]);
 
   const dayRows = Math.ceil(dates.length / 7);
@@ -110,7 +115,7 @@ export default function MonthlySchedule() {
         <button onClick={prevMonth} className={navBtn}><span className="sm:hidden">‹</span><span className="hidden sm:inline">上月</span></button>
         <h2 className="text-base sm:text-xl font-medium">{year}年{month + 1}月</h2>
         <div className="flex gap-1 sm:gap-2">
-          <button onClick={() => { const n = new Date(); setYear(n.getFullYear()); setMonth(n.getMonth()); }}
+          <button onClick={() => { const n = new Date(); setViewDate('month', `${n.getFullYear()}-${n.getMonth()}`); setYear(n.getFullYear()); setMonth(n.getMonth()); }}
             className={`${navBtn} px-3 sm:px-4`}>本月</button>
           <button onClick={nextMonth} className={navBtn}><span className="sm:hidden">›</span><span className="hidden sm:inline">下月</span></button>
           <div className="flex gap-1 ml-1 sm:ml-2">
