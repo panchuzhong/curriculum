@@ -18,31 +18,54 @@ const NAV_LINKS = [
 const SCHEDULE_PATHS = ['/', '/monthly', '/yearly'];
 
 function getNavTarget(path) {
+  const cp = window.location.pathname;
+  // FROM week → derive from week
+  if (cp === '/' || cp === '') {
+    const wk = getViewDate('week');
+    if (wk) {
+      const d = new Date(wk + 'T00:00:00');
+      if (path === '/monthly') return `/monthly?year=${d.getFullYear()}&month=${d.getMonth()}`;
+      if (path === '/yearly') return `/yearly?year=${d.getFullYear()}`;
+      return `/?date=${wk}`;
+    }
+  }
+  // FROM month → derive from month
+  if (cp === '/monthly') {
+    const mo = getViewDate('month');
+    if (mo) {
+      const [y, m] = mo.split('-');
+      if (path === '/' || path === '') return `/?date=${y}-${String(+m + 1).padStart(2, '0')}-01`;
+      if (path === '/yearly') return `/yearly?year=${y}`;
+      return `/monthly?year=${y}&month=${m}`;
+    }
+  }
+  // FROM year → derive from year
+  if (cp === '/yearly') {
+    const yr = getViewDate('year');
+    if (yr) {
+      const n = new Date();
+      const mm = String(n.getMonth() + 1).padStart(2, '0');
+      const dd = String(n.getDate()).padStart(2, '0');
+      if (path === '/' || path === '') return `/?date=${yr}-${mm}-${dd}`;
+      if (path === '/monthly') return `/monthly?year=${yr}&month=${n.getMonth()}`;
+      return `/yearly?year=${yr}`;
+    }
+  }
+
+  // Fallback: use target view's stored date
   if (path === '/' || path === '') {
     const wk = getViewDate('week');
     if (wk) return `/?date=${wk}`;
-    const mo = getViewDate('month');
-    if (mo) { const [y, m] = mo.split('-'); return `/?date=${y}-${String(+m + 1).padStart(2, '0')}-01`; }
-    const yr = getViewDate('year');
-    if (yr) { const n = new Date(); return `/?date=${yr}-${String(n.getMonth() + 1).padStart(2, '0')}-${String(n.getDate()).padStart(2, '0')}`; }
     return path;
   }
   if (path === '/monthly') {
     const mo = getViewDate('month');
     if (mo) { const [y, m] = mo.split('-'); return `/monthly?year=${y}&month=${m}`; }
-    const wk = getViewDate('week');
-    if (wk) { const d = new Date(wk + 'T00:00:00'); return `/monthly?year=${d.getFullYear()}&month=${d.getMonth()}`; }
-    const yr = getViewDate('year');
-    if (yr) { const n = new Date(); return `/monthly?year=${yr}&month=${n.getMonth()}`; }
     return path;
   }
   if (path === '/yearly') {
     const yr = getViewDate('year');
     if (yr) return `/yearly?year=${yr}`;
-    const wk = getViewDate('week');
-    if (wk) { const d = new Date(wk + 'T00:00:00'); return `/yearly?year=${d.getFullYear()}`; }
-    const mo = getViewDate('month');
-    if (mo) { const [y] = mo.split('-'); return `/yearly?year=${y}`; }
     return path;
   }
   return path;
