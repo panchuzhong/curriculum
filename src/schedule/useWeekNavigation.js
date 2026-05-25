@@ -176,7 +176,7 @@ export default function useWeekNavigation({ searchParams }) {
   }
 
   function navigateByDays(days) {
-    navigateToWeek(addDays(centerRef.current, days));
+    navigateTo(addDays(centerRef.current, days));
   }
 
   // Sync weekStart to viewDate store for cross-view navigation
