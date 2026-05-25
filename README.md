@@ -155,8 +155,8 @@ PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium-browser
 ```bash
 chmod +x scripts/release.sh
 ./scripts/release.sh
-tar -xzf release/curriculum-scheduler-v1.7.8.tar.gz
-cd curriculum-scheduler-v1.7.8
+tar -xzf release/curriculum-scheduler-v*.tar.gz
+cd curriculum-scheduler-v*/
 vim .env        # 修改 JWT_SECRET
 ./start.sh
 ```
@@ -165,7 +165,7 @@ vim .env        # 修改 JWT_SECRET
 
 ```bash
 sudo mkdir -p /opt/curriculum-scheduler
-sudo cp -r curriculum-scheduler-v1.7.8/* /opt/curriculum-scheduler/
+sudo cp -r curriculum-scheduler-v*/* /opt/curriculum-scheduler/
 sudo vim /opt/curriculum-scheduler/.env
 sudo cp curriculum-scheduler.service /etc/systemd/system/
 sudo systemctl daemon-reload
