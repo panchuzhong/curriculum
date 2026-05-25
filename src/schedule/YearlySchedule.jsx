@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useContext, useCallback, useMemo } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { api } from '../api';
 import { getCategoryColor, DarkContext } from '../utils/colors';
 import { toHoursAbs } from '../utils/date';
@@ -54,7 +54,8 @@ export default function YearlySchedule() {
   const navigate = useNavigate();
   const toast = useToast();
   const dark = useContext(DarkContext);
-  const [year, setYear] = useState(new Date().getFullYear());
+  const [searchParams] = useSearchParams();
+  const [year, setYear] = useState(searchParams.get('year') ? +searchParams.get('year') : new Date().getFullYear());
   const [schedules, setSchedules] = useState([]);
   const [classes, setClasses] = useState([]);
   const [animKey, setAnimKey] = useState(0);

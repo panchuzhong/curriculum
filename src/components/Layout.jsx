@@ -17,6 +17,35 @@ const NAV_LINKS = [
 export default function Layout({ children }) {
   const location = useLocation();
   const navigate = useNavigate();
+  const searchParams = new URLSearchParams(location.search);
+
+  // Derive a reference date from the current view for cross-view navigation
+  let refDate;
+  if (location.pathname === '/' || location.pathname === '') {
+    const week = searchParams.get('week');
+    const date = searchParams.get('date');
+    refDate = week || date;
+  } else if (location.pathname === '/monthly') {
+    const y = searchParams.get('year');
+    const m = searchParams.get('month');
+    if (y && m != null) {
+      const d = new Date(+y, +m, 15);
+      refDate = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+    }
+  }
+
+  function navLinkTo(path) {
+    if (!refDate) return path;
+    if (path === '/monthly') {
+      const d = new Date(refDate + 'T00:00:00');
+      return `/monthly?year=${d.getFullYear()}&month=${d.getMonth()}`;
+    }
+    if (path === '/yearly') {
+      const d = new Date(refDate + 'T00:00:00');
+      return `/yearly?year=${d.getFullYear()}`;
+    }
+    return path;
+  }
   const [mode, setMode] = useState(() => {
     const saved = localStorage.getItem('theme');
     if (saved === 'dark') return 'dark';
@@ -163,7 +192,7 @@ export default function Layout({ children }) {
         {NAV_LINKS.map(l => {
           const active = location.pathname === l.to;
           return (
-            <Link key={l.to} to={l.to}
+            <Link key={l.to} to={navLinkTo(l.to)}
               className={`flex items-center gap-3 pr-3 py-2.5 rounded-xl text-sm transition-all duration-150 ${
                 active
                   ? 'pl-[9px] border-l-[3px] border-blue-500 bg-blue-50 dark:bg-blue-900/20 font-semibold text-blue-700 dark:text-blue-300'
