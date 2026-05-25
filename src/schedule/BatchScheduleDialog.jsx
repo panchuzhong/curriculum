@@ -27,6 +27,7 @@ export default function BatchScheduleDialog({ onClose, onSaved }) {
   const [delStart, setDelStart] = useState(todayStr());
   const [delEnd, setDelEnd] = useState('');
   const [saving, setSaving] = useState(false);
+  const [crossSemester, setCrossSemester] = useState(false);
   const [form, setForm] = useState({
     classId: '',
     semesterId: '',
@@ -92,6 +93,7 @@ export default function BatchScheduleDialog({ onClose, onSaved }) {
           startTime: form.startTime,
           endTime: form.endTime,
           durationBilling: form.durationBilling ? +form.durationBilling : undefined,
+          crossSemester: crossSemester || undefined,
         };
         if (mode === 'semester') {
           if (!form.semesterId) return;
@@ -111,7 +113,13 @@ export default function BatchScheduleDialog({ onClose, onSaved }) {
         const res = await api.batchDeleteSchedules({ classId: +form.classId, start: range.start, end: range.end });
         setResult({ op: 'delete', count: res.count });
       }
-    } catch (e) { toast(e.message || '操作失败'); }
+    } catch (e) {
+      if (e.crossSemester && !crossSemester) {
+        setCrossSemester(true);
+      } else {
+        toast(e.message || '操作失败');
+      }
+    }
     finally { setSaving(false); }
   }
 
@@ -209,7 +217,14 @@ export default function BatchScheduleDialog({ onClose, onSaved }) {
                   <div className="grid grid-cols-2 gap-2">
                     <div>
                       <label className="block text-xs text-gray-400 mb-0.5">开始</label>
-                      <input type="date" className={sel} value={rangeStart} onChange={e => setRangeStart(e.target.value)} />
+                      <input type="date" className={sel} value={rangeStart} onChange={e => {
+                        setRangeStart(e.target.value);
+                        if (e.target.value && (!rangeEnd || rangeEnd <= e.target.value)) {
+                          const d = new Date(e.target.value + 'T00:00:00');
+                          d.setDate(d.getDate() + 9);
+                          setRangeEnd(`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`);
+                        }
+                      }} />
                     </div>
                     <div>
                       <label className="block text-xs text-gray-400 mb-0.5">结束</label>
@@ -286,6 +301,22 @@ export default function BatchScheduleDialog({ onClose, onSaved }) {
                 <input type="number" className={sel} value={form.durationBilling}
                   onChange={e => setForm({...form, durationBilling: e.target.value === '' ? '' : +e.target.value})}
                   placeholder="默认由结束-开始时间计算" />
+              </div>
+            )}
+
+            {crossSemester && op === 'create' && (
+              <div className="bg-amber-50 dark:bg-amber-900/30 border border-amber-300 dark:border-amber-700 rounded-lg p-3 text-sm text-amber-800 dark:text-amber-200">
+                部分日期不在已定义的学期范围内，是否继续排课？
+                <div className="flex gap-2 mt-2">
+                  <button onClick={() => setCrossSemester(false)}
+                    className="px-3 py-1 text-sm bg-gray-200 dark:bg-gray-700 rounded hover:bg-gray-300 dark:hover:bg-gray-600">
+                    取消
+                  </button>
+                  <button onClick={handleSubmit} disabled={saving}
+                    className="px-3 py-1 text-sm bg-amber-600 text-white rounded hover:bg-amber-700 disabled:opacity-50">
+                    {saving ? '处理中...' : '确认跨学期排课'}
+                  </button>
+                </div>
               </div>
             )}
 

@@ -51,8 +51,13 @@ async function request(method, path, body, { noAuth = false } = {}) {
     try {
       const parsed = JSON.parse(text);
       if (parsed.error) message = parsed.error;
-    } catch {}
-    throw new Error(message);
+      const err = new Error(message);
+      if (parsed.crossSemester) err.crossSemester = true;
+      throw err;
+    } catch (e) {
+      if (e.crossSemester) throw e;
+      throw new Error(message);
+    }
   }
   try { return JSON.parse(text); } catch { return text; }
 }

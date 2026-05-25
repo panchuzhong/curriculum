@@ -126,12 +126,12 @@ router.post('/batch', validateBatchCreate, handle, (req, res) => {
     targetDates = manualDates;
     // Check that dates mode doesn't cross semester boundaries
     const teacherSemesters = getTeacherSemesters(drizzleDb, req.teacherId);
-    if (teacherSemesters.length > 0) {
+    if (teacherSemesters.length > 0 && !req.body.crossSemester) {
       const inSemester = targetDates.filter(d =>
         teacherSemesters.some(sem => d >= sem.startDate && d <= sem.endDate)
       );
       if (inSemester.length > 0 && inSemester.length < targetDates.length) {
-        return res.status(400).json({ error: '日期跨学期边界（部分在学期内、部分在学期外），请分批操作' });
+        return res.status(400).json({ error: '日期跨学期边界（部分在学期内、部分在学期外），请分批操作', crossSemester: true, inSemester: inSemester.length, outSemester: targetDates.length - inSemester.length });
       }
     }
   } else if (semesterId && weekday != null) {
