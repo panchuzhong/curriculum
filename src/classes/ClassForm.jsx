@@ -102,9 +102,9 @@ export default function ClassForm({ initial, onSubmit, onCancel, compact, action
                   return;
                 }
                 try {
-                  const { lat, lng } = await api.geocode(loc);
+                  const { lat, lng, error } = await api.geocode(loc);
                   if (lat != null) setForm(f => ({ ...f, defaultLocationLat: String(lat), defaultLocationLng: String(lng) }));
-                  else toast('未找到该地点的经纬度');
+                  else toast(error || '未找到该地点的经纬度');
                 } catch (e) { toast(e.message || '地理编码失败'); }
               }} disabled={!form.defaultLocationName}
                 className="px-3 py-2 bg-indigo-600 text-white rounded text-xs hover:bg-indigo-700 disabled:opacity-50 whitespace-nowrap">获取经纬度</button>

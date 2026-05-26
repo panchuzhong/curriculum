@@ -15,7 +15,6 @@ router.get('/', async (req, res) => {
 
   try {
     const result = await geocodeAddress(address);
-    if (!result) return res.json({ lat: null, lng: null });
     res.json(result);
   } catch {
     res.status(502).json({ error: 'Geocoding service unavailable' });
