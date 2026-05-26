@@ -86,6 +86,24 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 - Server routes in `server/routes/` with auth middleware and validation
 - React views in `src/schedule/` for week/month/year schedules
 - Cross-view navigation: `src/utils/viewDate.js` (per-view store), `src/utils/navTarget.js` (tested pure function)
-- Keyboard shortcuts: ArrowUp/Down (switch views), Home (today), ArrowLeft/Right (navigate)
+- Keyboard shortcuts: ArrowUp/Down (cycle sidebar nav links), Home (go to current week/month/year), ArrowLeft/Right (navigate periods), Ctrl+Arrow (jump by visible days in weekly view)
 - Animation: CSS custom properties `--day-offset`/`--day-transition` on grid element
+
+**Key subsystems:**
+- Image generation: `server/services/image-gen.js` (weekly), `image-gen-monthly.js`, `image-gen-yearly.js` — Puppeteer screenshots
+- Browser singleton: `server/services/browser.js` — shared Puppeteer instance
+- Geocoding: `server/services/geocode.js`, `server/routes/geocode.js` — AMap API proxy
+- Audit logging: `server/services/audit.js` — change tracking with before/after snapshots
+- Backup/restore: `server/routes/backup.js` — JSON export/import with pre-restore snapshots
+- Report cache: `server/services/report-cache.js` — in-memory cache for report generation
+- Pricing history: `classPricing` table, `server/routes/classes.js` `/pricing` sub-routes
+- Holidays: `server/services/holidays.js` (lookup helpers), `server/routes/holidays.js` (CRUD + batch import), `server/validations/holidays.js`
+- Schedule helpers: `server/services/schedule-helpers.js` — date resolution, CSV export
+- Agent help: `server/routes/agent-help.js` — machine-readable API docs
+- Authentication: `server/routes/auth.js`, `src/auth/` — JWT + API key, login/register flows
+- Student management: `server/routes/students.js`, `src/classes/StudentList.jsx` — CRUD with many-to-many class associations
+- Semester management: `server/routes/semesters.js`, `src/schedule/SemesterManager.jsx` — CRUD for batch scheduling date ranges
+- Pricing tiers: `server/routes/pricing-tiers.js`, `src/pricing/PricingTierManager.jsx` — per-teacher tiered pricing by student count
+- Audit log viewing: `server/routes/audit-log.js` — query/cleanup endpoints for the audit trail
+- Schedule image route: `server/routes/schedule-image.js` — serves weekly/monthly/yearly PNG generation
 

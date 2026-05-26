@@ -99,13 +99,15 @@ cp .env.example .env
 ```env
 PORT=8443                              # 服务端口（默认 8443）
 HOST=127.0.0.1                         # 监听地址（默认仅本地，外网访问设为 0.0.0.0）
-JWT_SECRET=your-secret-key             # JWT 密钥（请修改为随机字符串）
+JWT_SECRET=<32位以上随机字符串>          # JWT 密钥，必须至少 32 字符，不能使用示例值
 JWT_EXPIRES_IN=7d                      # JWT 有效期（默认 7 天）
 ALLOW_REGISTRATION=true                # 首次启动设为 true，注册后自动关闭
 DB_PATH=./data/data.db                 # 数据库路径
 PUPPETEER_EXECUTABLE_PATH=             # Chromium 路径（服务器部署时填写）
 TZ=Asia/Shanghai                       # 服务器时区（影响 range=today 等日期计算）
 ```
+
+可用 `openssl rand -hex 32` 生成固定的 `JWT_SECRET`，写入 `.env` 后保持不变。
 
 ### 开发模式
 
@@ -300,6 +302,12 @@ sudo systemctl start curriculum-scheduler
 | GET | /api/audit-log | 查询操作日志，支持 limit（默认 100，上限 500）/ table / action 过滤（action: CREATE/UPDATE/DELETE/BATCH_CREATE/BATCH_UPDATE/BATCH_DELETE） |
 | DELETE | /api/audit-log/cleanup?keep= | 清理当前老师较旧的操作日志，默认保留最近 10000 条 |
 
+**地理编码**
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| GET | /api/geocode?address=... | 地理编码（需认证） |
+| GET | /api/geocode/status | 检查地理编码服务可用性（需认证） |
+
 **备份**
 | 方法 | 路径 | 说明 |
 |------|------|------|
@@ -331,7 +339,7 @@ POST /api/schedules/batch
 }
 ```
 
-两种模式均支持可选参数：`durationBilling` 手动指定计费时长（分钟，默认为 endTime-startTime），`preview: true` 仅返回 `{count, dates}` 预览不实际创建。
+两种模式均支持可选参数：`durationBilling` 手动指定计费时长（分钟，默认为 endTime-startTime），`preview: true` 仅返回 `{count, dates}` 预览不实际创建。开始时间使用 `00:00-23:59`；结束时间推荐使用普通钟表时间 `00:00-23:59`，`endTime < startTime` 表示跨午夜。接口兼容 `24:00-47:59` 形式的结束时间，保存时会归一为普通钟表时间。
 
 ### 批量删课
 
@@ -402,7 +410,7 @@ curl -X POST -H "X-API-Key: <key>" -H "Content-Type: application/json" \
   http://localhost:8443/api/backup/restore -d @backup.json
 ```
 
-还原为事务原子操作：先删除当前教师所有数据，再按原 ID 重新写入。还原时 `teacherId` 强制覆盖为当前认证账号。成功返回 `{ok: true, restored: {classes, students, schedules, semesters, auditLog}}`。还原前自动保存当前数据快照到 `data/backup_pre_restore_<timestamp>.json`。
+还原为事务原子操作：先删除当前教师所有数据，再按原 ID 重新写入。还原时 `teacherId` 强制覆盖为当前认证账号。成功返回 `{ok: true, restored: {classes, students, schedules, semesters, auditLog}}`。还原前必须成功保存当前数据快照到 `data/.backup_pre_restore_<uuid>.json`，快照失败会返回 500 并中止还原。
 
 ### 汇总统计响应示例
 
@@ -433,12 +441,13 @@ new_curriculum/
 │   ├── index.js                  # Express 入口，注册所有路由
 │   ├── db/
 │   │   ├── schema.js             # Drizzle ORM 表定义
-│   │   └── index.js              # DB 连接、建表、迁移
+│   │   ├── index.js              # DB 连接、建表、迁移
+│   │   └── seed.js               # 默认定价阶梯种子数据
 │   ├── middleware/
 │   │   └── auth.js               # JWT + API Key 双模式认证
 │   ├── routes/
 │   │   ├── auth.js               # 认证
-│   │   ├── classes.js            # 班级
+│   │   ├── classes.js            # 班级（含学生子资源、定价历史子资源）
 │   │   ├── students.js           # 学生
 │   │   ├── schedules.js          # 排课（含 summary、export、free-slots、batch、range）
 │   │   ├── semesters.js          # 学期
@@ -447,9 +456,11 @@ new_curriculum/
 │   │   ├── schedule-image.js     # PNG 图片生成（支持 theme/rowH/scale/highlight）
 │   │   ├── audit-log.js          # 操作日志查询
 │   │   ├── backup.js             # 全量备份与还原
+│   │   ├── geocode.js            # 地理编码（AMap API 代理）
 │   │   └── agent-help.js         # AI Agent 帮助文档
 │   ├── validations/              # express-validator 校验规则
 │   │   ├── handle.js             # 统一校验结果中间件
+│   │   ├── dates.js              # 日期/时间校验工具
 │   │   ├── auth.js               # 认证校验
 │   │   ├── classes.js            # 班级校验
 │   │   ├── students.js           # 学生校验
@@ -460,18 +471,24 @@ new_curriculum/
 │   ├── __tests__/                # vitest 集成测试（supertest HTTP 测试 + 单元测试）
 │   └── services/
 │       ├── holidays.js           # 节假日数据与查询
+│       ├── holidays-data.js      # 内置节假日数据（2025-2027）
 │       ├── browser.js            # Puppeteer 浏览器单例（复用）
 │       ├── image-gen.js          # Puppeteer 周课表 PNG 渲染
 │       ├── image-gen-monthly.js  # Puppeteer 月课表 PNG 渲染
 │       ├── image-gen-yearly.js   # Puppeteer 年课表 PNG 渲染
+│       ├── image-helpers.js      # 图片生成公共工具（主题检测、页面生命周期）
 │       ├── schedule-helpers.js   # 排课业务逻辑（冲突检测、批量操作）
 │       ├── colors.js             # 课程色块颜色计算
-│       ├── holidays-data.js      # 内置节假日数据（2025-2027）
+│       ├── geocode.js            # 地理编码服务（AMap REST API）
+│       ├── report-cache.js       # 报表内存缓存（LRU，60s TTL）
 │       └── audit.js              # 操作日志写入
 ├── src/                          # React 前端
-│   ├── App.jsx                   # 路由
-│   ├── api.js                    # 统一 fetch 封装（含 JWT 注入）
-│   ├── components/               # 通用组件（Layout 布局）
+│   ├── main.jsx                  # React 入口
+│   ├── App.jsx                   # 路由、认证守卫
+│   ├── api.js                    # 统一 fetch 封装（含 JWT 注入、排课缓存）
+│   ├── index.css                 # 全局样式（Tailwind + 自定义动画）
+│   ├── ErrorBoundary.jsx         # 错误边界
+│   ├── components/               # 通用组件（Layout 布局、Toast、ConfirmDialog）
 │   ├── hooks/                    # 自定义 Hooks（useSwipeNavigation, useSimpleSwipe）
 │   ├── auth/                     # 登录 / 注册页
 │   ├── classes/                  # 班级管理、学生管理
@@ -480,7 +497,13 @@ new_curriculum/
 │   ├── reports/                  # 统计报表
 │   ├── settings/                 # 设置（节假日、学科、API Key）
 │   └── utils/                    # 颜色、常量、日期、节假日、排课工具
-├── scripts/release.sh            # 构建打包脚本
+├── tests/                        # Playwright E2E 测试
+├── scripts/
+│   ├── release.sh                # 构建打包脚本
+│   └── user-manage.sh            # 用户管理脚本
+├── vite.config.js                # Vite 构建配置
+├── playwright.config.ts          # Playwright E2E 配置
+├── index.html                    # SPA 入口 HTML
 ├── .env.example                  # 环境变量模板
 └── README.md
 ```
