@@ -209,5 +209,5 @@ export default function useSwipeNavigation({
       el.removeEventListener('touchend', onEnd);
       el.removeEventListener('touchcancel', onCancel);
     };
-  }, []);
+  }, [TOTAL_COLS, BUFFER, INITIAL_OFFSET]);
 }

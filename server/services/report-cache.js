@@ -1,4 +1,5 @@
 const CACHE_TTL_MS = Number(process.env.REPORT_CACHE_TTL_MS || 60_000);
+const MAX_CACHE_SIZE = Number(process.env.REPORT_CACHE_MAX_SIZE || 100);
 const cache = new Map();
 
 function makeKey({ teacherId, start, end, classId }) {
@@ -17,7 +18,13 @@ export function getReportCache(params) {
 }
 
 export function setReportCache(params, value) {
-  cache.set(makeKey(params), { time: Date.now(), value });
+  const key = makeKey(params);
+  cache.set(key, { time: Date.now(), value });
+  // Evict oldest entry when over the limit
+  if (cache.size > MAX_CACHE_SIZE) {
+    const oldestKey = cache.keys().next().value;
+    if (oldestKey !== undefined) cache.delete(oldestKey);
+  }
 }
 
 export function clearReportCache(teacherId) {

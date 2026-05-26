@@ -71,6 +71,10 @@ router.get('/', (req, res) => {
   const { classId, studentId, limit, offset } = req.query;
   const { start, end } = resolveRange(req.query);
   if (!start || !end) return res.status(400).json({ error: 'start/end or range required' });
+  const daysDiff = Math.ceil((new Date(end + 'T00:00:00') - new Date(start + 'T00:00:00')) / (1000 * 60 * 60 * 24));
+  if (daysDiff > 365 && !classId && !studentId) {
+    return res.status(400).json({ error: '日期范围超过365天时请指定 classId 或 studentId 筛选条件' });
+  }
   const pageLimit = limit ? Math.max(1, Math.min(parseInt(limit) || 100, 1000)) : null;
   const pageOffset = offset ? Math.max(0, parseInt(offset) || 0) : 0;
 
@@ -106,6 +110,7 @@ router.get('/', (req, res) => {
 
 router.post('/', validateCreateSchedule, handle, (req, res) => {
   const { classId, date, startTime, endTime, durationBilling, locationName, locationLat, locationLng } = req.body;
+  if (startTime >= endTime) return res.status(400).json({ error: '结束时间必须晚于开始时间' });
   const cls = drizzleDb.select().from(classes)
     .where(and(eq(classes.id, classId), eq(classes.teacherId, req.teacherId), eq(classes.deleted, false))).get();
   if (!cls) return res.status(404).json({ error: 'Class not found' });
@@ -439,6 +444,8 @@ router.put('/:id', validateUpdateSchedule, handle, (req, res) => {
   const effectiveClassId = updates.classId ?? existing.classId;
   const effectiveDate = updates.date ?? existing.date;
   const effectiveStartTime = updates.startTime ?? existing.startTime;
+  const effectiveEndTime = updates.endTime ?? existing.endTime;
+  if (effectiveStartTime >= effectiveEndTime) return res.status(400).json({ error: '结束时间必须晚于开始时间' });
   const dup = drizzleDb.select().from(schedules)
     .where(and(eq(schedules.classId, effectiveClassId), eq(schedules.date, effectiveDate), eq(schedules.startTime, effectiveStartTime), ne(schedules.id, +id))).get();
   if (dup) return res.status(409).json({ error: '该班级在此日期的同一时间已有排课' });

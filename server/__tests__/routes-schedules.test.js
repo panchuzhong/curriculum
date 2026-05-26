@@ -609,17 +609,15 @@ describe('conflicts endpoint isolates by teacher', () => {
 });
 
 describe('edge cases', () => {
-  it('handles startTime === endTime with 1440min billing', async () => {
+  it('rejects startTime === endTime', async () => {
     const res = await request(app).post('/api/schedules').set(auth(token))
       .send({ classId, date: '2026-08-01', startTime: '09:00', endTime: '09:00' });
-    expect(res.status).toBe(200);
-    expect(res.body.durationBilling).toBe(1440);
+    expect(res.status).toBe(400);
   });
 
-  it('handles cross-midnight schedule (end < start)', async () => {
+  it('rejects cross-midnight schedule (end < start)', async () => {
     const res = await request(app).post('/api/schedules').set(auth(token))
       .send({ classId, date: '2026-08-02', startTime: '22:00', endTime: '01:00' });
-    expect(res.status).toBe(200);
-    expect(res.body.durationBilling).toBe(180);
+    expect(res.status).toBe(400);
   });
 });
