@@ -95,9 +95,14 @@ export default function ClassForm({ initial, onSubmit, onCancel, compact, action
               onChange={e => setForm({...form, defaultLocationName: e.target.value})} />
             {geocodeAvailable && (
               <button type="button" onClick={async () => {
-                if (!form.defaultLocationName) return;
+                const loc = form.defaultLocationName?.trim();
+                if (!loc) return;
+                if (/^(线上|网课|在线|online)$/i.test(loc)) {
+                  setForm(f => ({ ...f, defaultLocationLat: '', defaultLocationLng: '' }));
+                  return;
+                }
                 try {
-                  const { lat, lng } = await api.geocode(form.defaultLocationName);
+                  const { lat, lng } = await api.geocode(loc);
                   if (lat != null) setForm(f => ({ ...f, defaultLocationLat: String(lat), defaultLocationLng: String(lng) }));
                   else toast('未找到该地点的经纬度');
                 } catch (e) { toast(e.message || '地理编码失败'); }
