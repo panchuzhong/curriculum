@@ -21,7 +21,10 @@ export default defineConfig({
   ],
   webServer: {
     command: 'npm run dev',
-    env: { DB_PATH: process.env.DB_PATH },
+    env: {
+      ...process.env,
+      DB_PATH: process.env.DB_PATH || './data/e2e.db',
+    },
     url: 'http://127.0.0.1:5174',
     reuseExistingServer: false,
     timeout: 30000,
