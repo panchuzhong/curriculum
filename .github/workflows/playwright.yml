@@ -25,6 +25,7 @@ jobs:
         HOST: 127.0.0.1
         DB_PATH: ./data/e2e.db
         ALLOW_REGISTRATION: true
+        AMAP_KEY: ${{ secrets.AMAP_KEY }}
       run: npx playwright test
     - uses: actions/upload-artifact@v4
       if: ${{ !cancelled() }}
