@@ -15,8 +15,8 @@ export const validateCreateClass = [
   body('unitPrice').optional().isFloat({ min: 0 }).withMessage('单价不能为负'),
   body('discountAmount').optional().isFloat({ min: 0 }).withMessage('优惠金额不能为负'),
   body('isCompetition').optional().isBoolean().withMessage('isCompetition 须为布尔值'),
-  body('defaultLocationLat').optional().isFloat({ min: -90, max: 90 }).withMessage('纬度须为 -90 到 90'),
-  body('defaultLocationLng').optional().isFloat({ min: -180, max: 180 }).withMessage('经度须为 -180 到 180'),
+  body('defaultLocationLat').optional({ checkFalsy: true }).isFloat({ min: -90, max: 90 }).withMessage('纬度须为 -90 到 90'),
+  body('defaultLocationLng').optional({ checkFalsy: true }).isFloat({ min: -180, max: 180 }).withMessage('经度须为 -180 到 180'),
 ];
 
 export const validateUpdateClass = [
@@ -27,8 +27,8 @@ export const validateUpdateClass = [
   body('discountAmount').optional().isFloat({ min: 0 }).withMessage('优惠金额不能为负'),
   body('studentCount').optional().isInt({ min: 1 }).withMessage('学生人数须为正整数'),
   body('isCompetition').optional().isBoolean().withMessage('isCompetition 须为布尔值'),
-  body('defaultLocationLat').optional().isFloat({ min: -90, max: 90 }).withMessage('纬度须为 -90 到 90'),
-  body('defaultLocationLng').optional().isFloat({ min: -180, max: 180 }).withMessage('经度须为 -180 到 180'),
+  body('defaultLocationLat').optional({ checkFalsy: true }).isFloat({ min: -90, max: 90 }).withMessage('纬度须为 -90 到 90'),
+  body('defaultLocationLng').optional({ checkFalsy: true }).isFloat({ min: -180, max: 180 }).withMessage('经度须为 -180 到 180'),
 ];
 
 export const validateCreatePricing = [
