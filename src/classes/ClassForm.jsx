@@ -98,6 +98,7 @@ export default function ClassForm({ initial, onSubmit, onCancel, compact, action
                 const loc = form.defaultLocationName?.trim();
                 if (!loc) return;
                 if (/^(线上|网课|在线|online)$/i.test(loc)) {
+                  toast('线上课程无需经纬度，已清空', 'success');
                   setForm(f => ({ ...f, defaultLocationLat: '', defaultLocationLng: '' }));
                   return;
                 }
