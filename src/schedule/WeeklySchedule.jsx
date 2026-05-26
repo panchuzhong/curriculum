@@ -34,9 +34,10 @@ export default function WeeklySchedule() {
       if (e.key === 'Home') { e.preventDefault(); goToThisWeek(); return; }
       if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
       e.preventDefault();
-      const delta = e.ctrlKey || e.metaKey ? (visibleDays || 7) * (e.key === 'ArrowLeft' ? -1 : 1)
+      const isJump = e.ctrlKey || e.metaKey;
+      const delta = isJump ? (visibleDays || 7) * (e.key === 'ArrowLeft' ? -1 : 1)
         : e.key === 'ArrowLeft' ? -1 : 1;
-      navigateByDays(delta);
+      navigateByDays(delta, { animate: isJump });
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
