@@ -14,6 +14,7 @@ import scheduleImageRoutes from './routes/schedule-image.js';
 import holidayRoutes from './routes/holidays.js';
 import auditLogRoutes from './routes/audit-log.js';
 import backupRoutes from './routes/backup.js';
+import geocodeRoutes from './routes/geocode.js';
 
 const app = express();
 app.use(express.json({ limit: '1mb' }));
@@ -62,6 +63,7 @@ app.use('/api/schedule-image', scheduleImageRoutes);
 app.use('/api/holidays', holidayRoutes);
 app.use('/api/audit-log', auditLogRoutes);
 app.use('/api/backup', backupRoutes);
+app.use('/api/geocode', geocodeRoutes);
 
 // Health check
 app.get('/api/health', (req, res) => res.json({ status: 'ok' }));

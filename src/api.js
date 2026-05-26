@@ -152,6 +152,7 @@ export const api = {
     if (classId) url += `&classId=${classId}`;
     return requestBlob(url);
   },
+  geocode: (address) => request('GET', `/geocode?address=${encodeURIComponent(address)}`),
 
   // Image export (blob)
   exportScheduleImage: (start, end) => requestBlob(`/schedule-image?start=${start}&end=${end}`),
