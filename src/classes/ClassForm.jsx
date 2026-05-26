@@ -111,16 +111,16 @@ export default function ClassForm({ initial, onSubmit, onCancel, compact, action
             )}
           </div>
         </div>
-        {!compact && <div>
+        <div>
           <label className="block text-sm text-gray-500 dark:text-gray-400 mb-1">纬度（可选）</label>
           <input type="number" step="any" min="-90" max="90" className="w-full p-2 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded" value={form.defaultLocationLat ?? ''}
             onChange={e => setForm({...form, defaultLocationLat: e.target.value})} placeholder="如 31.2" />
-        </div>}
-        {!compact && <div>
+        </div>
+        <div>
           <label className="block text-sm text-gray-500 dark:text-gray-400 mb-1">经度（可选）</label>
           <input type="number" step="any" min="-180" max="180" className="w-full p-2 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded" value={form.defaultLocationLng ?? ''}
             onChange={e => setForm({...form, defaultLocationLng: e.target.value})} placeholder="如 121.4" />
-        </div>}
+        </div>
         <div className="flex items-center">
           <label className="flex items-center gap-2 cursor-pointer">
             <input type="checkbox" checked={form.isCompetition}
