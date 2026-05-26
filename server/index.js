@@ -83,6 +83,31 @@ app.use((err, req, res, next) => {
 const PORT = process.env.PORT || 8443;
 const HOST = process.env.HOST || '127.0.0.1';
 const server = app.listen(PORT, HOST, () => console.log(`Server running on http://${HOST}:${PORT}`));
+
+// Auto-fill class lat/lng on startup if AMap key is configured
+if (process.env.AMAP_KEY) {
+  import('./services/geocode.js').then(async ({ geocodeAddress }) => {
+    const classes = db.prepare(
+      `SELECT id, default_location_name FROM classes WHERE default_location_name != '' AND default_location_name IS NOT NULL AND (default_location_lat IS NULL OR default_location_lng IS NULL)`
+    ).all();
+    if (classes.length === 0) return;
+    console.log(`[geocode] Auto-filling lat/lng for ${classes.length} classes...`);
+    let filled = 0, skipped = 0;
+    for (const c of classes) {
+      try {
+        const result = await geocodeAddress(c.default_location_name);
+        if (result) {
+          db.prepare('UPDATE classes SET default_location_lat = ?, default_location_lng = ? WHERE id = ?')
+            .run(result.lat, result.lng, c.id);
+          filled++;
+        } else { skipped++; }
+      } catch { skipped++; }
+      await new Promise(r => setTimeout(r, 200)); // rate limit ~5 req/s
+    }
+    console.log(`[geocode] Done: ${filled} filled, ${skipped} skipped`);
+  }).catch(() => {});
+}
+
 server.timeout = 300000; // 5 minutes for image generation and backup endpoints
 
 process.on('SIGTERM', async () => {

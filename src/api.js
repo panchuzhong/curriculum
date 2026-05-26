@@ -153,6 +153,7 @@ export const api = {
     return requestBlob(url);
   },
   geocode: (address) => request('GET', `/geocode?address=${encodeURIComponent(address)}`),
+  geocodeStatus: () => request('GET', '/geocode/status'),
 
   // Image export (blob)
   exportScheduleImage: (start, end) => requestBlob(`/schedule-image?start=${start}&end=${end}`),

@@ -8,6 +8,7 @@ export default function ClassForm({ initial, onSubmit, onCancel, compact, action
   const dark = useContext(DarkContext);
   const toast = useToast();
   const [subjects, setSubjects] = useState([]);
+  const [geocodeAvailable, setGeocodeAvailable] = useState(false);
   const [form, setForm] = useState(initial || {
     name: '', grade: '初三', subject: '', studentCount: 1,
     unitPrice: 800, discountAmount: 0, discountReason: '',
@@ -23,6 +24,7 @@ export default function ClassForm({ initial, onSubmit, onCancel, compact, action
         setForm(f => ({ ...f, subject: subs[0] }));
       }
     }).catch(e => toast(e.message || '加载学科失败'));
+    api.geocodeStatus().then(({ available }) => setGeocodeAvailable(available)).catch(() => {});
   }, []);
 
   useEffect(() => { if (initial) setForm(initial); }, [initial]);
@@ -91,15 +93,17 @@ export default function ClassForm({ initial, onSubmit, onCancel, compact, action
           <div className="flex gap-2">
             <input className="flex-1 p-2 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded" value={form.defaultLocationName || ''}
               onChange={e => setForm({...form, defaultLocationName: e.target.value})} />
-            <button type="button" onClick={async () => {
-              if (!form.defaultLocationName) return;
-              try {
-                const { lat, lng } = await api.geocode(form.defaultLocationName);
-                if (lat != null) setForm(f => ({ ...f, defaultLocationLat: String(lat), defaultLocationLng: String(lng) }));
-                else toast('未找到该地点的经纬度');
-              } catch (e) { toast(e.message || '地理编码失败'); }
-            }} disabled={!form.defaultLocationName}
-              className="px-3 py-2 bg-indigo-600 text-white rounded text-xs hover:bg-indigo-700 disabled:opacity-50 whitespace-nowrap">获取经纬度</button>
+            {geocodeAvailable && (
+              <button type="button" onClick={async () => {
+                if (!form.defaultLocationName) return;
+                try {
+                  const { lat, lng } = await api.geocode(form.defaultLocationName);
+                  if (lat != null) setForm(f => ({ ...f, defaultLocationLat: String(lat), defaultLocationLng: String(lng) }));
+                  else toast('未找到该地点的经纬度');
+                } catch (e) { toast(e.message || '地理编码失败'); }
+              }} disabled={!form.defaultLocationName}
+                className="px-3 py-2 bg-indigo-600 text-white rounded text-xs hover:bg-indigo-700 disabled:opacity-50 whitespace-nowrap">获取经纬度</button>
+            )}
           </div>
         </div>
         {!compact && <div>
