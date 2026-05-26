@@ -184,7 +184,6 @@ test.describe('动画功能', () => {
 
   test('键盘Ctrl+左右方向键也触发动画', async ({ authenticatedPage: page }) => {
     await page.goto('/?date=2026-07-20');
-    // Set up animation spy
     await page.evaluate(() => {
       const divs = document.querySelectorAll('div');
       let t = null;
@@ -202,10 +201,40 @@ test.describe('动画功能', () => {
 
     const log = await page.evaluate(() => (window as any).__animLog2);
     const transitions = log.filter((e: any) => e.p === '--day-transition');
-    // Must have at least 2 transitions: animation start + snap
     expect(transitions.length).toBeGreaterThanOrEqual(2);
     expect(transitions[0].v).toContain('220ms');
     expect(transitions[transitions.length - 1].v).toBe('none');
+  });
+
+  test('纯方向键左右（1天步进）也触发滑动动画', async ({ authenticatedPage: page }) => {
+    await page.goto('/?date=2026-07-20');
+    await page.evaluate(() => {
+      const divs = document.querySelectorAll('div');
+      let t = null;
+      for (const d of divs) { if (d.style.getPropertyValue('--day-offset')) { t = d; break; } }
+      (window as any).__animLog3 = [];
+      const orig = t!.style.setProperty.bind(t!.style);
+      t!.style.setProperty = function(p: string, v: string, pr?: string) {
+        (window as any).__animLog3.push({ tm: performance.now(), p, v });
+        return orig(p, v, pr);
+      };
+    });
+
+    // Plain ArrowRight (no Ctrl/Meta) = 1-day step — must animate
+    await page.keyboard.press('ArrowRight');
+    await page.waitForTimeout(300);
+
+    const log = await page.evaluate(() => (window as any).__animLog3);
+    const transitions = log.filter((e: any) => e.p === '--day-transition');
+    const offsets = log.filter((e: any) => e.p === '--day-offset');
+    // Must have animation transition + snap transition
+    expect(transitions.length).toBeGreaterThanOrEqual(2);
+    // First transition must be the 220ms animation
+    expect(transitions[0].v).toContain('220ms');
+    // Last transition must be 'none' (snap back to buffer)
+    expect(transitions[transitions.length - 1].v).toBe('none');
+    // Target offset must have been set (the actual slide destination)
+    expect(offsets.some((o: any) => o.v !== '-33.33333333333333%')).toBe(true);
   });
 });
 
