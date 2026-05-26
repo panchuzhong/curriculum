@@ -74,3 +74,18 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 
 **These guidelines are working if:** fewer unnecessary changes in diffs, fewer rewrites due to overcomplication, and clarifying questions come before implementation rather than after mistakes.
 
+## Project: 课表管理系统 (Curriculum Scheduler)
+
+**Stack:** React 19 + Vite + Tailwind CSS, Express 5, SQLite + Drizzle ORM
+**Testing:** Vitest (unit), Playwright (E2E)
+**Tests:** `npm test` (Vitest), `npx playwright test` (E2E)
+**Dev:** `npm run dev` (Vite `:5174` + Express `:8443` concurrently)
+**DB:** `server/db/index.js` (initDb), `server/db/schema.js` (Drizzle schema)
+
+**Key patterns:**
+- Server routes in `server/routes/` with auth middleware and validation
+- React views in `src/schedule/` for week/month/year schedules
+- Cross-view navigation: `src/utils/viewDate.js` (per-view store), `src/utils/navTarget.js` (tested pure function)
+- Keyboard shortcuts: ArrowUp/Down (switch views), Home (today), ArrowLeft/Right (navigate)
+- Animation: CSS custom properties `--day-offset`/`--day-transition` on grid element
+
