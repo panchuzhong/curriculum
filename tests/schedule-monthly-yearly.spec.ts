@@ -73,12 +73,12 @@ test.describe('年课表', () => {
   });
 
   test('显示年度统计汇总', async ({ authenticatedPage: page }) => {
-    await page.goto('/yearly');
+    await page.goto('/yearly?year=2026');
     await expect(page.getByText('2026 年度统计')).toBeVisible();
   });
 
   test('显示学科分类统计', async ({ authenticatedPage: page }) => {
-    await page.goto('/yearly');
+    await page.goto('/yearly?year=2026');
     await expect(page.getByText('2026 年度统计')).toBeVisible();
   });
 

@@ -100,7 +100,7 @@ test.describe('排课操作', () => {
 
     await clickFirstScheduleCard(page);
     await expect(page.getByRole('heading', { name: '编辑排课' })).toBeVisible();
-    page.on('dialog', dialog => dialog.accept());
+    page.once('dialog', dialog => dialog.accept());
     await page.getByRole('button', { name: '删除' }).click();
     // Verify card count decreased
     await page.waitForTimeout(500);
