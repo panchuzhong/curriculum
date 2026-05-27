@@ -6,10 +6,23 @@ export function getToken() {
 
 export function setToken(token) {
   localStorage.setItem('token', token);
+  window.dispatchEvent?.(new Event('token-changed'));
 }
 
 const SCHEDULE_CACHE_TTL_MS = 60_000;
+const MAX_CACHE_SIZE = 50;
 const scheduleCache = new Map();
+
+function evictExpiredEntries() {
+  const now = Date.now();
+  for (const [k, v] of scheduleCache) {
+    if (now - v.time > SCHEDULE_CACHE_TTL_MS) scheduleCache.delete(k);
+  }
+  while (scheduleCache.size > MAX_CACHE_SIZE) {
+    const oldestKey = scheduleCache.keys().next().value;
+    if (oldestKey !== undefined) scheduleCache.delete(oldestKey);
+  }
+}
 
 function clearScheduleCache() {
   scheduleCache.clear();
@@ -28,6 +41,7 @@ async function withScheduleInvalidation(promise) {
 export function clearToken() {
   localStorage.removeItem('token');
   clearScheduleCache();
+  window.dispatchEvent?.(new Event('token-changed'));
 }
 
 async function request(method, path, body, { noAuth = false } = {}) {
@@ -48,16 +62,15 @@ async function request(method, path, body, { noAuth = false } = {}) {
   const text = await res.text();
   if (!res.ok) {
     let message = text;
+    let crossSemester = false;
     try {
       const parsed = JSON.parse(text);
       if (parsed.error) message = parsed.error;
-      const err = new Error(message);
-      if (parsed.crossSemester) err.crossSemester = true;
-      throw err;
-    } catch (e) {
-      if (e.crossSemester) throw e;
-      throw new Error(message);
-    }
+      crossSemester = !!parsed.crossSemester;
+    } catch {}
+    const err = new Error(message);
+    if (crossSemester) err.crossSemester = true;
+    throw err;
   }
   try { return JSON.parse(text); } catch { return text; }
 }
@@ -124,6 +137,7 @@ export const api = {
     let url = `/schedules?start=${start}&end=${end}`;
     if (classId) url += `&classId=${classId}`;
     const key = scheduleCacheKey(start, end, classId);
+    evictExpiredEntries();
     const cached = scheduleCache.get(key);
     const now = Date.now();
     if (cached && now - cached.time <= SCHEDULE_CACHE_TTL_MS) {

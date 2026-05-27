@@ -28,6 +28,21 @@ app.use((req, res, next) => {
   next();
 });
 
+// CORS: restrict to same origin
+app.use((req, res, next) => {
+  const origin = req.headers.origin;
+  if (origin) {
+    try {
+      const { host } = new URL(origin);
+      if (host === req.headers.host) {
+        res.setHeader('Access-Control-Allow-Origin', origin);
+        res.setHeader('Access-Control-Allow-Credentials', 'true');
+      }
+    } catch { /* malformed Origin (e.g. "null") — ignore */ }
+  }
+  next();
+});
+
 app.use((req, res, next) => {
   const origJson = res.json.bind(res);
   res.json = (body) => {

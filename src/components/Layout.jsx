@@ -1,4 +1,4 @@
-import { useState, useEffect, useLayoutEffect } from 'react';
+import { useState, useEffect, useLayoutEffect, useRef } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { clearToken } from '../api';
 import { setDarkMode, DarkContext } from '../utils/colors';
@@ -79,6 +79,8 @@ export default function Layout({ children }) {
     return saved ? parseInt(saved) : (tablet ? 100 : 224);
   });
   const [resizing, setResizing] = useState(false);
+  const resizeDebounceRef = useRef();
+  const lastWidthRef = useRef();
 
   useLayoutEffect(() => {
     if (isMobile) return;
@@ -109,13 +111,19 @@ export default function Layout({ children }) {
     const startX = e.clientX;
     const startW = sidebarWidth;
     const key = sidebarStorageKey();
+    lastWidthRef.current = startW;
     function onMove(e2) {
       const w = Math.max(80, Math.min(400, startW + e2.clientX - startX));
+      lastWidthRef.current = w;
       setSidebarWidth(w);
-      localStorage.setItem(key, w);
+      if (resizeDebounceRef.current) clearTimeout(resizeDebounceRef.current);
+      resizeDebounceRef.current = setTimeout(() => {
+        localStorage.setItem(key, w);
+      }, 300);
     }
     function onUp() {
       setResizing(false);
+      if (resizeDebounceRef.current) { clearTimeout(resizeDebounceRef.current); localStorage.setItem(key, lastWidthRef.current); }
       document.removeEventListener('mousemove', onMove);
       document.removeEventListener('mouseup', onUp);
     }
@@ -129,15 +137,21 @@ export default function Layout({ children }) {
     const startX = touch.clientX;
     const startW = sidebarWidth;
     const key = sidebarStorageKey();
+    lastWidthRef.current = startW;
     function onMove(e2) {
       e2.preventDefault();
       const t = e2.touches[0];
       const w = Math.max(80, Math.min(400, startW + t.clientX - startX));
+      lastWidthRef.current = w;
       setSidebarWidth(w);
-      localStorage.setItem(key, w);
+      if (resizeDebounceRef.current) clearTimeout(resizeDebounceRef.current);
+      resizeDebounceRef.current = setTimeout(() => {
+        localStorage.setItem(key, w);
+      }, 300);
     }
     function onEnd() {
       setResizing(false);
+      if (resizeDebounceRef.current) { clearTimeout(resizeDebounceRef.current); localStorage.setItem(key, lastWidthRef.current); }
       document.removeEventListener('touchmove', onMove);
       document.removeEventListener('touchend', onEnd);
     }

@@ -5,6 +5,7 @@ import { classes, pricingTiers, students, classStudents, schedules, holidays, se
 import { eq, inArray } from 'drizzle-orm';
 import { authMiddleware } from '../middleware/auth.js';
 import { writeFileSync } from 'fs';
+import { randomUUID } from 'crypto';
 import { clearSemesterCache } from '../services/schedule-helpers.js';
 import { clearReportCache } from '../services/report-cache.js';
 
@@ -72,7 +73,7 @@ router.post('/restore', express.json({ limit: '50mb' }), (req, res) => {
     }
   }
 
-  // Save pre-restore snapshot
+  // Save pre-restore snapshot — abort if snapshot fails (data loss risk)
   try {
     const teacherClasses = drizzleDb.select().from(classes).where(eq(classes.teacherId, tid)).all();
     const cids = teacherClasses.map(c => c.id);
@@ -95,10 +96,10 @@ router.post('/restore', express.json({ limit: '50mb' }), (req, res) => {
         : [],
       auditLog: drizzleDb.select().from(auditLog).where(eq(auditLog.teacherId, tid)).all(),
     };
-    const ts = new Date().toISOString().replace(/[:.]/g, '-');
-    writeFileSync(`./data/backup_pre_restore_${ts}.json`, JSON.stringify(snapshot));
-  } catch {
-    // Non-fatal: snapshot failure shouldn't block restore
+    writeFileSync(`./data/.backup_pre_restore_${randomUUID()}.json`, JSON.stringify(snapshot));
+  } catch (e) {
+    console.error('Backup snapshot failed:', e);
+    return res.status(500).json({ error: '还原前备份快照失败' });
   }
 
   // Force all teacher-scoped records to belong to the authenticated teacher
