@@ -6,6 +6,7 @@ import { authMiddleware } from '../middleware/auth.js';
 import { getDefaultPrice } from '../db/seed.js';
 import { logAudit } from '../services/audit.js';
 import { clearReportCache } from '../services/report-cache.js';
+import { toLocalDateStr } from '../services/schedule-helpers.js';
 import handle from '../validations/handle.js';
 import { validateCreateClass, validateUpdateClass, validateClassStudent, validateCreatePricing, validateUpdatePricing } from '../validations/classes.js';
 
@@ -65,8 +66,7 @@ router.post('/', validateCreateClass, handle, (req, res) => {
     newId = Number(result.lastInsertRowid);
 
     // Create initial pricing record
-    const today = new Date();
-    const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+    const todayStr = toLocalDateStr(new Date());
     drizzleDb.insert(classPricing).values({
       classId: newId, studentCount, unitPrice: price,
       discountAmount: discountAmount ?? 0, discountReason,
@@ -97,13 +97,14 @@ router.put('/:id', validateUpdateClass, handle, (req, res) => {
 });
 
 router.delete('/:id', (req, res) => {
-  const { id } = req.params;
+  const id = +req.params.id;
+  if (!id || id < 1) return res.status(400).json({ error: '无效的ID' });
   const existing = drizzleDb.select().from(classes)
-    .where(and(eq(classes.id, +id), eq(classes.teacherId, req.teacherId))).get();
+    .where(and(eq(classes.id, id), eq(classes.teacherId, req.teacherId))).get();
   if (!existing) return res.status(404).json({ error: 'Not found' });
-  drizzleDb.update(classes).set({ deleted: true }).where(eq(classes.id, +id)).run();
+  drizzleDb.update(classes).set({ deleted: true }).where(eq(classes.id, id)).run();
   clearReportCache(req.teacherId);
-  logAudit({ teacherId: req.teacherId, action: 'DELETE', tableName: 'classes', recordId: +id, before: existing });
+  logAudit({ teacherId: req.teacherId, action: 'DELETE', tableName: 'classes', recordId: id, before: existing });
   res.json({ ok: true });
 });
 
@@ -218,28 +219,31 @@ pricingRouter.post('/', validateCreatePricing, handle, (req, res) => {
     .get();
   if (existing) return res.status(409).json({ error: '该日期已有定价记录' });
 
-  const result = drizzleDb.insert(classPricing).values({
-    classId, studentCount, unitPrice,
-    discountAmount: discountAmount ?? 0,
-    discountReason,
-    effectiveFrom,
-  }).run();
+  let created;
+  db.transaction(() => {
+    const result = drizzleDb.insert(classPricing).values({
+      classId, studentCount, unitPrice,
+      discountAmount: discountAmount ?? 0,
+      discountReason,
+      effectiveFrom,
+    }).run();
 
-  // Sync latest pricing to classes table
-  const latest = drizzleDb.select().from(classPricing)
-    .where(eq(classPricing.classId, classId))
-    .orderBy(desc(classPricing.effectiveFrom))
-    .get();
-  if (latest) {
-    drizzleDb.update(classes).set({
-      studentCount: latest.studentCount,
-      unitPrice: latest.unitPrice,
-      discountAmount: latest.discountAmount,
-      discountReason: latest.discountReason,
-    }).where(eq(classes.id, classId)).run();
-  }
+    // Sync latest pricing to classes table
+    const latest = drizzleDb.select().from(classPricing)
+      .where(eq(classPricing.classId, classId))
+      .orderBy(desc(classPricing.effectiveFrom))
+      .get();
+    if (latest) {
+      drizzleDb.update(classes).set({
+        studentCount: latest.studentCount,
+        unitPrice: latest.unitPrice,
+        discountAmount: latest.discountAmount,
+        discountReason: latest.discountReason,
+      }).where(eq(classes.id, classId)).run();
+    }
 
-  const created = drizzleDb.select().from(classPricing).where(eq(classPricing.id, Number(result.lastInsertRowid))).get();
+    created = drizzleDb.select().from(classPricing).where(eq(classPricing.id, Number(result.lastInsertRowid))).get();
+  })();
   clearReportCache(req.teacherId);
   logAudit({ teacherId: req.teacherId, action: 'CREATE', tableName: 'class_pricing', recordId: created.id, after: created });
   res.json(created);
@@ -267,23 +271,26 @@ pricingRouter.put('/:pricingId', validateUpdatePricing, handle, (req, res) => {
     if (dup) return res.status(409).json({ error: '该日期已有定价记录' });
   }
 
-  drizzleDb.update(classPricing).set(updates).where(eq(classPricing.id, pricingId)).run();
+  let updated;
+  db.transaction(() => {
+    drizzleDb.update(classPricing).set(updates).where(eq(classPricing.id, pricingId)).run();
 
-  // Sync latest to classes table
-  const latest = drizzleDb.select().from(classPricing)
-    .where(eq(classPricing.classId, record.classId))
-    .orderBy(desc(classPricing.effectiveFrom))
-    .get();
-  if (latest) {
-    drizzleDb.update(classes).set({
-      studentCount: latest.studentCount,
-      unitPrice: latest.unitPrice,
-      discountAmount: latest.discountAmount,
-      discountReason: latest.discountReason,
-    }).where(eq(classes.id, record.classId)).run();
-  }
+    // Sync latest to classes table
+    const latest = drizzleDb.select().from(classPricing)
+      .where(eq(classPricing.classId, record.classId))
+      .orderBy(desc(classPricing.effectiveFrom))
+      .get();
+    if (latest) {
+      drizzleDb.update(classes).set({
+        studentCount: latest.studentCount,
+        unitPrice: latest.unitPrice,
+        discountAmount: latest.discountAmount,
+        discountReason: latest.discountReason,
+      }).where(eq(classes.id, record.classId)).run();
+    }
 
-  const updated = drizzleDb.select().from(classPricing).where(eq(classPricing.id, pricingId)).get();
+    updated = drizzleDb.select().from(classPricing).where(eq(classPricing.id, pricingId)).get();
+  })();
   clearReportCache(req.teacherId);
   logAudit({ teacherId: req.teacherId, action: 'UPDATE', tableName: 'class_pricing', recordId: pricingId, before: record, after: updates });
   res.json(updated);
@@ -303,21 +310,23 @@ pricingRouter.delete('/:pricingId', (req, res) => {
     .where(eq(classPricing.classId, record.classId)).all();
   if (count.length <= 1) return res.status(400).json({ error: '至少保留一条定价记录' });
 
-  drizzleDb.delete(classPricing).where(eq(classPricing.id, pricingId)).run();
+  db.transaction(() => {
+    drizzleDb.delete(classPricing).where(eq(classPricing.id, pricingId)).run();
 
-  // Sync latest to classes table
-  const latest = drizzleDb.select().from(classPricing)
-    .where(eq(classPricing.classId, record.classId))
-    .orderBy(desc(classPricing.effectiveFrom))
-    .get();
-  if (latest) {
-    drizzleDb.update(classes).set({
-      studentCount: latest.studentCount,
-      unitPrice: latest.unitPrice,
-      discountAmount: latest.discountAmount,
-      discountReason: latest.discountReason,
-    }).where(eq(classes.id, record.classId)).run();
-  }
+    // Sync latest to classes table
+    const latest = drizzleDb.select().from(classPricing)
+      .where(eq(classPricing.classId, record.classId))
+      .orderBy(desc(classPricing.effectiveFrom))
+      .get();
+    if (latest) {
+      drizzleDb.update(classes).set({
+        studentCount: latest.studentCount,
+        unitPrice: latest.unitPrice,
+        discountAmount: latest.discountAmount,
+        discountReason: latest.discountReason,
+      }).where(eq(classes.id, record.classId)).run();
+    }
+  })();
 
   clearReportCache(req.teacherId);
   logAudit({ teacherId: req.teacherId, action: 'DELETE', tableName: 'class_pricing', recordId: pricingId, before: record });

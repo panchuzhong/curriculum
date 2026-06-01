@@ -24,13 +24,30 @@ export function findConflictGroups(schedules) {
       group.push(s);
       groupEnd = Math.max(groupEnd, sStart + duration(s.startTime, s.endTime));
     } else {
-      groups.push(group);
+      groups.push({ schedules: group, end: groupEnd });
       group = [s];
       groupEnd = sStart + duration(s.startTime, s.endTime);
     }
   }
-  groups.push(group);
-  return groups;
+  groups.push({ schedules: group, end: groupEnd });
+
+  // If the last group wraps past midnight (end > 1440), it may overlap the
+  // first group's early-morning schedules; merge them. Mirrors the server's
+  // detectConflictGroups so UI conflict layout matches the exported image.
+  if (groups.length > 1) {
+    const last = groups[groups.length - 1];
+    if (last.end > 24 * 60) {
+      const morningReach = last.end - 24 * 60;
+      const firstStart = toMin(groups[0].schedules[0].startTime);
+      if (firstStart < morningReach) {
+        groups[0].schedules.push(...last.schedules);
+        groups[0].end = Math.max(groups[0].end, last.end);
+        groups.pop();
+      }
+    }
+  }
+
+  return groups.map(g => g.schedules);
 }
 
 export function assignColumns(group) {

@@ -61,8 +61,8 @@ test.describe('学期CRUD', () => {
 
     // Find the semester row that contains the name, then click its delete button
     const semesterRow = page.locator('div.flex.items-center').filter({ hasText: uniqueName });
-    page.on('dialog', dialog => dialog.accept());
     await semesterRow.getByRole('button', { name: '删除' }).click();
+    await page.getByRole('button', { name: '确认' }).click();
     await expect(page.getByText(uniqueName)).not.toBeVisible();
   });
 });

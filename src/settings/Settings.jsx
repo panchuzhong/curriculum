@@ -4,6 +4,7 @@ import PricingTierManager from '../pricing/PricingTierManager';
 import HolidayManager from './HolidayManager';
 import { getSubjectColor } from '../utils/colors';
 import { useToast } from '../components/ToastProvider';
+import { useConfirm } from '../components/ConfirmDialog';
 
 const ALL_SUBJECTS = ['数学', '物理', '化学', '英语', '语文', '生物', '历史', '地理', '政治', '信息技术', '美术', '音乐', '体育'];
 
@@ -122,26 +123,32 @@ function SubjectSection() {
 
 function ApiKeySection() {
   const toast = useToast();
+  const [confirmAction, confirmDialog] = useConfirm();
   const [profile, setProfile] = useState(null);
   const [copied, setCopied] = useState(false);
+  const [fullKey, setFullKey] = useState(null);
 
   useEffect(() => {
-    api.getProfile().then(setProfile).catch(e => toast(e.message || '加载个人信息失败'));
+    api.getProfile().then(p => { setProfile(p); setFullKey(null); }).catch(e => toast(e.message || '加载个人信息失败'));
   }, []);
 
   async function regenerate() {
-    if (!confirm('重新生成 API Key 后，旧的 Key 将立即失效。确定继续？')) return;
+    const ok = await confirmAction('重新生成 API Key 后，旧的 Key 将立即失效。确定继续？');
+    if (!ok) return;
     try {
       const res = await api.regenerateApiKey();
       setProfile(p => ({ ...p, apiKey: res.apiKey }));
+      setFullKey(res.apiKey);
     } catch (e) { toast(e.message || '重新生成失败'); }
   }
 
+  const displayKey = fullKey || profile?.apiKey;
+
   function copyKey() {
-    if (!profile?.apiKey) return;
+    if (!displayKey) return;
     // Try modern API first, fallback to execCommand
     if (navigator.clipboard && navigator.clipboard.writeText) {
-      navigator.clipboard.writeText(profile.apiKey).then(() => {
+      navigator.clipboard.writeText(fullKey || displayKey).then(() => {
         setCopied(true);
         setTimeout(() => setCopied(false), 2000);
       }).catch(fallbackCopy);
@@ -150,7 +157,7 @@ function ApiKeySection() {
     }
     function fallbackCopy() {
       const textarea = document.createElement('textarea');
-      textarea.value = profile.apiKey;
+      textarea.value = fullKey || displayKey;
       textarea.style.position = 'fixed';
       textarea.style.opacity = '0';
       document.body.appendChild(textarea);
@@ -171,13 +178,14 @@ function ApiKeySection() {
       <h3 className="font-bold mb-3">API Key（供 AI Agent 使用）</h3>
       <div className="flex items-center gap-2 mb-3">
         <code className="flex-1 p-2 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded text-sm font-mono break-all">
-          {profile.apiKey}
+          {displayKey}
         </code>
-        <button onClick={copyKey}
-          className="px-3 py-2 bg-gray-300 dark:bg-gray-600 rounded hover:bg-gray-400 dark:hover:bg-gray-500 text-sm whitespace-nowrap">
+        <button onClick={copyKey} disabled={!fullKey}
+          className="px-3 py-2 bg-gray-300 dark:bg-gray-600 rounded hover:bg-gray-400 dark:hover:bg-gray-500 text-sm whitespace-nowrap disabled:opacity-50 disabled:cursor-not-allowed">
           {copied ? '已复制' : '复制'}
         </button>
       </div>
+      {!fullKey && <p className="text-xs text-amber-600 dark:text-amber-400 mb-3">API Key 已隐藏，点击「重新生成」获取完整 Key</p>}
       <p className="text-sm text-gray-500 dark:text-gray-400 mb-3">
         Agent 通过请求头 <code className="bg-gray-200 dark:bg-gray-700 px-1 rounded">X-API-Key</code> 访问 API，
         详见 <code className="bg-gray-200 dark:bg-gray-700 px-1 rounded">GET /api/agent/help</code>
@@ -186,6 +194,7 @@ function ApiKeySection() {
         className="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700 text-sm">
         重新生成 API Key
       </button>
+      {confirmDialog}
     </div>
   );
 }

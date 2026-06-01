@@ -155,6 +155,11 @@ describe('getNavTarget', () => {
       expect(result).toBe('/monthly?year=2026&month=6');
     });
 
+    it('classes → month: derives from stored week when stored month is missing', () => {
+      const result = getNavTarget('/monthly', '/classes', dates({ week: '2026-08-03' }));
+      expect(result).toBe('/monthly?year=2026&month=7');
+    });
+
     it('classes → week: uses stored week as fallback via week= param', () => {
       const result = getNavTarget('/', '/classes', dates({ week: '2026-07-20' }));
       expect(result).toBe('/?week=2026-07-20');

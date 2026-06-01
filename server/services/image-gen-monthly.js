@@ -1,5 +1,4 @@
-import { getBrowser } from './browser.js';
-import { isHoliday, isWorkday, getHolidayName } from './holidays.js';
+import { isDarkTheme, withBrowserPage, buildDbHolidayHelpers } from './image-helpers.js';
 import { getColor, getTextColor } from './colors.js';
 import { toMin, toLocalDateStr, escapeHtml, detectConflictGroups, assignColumns } from './schedule-helpers.js';
 
@@ -30,7 +29,7 @@ function buildMonthList(startYear, startMonth, endYear, endMonth) {
 }
 
 // ── Generate HTML for one month ────────────────────────────────────
-function renderMonthHtml(schedulesWithClasses, year, month, { theme, dbHolidayMap, dbWorkdaySet, hasDbData, todayStr }) {
+function renderMonthHtml(schedulesWithClasses, year, month, { theme, checkIsHoliday, checkIsWorkday, checkHolidayName, todayStr }) {
   const dates = getMonthDates(year, month);
   const dayRows = Math.ceil(dates.length / 7);
 
@@ -45,23 +44,7 @@ function renderMonthHtml(schedulesWithClasses, year, month, { theme, dbHolidayMa
   });
   Object.values(byDate).forEach(arr => arr.sort((a, b) => a.startTime.localeCompare(b.startTime)));
 
-  function checkIsHoliday(dateStr) {
-    if (hasDbData && dbHolidayMap[dateStr] !== undefined) return true;
-    if (hasDbData && dbWorkdaySet.has(dateStr)) return false;
-    return isHoliday(dateStr);
-  }
-  function checkIsWorkday(dateStr) {
-    if (hasDbData && dbWorkdaySet.has(dateStr)) return true;
-    if (hasDbData && dbHolidayMap[dateStr] !== undefined) return false;
-    return isWorkday(dateStr);
-  }
-  function checkHolidayName(dateStr) {
-    if (dbHolidayMap[dateStr]) return dbHolidayMap[dateStr];
-    return getHolidayName(dateStr);
-  }
-
-  const hour = new Date().getHours();
-  const isDark = theme === 'dark' ? true : theme === 'light' ? false : (hour < 7 || hour >= 19);
+  const isDark = isDarkTheme(theme);
 
   const c = isDark ? {
     bg: '#111827', text: '#f3f4f6',
@@ -209,19 +192,13 @@ export async function generateMonthlyImage(schedulesWithClasses, year, month, { 
   const todayStr = toLocalDateStr(new Date());
 
   // Build DB holiday overrides (shared across all months)
-  const dbHolidayMap = {};
-  const dbWorkdaySet = new Set();
-  for (const h of dbHolidays) {
-    if (h.type === 'holiday') dbHolidayMap[h.date] = h.name || '';
-    else if (h.type === 'workday') dbWorkdaySet.add(h.date);
-  }
-  const hasDbData = dbHolidays.length > 0;
+  const { checkIsHoliday, checkIsWorkday, checkHolidayName } = buildDbHolidayHelpers(dbHolidays);
 
   const ey = endYear != null ? endYear : year;
   const em = endMonth != null ? endMonth : month;
   const monthList = buildMonthList(year, month, ey, em);
 
-  const shared = { theme, dbHolidayMap, dbWorkdaySet, hasDbData, todayStr };
+  const shared = { theme, checkIsHoliday, checkIsWorkday, checkHolidayName, todayStr };
 
   // Build combined HTML
   let combinedHtml = '';
@@ -252,21 +229,11 @@ export async function generateMonthlyImage(schedulesWithClasses, year, month, { 
   ${combinedHtml}
 </body></html>`;
 
-  const browser = await getBrowser();
-  const page = await browser.newPage();
-  try {
-    await page.setContent(html, { waitUntil: 'networkidle0', timeout: 30000 });
-    await page.setViewport({ width: totalW + 4, height: 800, deviceScaleFactor: 4 });
-    const clipRect = await page.evaluate(() => {
-      const r = document.documentElement.getBoundingClientRect();
-      return { x: 0, y: 0, w: r.width, h: r.height };
+  return withBrowserPage(html, { width: totalW + 4, height: 800, deviceScaleFactor: 4 }, async (page) => {
+    const r = await page.evaluate(() => {
+      const el = document.documentElement.getBoundingClientRect();
+      return { x: 0, y: 0, width: Math.ceil(el.width), height: Math.ceil(el.height) };
     });
-    const buf = await page.screenshot({
-      type: 'png', timeout: 30000,
-      clip: { x: 0, y: 0, width: totalW, height: clipRect.h },
-    });
-    return Buffer.from(buf);
-  } finally {
-    await page.close();
-  }
+    return { x: 0, y: 0, width: totalW, height: Math.ceil(r.height) };
+  });
 }

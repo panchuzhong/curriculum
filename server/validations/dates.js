@@ -11,3 +11,14 @@ export function isValidTime(val) {
   const [h, m] = val.split(':').map(Number);
   return h >= 0 && h <= 23 && m >= 0 && m <= 59;
 }
+
+export function isValidScheduleEndTime(val) {
+  if (!/^\d{2}:\d{2}$/.test(val)) return false;
+  const [h, m] = val.split(':').map(Number);
+  return h >= 0 && h <= 47 && m >= 0 && m <= 59;
+}
+
+export function normalizeScheduleEndTime(val) {
+  const [h, m] = val.split(':').map(Number);
+  return `${String(h % 24).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+}

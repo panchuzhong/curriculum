@@ -6,8 +6,8 @@ const PHONE_RE = /^1[3-9]\d{9}$/;
 export const validateCreateStudent = [
   body('name').notEmpty().isLength({ max: 100 }).withMessage('姓名不能为空'),
   body('birthDate').optional({ checkFalsy: true }).matches(DATE_RE).withMessage('出生日期格式须为 YYYY 或 YYYY-MM-DD'),
-  body('phone').optional({ checkFalsy: true }).matches(PHONE_RE).withMessage('手机号格式不正确'),
-  body('parentPhone').optional({ checkFalsy: true }).matches(PHONE_RE).withMessage('家长手机号格式不正确'),
+  body('phone').optional({ checkFalsy: true }).isLength({ max: 20 }).matches(PHONE_RE).withMessage('手机号格式不正确'),
+  body('parentPhone').optional({ checkFalsy: true }).isLength({ max: 20 }).matches(PHONE_RE).withMessage('家长手机号格式不正确'),
   body('classIds').optional().isArray().withMessage('classIds 须为数组'),
   body('classIds.*').optional().isInt({ min: 1 }).withMessage('classIds 元素须为正整数'),
 ];
@@ -15,8 +15,8 @@ export const validateCreateStudent = [
 export const validateUpdateStudent = [
   body('name').optional().notEmpty().isLength({ max: 100 }).withMessage('姓名不能为空'),
   body('birthDate').optional({ checkFalsy: true }).matches(DATE_RE).withMessage('出生日期格式须为 YYYY 或 YYYY-MM-DD'),
-  body('phone').optional({ checkFalsy: true }).matches(PHONE_RE).withMessage('手机号格式不正确'),
-  body('parentPhone').optional({ checkFalsy: true }).matches(PHONE_RE).withMessage('家长手机号格式不正确'),
+  body('phone').optional({ checkFalsy: true }).isLength({ max: 20 }).matches(PHONE_RE).withMessage('手机号格式不正确'),
+  body('parentPhone').optional({ checkFalsy: true }).isLength({ max: 20 }).matches(PHONE_RE).withMessage('家长手机号格式不正确'),
   body('classIds').optional().isArray().withMessage('classIds 须为数组'),
   body('classIds.*').optional().isInt({ min: 1 }).withMessage('classIds 元素须为正整数'),
 ];

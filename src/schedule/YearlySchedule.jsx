@@ -8,7 +8,7 @@ import { useSimpleSwipe } from '../hooks/useSimpleSwipe';
 import { useToast } from '../components/ToastProvider';
 import BatchScheduleDialog from './BatchScheduleDialog';
 import ExportDialog from './ExportDialog';
-import useViewExport from './useViewExport';
+import useScheduleExport from './useScheduleExport';
 
 const COLLAPSE_THRESHOLD_MOBILE = 4;
 const COLLAPSE_THRESHOLD_DESKTOP = 9;
@@ -55,9 +55,8 @@ export default function YearlySchedule() {
   const navigate = useNavigate();
   const toast = useToast();
   const dark = useContext(DarkContext);
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [year, setYear] = useState(searchParams.get('year') ? +searchParams.get('year') : new Date().getFullYear());
-  setViewDate('year', String(year));
   const [schedules, setSchedules] = useState([]);
   const [classes, setClasses] = useState([]);
   const [animKey, setAnimKey] = useState(0);
@@ -67,11 +66,13 @@ export default function YearlySchedule() {
   const collapseLimit = isMobile ? COLLAPSE_THRESHOLD_MOBILE : COLLAPSE_THRESHOLD_DESKTOP;
   const [showBatch, setShowBatch] = useState(false);
 
-  const exportHook = useViewExport({ view: 'yearly', params: { year } });
+  const exportHook = useScheduleExport({ view: 'yearly' });
 
   useEffect(() => {
-    api.getSchedules(`${year}-01-01`, `${year}-12-31`).then(setSchedules).catch(e => toast(e.message || '加载课表失败'));
-    api.getClasses().then(setClasses).catch(e => toast(e.message || '加载班级失败'));
+    let cancelled = false;
+    api.getSchedules(`${year}-01-01`, `${year}-12-31`).then(data => { if (!cancelled) setSchedules(data); }).catch(e => { if (!cancelled) toast(e.message || '加载课表失败'); });
+    api.getClasses().then(data => { if (!cancelled) setClasses(data); }).catch(e => { if (!cancelled) toast(e.message || '加载班级失败'); });
+    return () => { cancelled = true; };
   }, [year]);
 
   useEffect(() => { containerRef.current?.focus(); }, []);
@@ -88,9 +89,7 @@ export default function YearlySchedule() {
     setViewDate('year', String(ny));
     setViewDate('month', `${ny}-${n.getMonth()}`);
     setViewDate('week', getMonday(todayStr()));
-    const u = new URL(window.location);
-    u.searchParams.set('year', ny);
-    window.history.replaceState(null, '', u);
+    setSearchParams({ year: String(ny) });
     animDir.current = 0; setYear(ny); setAnimKey(k => k + 1);
   }
 
@@ -169,9 +168,7 @@ export default function YearlySchedule() {
     animDir.current = delta;
     const ny = year + delta;
     setViewDate('year', String(ny));
-    const url = new URL(window.location);
-    url.searchParams.set('year', ny);
-    window.history.replaceState(null, '', url);
+    setSearchParams({ year: String(ny) });
     setYear(y => y + delta);
     setAnimKey(k => k + 1);
   }

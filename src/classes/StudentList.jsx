@@ -2,10 +2,12 @@ import { useState, useEffect, useContext, useCallback } from 'react';
 import { api } from '../api';
 import { getClassColor, DarkContext } from '../utils/colors';
 import { useToast } from '../components/ToastProvider';
+import { useConfirm } from '../components/ConfirmDialog';
 
 function StudentDialog({ student, classes, onClose, onSaved }) {
   const toast = useToast();
   const dark = useContext(DarkContext);
+  const [confirmAction, confirmDialog] = useConfirm();
   const [saving, setSaving] = useState(false);
   const [form, setForm] = useState({
     name: '', birthDate: '', phone: '', parentName: '', parentPhone: '', note: '', classIds: [],
@@ -51,7 +53,8 @@ function StudentDialog({ student, classes, onClose, onSaved }) {
 
   async function handleDelete() {
     if (!student || saving) return;
-    if (!confirm('确定删除此学生？')) return;
+    const ok = await confirmAction('确定删除此学生？');
+    if (!ok) return;
     setSaving(true);
     try {
       await api.deleteStudent(student.id);
@@ -63,6 +66,7 @@ function StudentDialog({ student, classes, onClose, onSaved }) {
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-3" onClick={onClose}>
       <div className="bg-white dark:bg-gray-800 rounded-lg p-4 sm:p-6 w-full max-w-[480px] max-h-[90vh] overflow-auto shadow-xl" onClick={e => e.stopPropagation()}>
+        {confirmDialog}
         <h3 className="text-lg mb-4">{student ? '编辑学生' : '新建学生'}</h3>
         <form onSubmit={handleSubmit} className="space-y-3">
           <div>

@@ -2,6 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useRef, useState } f
 
 const MAX_TOASTS = 5;
 const ToastContext = createContext(() => {});
+let toastId = 0;
 
 export function useToast() {
   return useContext(ToastContext);
@@ -17,7 +18,7 @@ export default function ToastProvider({ children }) {
   }, []);
 
   const showToast = useCallback((message, type = 'error') => {
-    const id = Date.now() + Math.random();
+    const id = `toast-${++toastId}`;
     setToasts(prev => [...prev.slice(-(MAX_TOASTS - 1)), { id, message, type }]);
     const timer = setTimeout(() => {
       timers.current.delete(timer);

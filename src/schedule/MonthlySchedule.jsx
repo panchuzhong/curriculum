@@ -10,7 +10,7 @@ import { useSimpleSwipe } from '../hooks/useSimpleSwipe';
 import { useToast } from '../components/ToastProvider';
 import BatchScheduleDialog from './BatchScheduleDialog';
 import ExportDialog from './ExportDialog';
-import useViewExport from './useViewExport';
+import useScheduleExport from './useScheduleExport';
 
 function getMonthDates(year, month) {
   const first = new Date(year, month, 1);
@@ -30,25 +30,26 @@ export default function MonthlySchedule() {
   const navigate = useNavigate();
   const dark = useContext(DarkContext);
   const toast = useToast();
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
   const now = new Date();
   const [year, setYear] = useState(searchParams.get('year') ? +searchParams.get('year') : now.getFullYear());
   const [month, setMonth] = useState(searchParams.get('month') != null ? +searchParams.get('month') : now.getMonth());
-  setViewDate('month', `${year}-${month}`);
   const [schedules, setSchedules] = useState([]);
   const [animKey, setAnimKey] = useState(0);
   const animDir = useRef(1);
   const containerRef = useRef(null);
   const [showBatch, setShowBatch] = useState(false);
 
-  const exportHook = useViewExport({ view: 'monthly', params: { year, month } });
+  const exportHook = useScheduleExport({ view: 'monthly' });
 
   const startDate = formatDate(year, month, 1);
   const endDate = new Date(year, month + 1, 0);
   const endStr = formatDate(year, month, endDate.getDate());
 
   useEffect(() => {
-    api.getSchedules(startDate, endStr).then(setSchedules).catch(e => toast(e.message || '加载课表失败'));
+    let cancelled = false;
+    api.getSchedules(startDate, endStr).then(data => { if (!cancelled) setSchedules(data); }).catch(e => { if (!cancelled) toast(e.message || '加载课表失败'); });
+    return () => { cancelled = true; };
   }, [year, month]);
 
   useEffect(() => { containerRef.current?.focus(); }, []);
@@ -58,9 +59,7 @@ export default function MonthlySchedule() {
     const ny = n.getFullYear(), nm = n.getMonth();
     setViewDate('month', `${ny}-${nm}`);
     setViewDate('week', getMonday(todayStr()));
-    const u = new URL(window.location);
-    u.searchParams.set('year', ny); u.searchParams.set('month', nm);
-    window.history.replaceState(null, '', u);
+    setSearchParams({ year: String(ny), month: String(nm) });
     setYear(ny); setMonth(nm);
     animDir.current = 0; setAnimKey(k => k + 1);
   }
@@ -92,9 +91,7 @@ export default function MonthlySchedule() {
     const nm = month === 0 ? 11 : month - 1;
     const ny = month === 0 ? year - 1 : year;
     setViewDate('month', `${ny}-${nm}`);
-    const url = new URL(window.location);
-    url.searchParams.set('year', ny); url.searchParams.set('month', nm);
-    window.history.replaceState(null, '', url);
+    setSearchParams({ year: String(ny), month: String(nm) });
     if (month === 0) { setYear(y => y - 1); setMonth(11); }
     else setMonth(m => m - 1);
     setAnimKey(k => k + 1);
@@ -105,9 +102,7 @@ export default function MonthlySchedule() {
     const nm = month === 11 ? 0 : month + 1;
     const ny = month === 11 ? year + 1 : year;
     setViewDate('month', `${ny}-${nm}`);
-    const url = new URL(window.location);
-    url.searchParams.set('year', ny); url.searchParams.set('month', nm);
-    window.history.replaceState(null, '', url);
+    setSearchParams({ year: String(ny), month: String(nm) });
     if (month === 11) { setYear(y => y + 1); setMonth(0); }
     else setMonth(m => m + 1);
     setAnimKey(k => k + 1);

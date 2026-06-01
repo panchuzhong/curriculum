@@ -1,9 +1,11 @@
 import { useState, useEffect } from 'react';
 import { api } from '../api';
 import { useToast } from '../components/ToastProvider';
+import { useConfirm } from '../components/ConfirmDialog';
 
 export default function PricingManager({ classId, onChanged }) {
   const toast = useToast();
+  const [confirmAction, confirmDialog] = useConfirm();
   const [records, setRecords] = useState([]);
   const [showForm, setShowForm] = useState(false);
   const [editId, setEditId] = useState(null);
@@ -77,7 +79,7 @@ export default function PricingManager({ classId, onChanged }) {
   }
 
   async function handleDelete(r) {
-    if (!confirm(`确定删除 ${r.effectiveFrom} 起的定价记录？`)) return;
+    if (!(await confirmAction(`确定删除 ${r.effectiveFrom} 起的定价记录？`))) return;
     try {
       await api.deleteClassPricing(classId, r.id);
       const updated = await api.getClassPricing(classId);
@@ -160,7 +162,7 @@ export default function PricingManager({ classId, onChanged }) {
           <div className="grid grid-cols-2 gap-2 mb-2">
             <div>
               <label className="block text-sm text-gray-500 dark:text-gray-400 mb-1">生效日期</label>
-              <input type="date" className={inp} value={form.effectiveFrom}
+              <input type="date" lang="zh-CN" className={inp} value={form.effectiveFrom}
                 onChange={e => setForm({ ...form, effectiveFrom: e.target.value })} />
             </div>
             <div>
@@ -193,6 +195,7 @@ export default function PricingManager({ classId, onChanged }) {
           </div>
         </div>
       )}
+      {confirmDialog}
     </div>
   );
 }

@@ -32,7 +32,7 @@ export function clearReportCache(teacherId) {
     cache.clear();
     return;
   }
-  for (const key of cache.keys()) {
+  for (const key of [...cache.keys()]) {
     if (JSON.parse(key).teacherId === teacherId) cache.delete(key);
   }
 }

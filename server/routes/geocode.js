@@ -11,7 +11,8 @@ router.get('/status', (req, res) => {
 
 router.get('/', async (req, res) => {
   const { address } = req.query;
-  if (!address) return res.status(400).json({ error: 'address required' });
+  if (!address || typeof address !== 'string') return res.status(400).json({ error: 'address required' });
+  if (address.length > 200) return res.status(400).json({ error: 'address too long' });
 
   try {
     const result = await geocodeAddress(address);

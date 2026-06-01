@@ -59,12 +59,13 @@ router.put('/:id', validateUpdateSemester, handle, (req, res) => {
 });
 
 router.delete('/:id', (req, res) => {
-  const { id } = req.params;
+  const id = +req.params.id;
+  if (!id || id < 1) return res.status(400).json({ error: '无效的ID' });
   const existing = drizzleDb.select().from(semesters)
-    .where(and(eq(semesters.id, +id), eq(semesters.teacherId, req.teacherId))).get();
+    .where(and(eq(semesters.id, id), eq(semesters.teacherId, req.teacherId))).get();
   if (!existing) return res.status(404).json({ error: 'Not found' });
-  drizzleDb.delete(semesters).where(eq(semesters.id, +id)).run();
-  logAudit({ teacherId: req.teacherId, action: 'DELETE', tableName: 'semesters', recordId: +id, before: existing });
+  drizzleDb.delete(semesters).where(eq(semesters.id, id)).run();
+  logAudit({ teacherId: req.teacherId, action: 'DELETE', tableName: 'semesters', recordId: id, before: existing });
   clearSemesterCache();
   res.json({ ok: true });
 });

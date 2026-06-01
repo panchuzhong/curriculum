@@ -28,7 +28,7 @@ function getOrientation() {
   return { mobile: window.innerWidth < 768 };
 }
 
-export default function useWeekNavigation({ searchParams }) {
+export default function useWeekNavigation({ searchParams, setSearchParams }) {
   const toast = useToast();
   const [orient, setOrient] = useState(getOrientation);
   useEffect(() => {
@@ -49,14 +49,16 @@ export default function useWeekNavigation({ searchParams }) {
 
   const [weekStart, setWeekStart] = useState(initialWeek);
   const [allDates, setAllDates] = useState(() => getAllDates(initialWeek));
-  setViewDate('week', weekStart); // sync before paint (render-time, safe module-level write)
   const [allSchedules, setAllSchedules] = useState([]);
 
   const gridRef = useRef(null);
   const navLockRef = useRef(false);
   const centerRef = useRef(initialWeek);
+  const targetRef = useRef(initialWeek);
+  const queuedTargetRef = useRef(null);
   const isInteractingRef = useRef(false);
   const pendingSchedulesRef = useRef(null);
+  const fetchGenRef = useRef(0);
   const visibleDaysRef = useRef(visibleDays);
   visibleDaysRef.current = visibleDays;
 
@@ -69,15 +71,17 @@ export default function useWeekNavigation({ searchParams }) {
   }, [allDates]);
 
   useEffect(() => {
+    const gen = ++fetchGenRef.current;
     api.getSchedules(allDates[0], allDates[TOTAL_COLS - 1])
-      .then(setAllSchedules)
-      .catch(e => toast(e.message || '加载课表失败'));
+      .then(data => { if (mountedRef.current && gen === fetchGenRef.current) setAllSchedules(data); })
+      .catch(e => { if (mountedRef.current && gen === fetchGenRef.current) toast(e.message || '加载课表失败'); });
   }, []);
 
   function reload() {
+    const gen = ++fetchGenRef.current;
     api.getSchedules(allDates[0], allDates[TOTAL_COLS - 1])
-      .then(setAllSchedules)
-      .catch(e => toast(e.message || '加载课表失败'));
+      .then(data => { if (mountedRef.current && gen === fetchGenRef.current) setAllSchedules(data); })
+      .catch(e => { if (mountedRef.current && gen === fetchGenRef.current) toast(e.message || '加载课表失败'); });
   }
 
   function safeSetSchedules(schedules) {
@@ -119,23 +123,25 @@ export default function useWeekNavigation({ searchParams }) {
   // Instant buffer swap: update dates centered on newCenter, snap offset to 0
   function navigateToWeek(newCenter) {
     setViewDate('week', newCenter);
-    const url = new URL(window.location);
-    url.searchParams.set('week', newCenter);
-    url.searchParams.delete('date');
-    window.history.replaceState(null, '', url);
+    setSearchParams({ week: newCenter }, { replace: true });
     centerRef.current = newCenter;
     setWeekStart(newCenter);
     const newDates = getAllDates(newCenter);
     flushSync(() => setAllDates(newDates));
     // useLayoutEffect has already snapped CSS to INITIAL_OFFSET
+    const gen = ++fetchGenRef.current;
     api.getSchedules(newDates[0], newDates[TOTAL_COLS - 1])
-      .then(safeSetSchedules)
-      .catch(e => toast(e.message || '加载课表失败'));
+      .then(data => { if (mountedRef.current && gen === fetchGenRef.current) safeSetSchedules(data); })
+      .catch(e => { if (mountedRef.current && gen === fetchGenRef.current) toast(e.message || '加载课表失败'); });
   }
 
   // Animated button navigation (desktop prev/next, "today")
   async function navigateTo(newWeekStart) {
-    if (navLockRef.current) return;
+    targetRef.current = newWeekStart;
+    if (navLockRef.current) {
+      queuedTargetRef.current = newWeekStart;
+      return;
+    }
     const days = daysBetween(centerRef.current, newWeekStart);
     if (days === 0) return;
     setViewDate('week', newWeekStart);
@@ -147,6 +153,12 @@ export default function useWeekNavigation({ searchParams }) {
     }
 
     navigateToWeek(newWeekStart);
+
+    const queuedTarget = queuedTargetRef.current;
+    queuedTargetRef.current = null;
+    if (queuedTarget && queuedTarget !== newWeekStart && mountedRef.current) {
+      await navigateTo(queuedTarget);
+    }
   }
 
   // Swipe settle callback: hook tells us how many cells forward the user scrolled
@@ -155,6 +167,7 @@ export default function useWeekNavigation({ searchParams }) {
     applyPendingSchedules();
     if (dayOffset === 0) return;
     const newCenter = addDays(centerRef.current, dayOffset);
+    targetRef.current = newCenter;
     setViewDate('week', newCenter);
     navigateToWeek(newCenter);
   };
@@ -176,7 +189,8 @@ export default function useWeekNavigation({ searchParams }) {
   }
 
   function navigateByDays(days, { animate = true } = {}) {
-    const target = addDays(centerRef.current, days);
+    const target = addDays(targetRef.current, days);
+    targetRef.current = target;
     if (animate) navigateTo(target);
     else navigateToWeek(target);
   }

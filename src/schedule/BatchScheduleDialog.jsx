@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { todayStr } from '../utils/date';
 import { api } from '../api';
 import { useToast } from '../components/ToastProvider';
@@ -15,6 +15,34 @@ const WEEKDAY_OPTIONS = [
 
 export default function BatchScheduleDialog({ onClose, onSaved }) {
   const toast = useToast();
+  const dialogRef = useRef(null);
+
+  useEffect(() => {
+    const el = dialogRef.current;
+    if (!el) return;
+    const previouslyFocused = document.activeElement;
+    el.focus();
+    const handleKeyDown = (e) => {
+      if (e.key !== 'Tab') return;
+      const focusable = el.querySelectorAll('button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])');
+      if (focusable.length === 0) return;
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (e.shiftKey && document.activeElement === first) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && document.activeElement === last) {
+        e.preventDefault();
+        first.focus();
+      }
+    };
+    el.addEventListener('keydown', handleKeyDown);
+    return () => {
+      el.removeEventListener('keydown', handleKeyDown);
+      previouslyFocused?.focus?.();
+    };
+  }, []);
+
   const [classes, setClasses] = useState([]);
   const [semesters, setSemesters] = useState([]);
   const [op, setOp] = useState('create'); // create | delete
@@ -126,8 +154,8 @@ export default function BatchScheduleDialog({ onClose, onSaved }) {
   const sel = 'w-full p-2 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded';
 
   return (
-    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-3" onClick={onClose}>
-      <div className="modal-enter bg-white dark:bg-gray-800 rounded-2xl p-4 sm:p-6 w-full max-w-[500px] max-h-[90vh] overflow-auto thin-scroll shadow-xl" onClick={e => e.stopPropagation()}>
+    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-3" onClick={onClose} role="dialog" aria-modal="true" aria-label="批量排课">
+      <div ref={dialogRef} tabIndex={-1} className="modal-enter bg-white dark:bg-gray-800 rounded-2xl p-4 sm:p-6 w-full max-w-[500px] max-h-[90vh] overflow-auto thin-scroll shadow-xl" onClick={e => e.stopPropagation()}>
         <div className="flex items-center justify-between mb-4">
           <h3 className="text-lg font-semibold">批量操作</h3>
           <button onClick={onClose} aria-label="关闭" className="w-7 h-7 rounded-lg bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-600 flex items-center justify-center text-sm transition-colors leading-none">✕</button>
@@ -217,7 +245,7 @@ export default function BatchScheduleDialog({ onClose, onSaved }) {
                   <div className="grid grid-cols-2 gap-2">
                     <div>
                       <label className="block text-xs text-gray-400 mb-0.5">开始</label>
-                      <input type="date" className={sel} value={rangeStart} onChange={e => {
+                      <input type="date" lang="zh-CN" className={sel} value={rangeStart} onChange={e => {
                         setRangeStart(e.target.value);
                         if (e.target.value && (!rangeEnd || rangeEnd <= e.target.value)) {
                           const d = new Date(e.target.value + 'T00:00:00');
@@ -228,7 +256,7 @@ export default function BatchScheduleDialog({ onClose, onSaved }) {
                     </div>
                     <div>
                       <label className="block text-xs text-gray-400 mb-0.5">结束</label>
-                      <input type="date" className={sel} value={rangeEnd} onChange={e => setRangeEnd(e.target.value)} />
+                      <input type="date" lang="zh-CN" className={sel} value={rangeEnd} onChange={e => setRangeEnd(e.target.value)} />
                     </div>
                   </div>
                   <div className="flex gap-2 items-end">
@@ -261,11 +289,11 @@ export default function BatchScheduleDialog({ onClose, onSaved }) {
                 <div className="grid grid-cols-2 gap-2">
                   <div>
                     <label className="block text-sm text-gray-500 dark:text-gray-400 mb-1">开始日期</label>
-                    <input type="date" className={sel} value={delStart} onChange={e => { setDelStart(e.target.value); setPreviewCount(null); }} />
+                    <input type="date" lang="zh-CN" className={sel} value={delStart} onChange={e => { setDelStart(e.target.value); setPreviewCount(null); }} />
                   </div>
                   <div>
                     <label className="block text-sm text-gray-500 dark:text-gray-400 mb-1">结束日期</label>
-                    <input type="date" className={sel} value={delEnd} onChange={e => { setDelEnd(e.target.value); setPreviewCount(null); }} />
+                    <input type="date" lang="zh-CN" className={sel} value={delEnd} onChange={e => { setDelEnd(e.target.value); setPreviewCount(null); }} />
                   </div>
                 </div>
                 {delStart && delEnd ? (

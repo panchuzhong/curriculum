@@ -12,6 +12,9 @@ export function setToken(token) {
 const SCHEDULE_CACHE_TTL_MS = 60_000;
 const MAX_CACHE_SIZE = 50;
 const scheduleCache = new Map();
+// Bumped on every invalidation; an in-flight read started before a bump must
+// not repopulate the cache with its now-stale result.
+let scheduleCacheEpoch = 0;
 
 function evictExpiredEntries() {
   const now = Date.now();
@@ -25,6 +28,7 @@ function evictExpiredEntries() {
 }
 
 function clearScheduleCache() {
+  scheduleCacheEpoch++;
   scheduleCache.clear();
 }
 
@@ -144,13 +148,15 @@ export const api = {
       return cached.promise || Promise.resolve(cached.data);
     }
 
+    const epoch = scheduleCacheEpoch;
     const promise = request('GET', url)
       .then(data => {
-        scheduleCache.set(key, { data, time: Date.now() });
+        // Skip repopulation if the cache was invalidated while this read was in flight.
+        if (scheduleCacheEpoch === epoch) scheduleCache.set(key, { data, time: Date.now() });
         return data;
       })
       .catch(err => {
-        scheduleCache.delete(key);
+        if (scheduleCacheEpoch === epoch) scheduleCache.delete(key);
         throw err;
       });
     scheduleCache.set(key, { promise, time: now });

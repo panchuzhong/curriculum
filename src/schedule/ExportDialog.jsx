@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { todayStr, getMonday, addDays, parseDateStr } from '../utils/date';
 
 const MONTHS = [
@@ -17,6 +17,34 @@ function monthDiff(sy, sm, ey, em) {
 }
 
 export default function ExportDialog({ view = 'week', defaultStart, defaultEnd, defaultYear, defaultMonth, onClose, onExportPNG, onExportCSV }) {
+  const dialogRef = useRef(null);
+
+  useEffect(() => {
+    const el = dialogRef.current;
+    if (!el) return;
+    const previouslyFocused = document.activeElement;
+    el.focus();
+    const handleKeyDown = (e) => {
+      if (e.key !== 'Tab') return;
+      const focusable = el.querySelectorAll('button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])');
+      if (focusable.length === 0) return;
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (e.shiftKey && document.activeElement === first) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && document.activeElement === last) {
+        e.preventDefault();
+        first.focus();
+      }
+    };
+    el.addEventListener('keydown', handleKeyDown);
+    return () => {
+      el.removeEventListener('keydown', handleKeyDown);
+      previouslyFocused?.focus?.();
+    };
+  }, []);
+
   const today = todayStr();
   const now = new Date();
   const curYear = now.getFullYear();
@@ -96,8 +124,8 @@ export default function ExportDialog({ view = 'week', defaultStart, defaultEnd, 
   const nYears = view === 'year' ? (yEndYear - yStartYear + 1) : 0;
 
   return (
-    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-3" onClick={onClose}>
-      <div className="modal-enter bg-white dark:bg-gray-800 rounded-2xl p-4 sm:p-6 w-full max-w-[480px] max-h-[90vh] overflow-auto thin-scroll shadow-xl" onClick={e => e.stopPropagation()}>
+    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-3" onClick={onClose} role="dialog" aria-modal="true" aria-label="导出课表">
+      <div ref={dialogRef} tabIndex={-1} className="modal-enter bg-white dark:bg-gray-800 rounded-2xl p-4 sm:p-6 w-full max-w-[480px] max-h-[90vh] overflow-auto thin-scroll shadow-xl" onClick={e => e.stopPropagation()}>
         <div className="flex items-center justify-between mb-4">
           <h3 className="text-lg font-semibold">导出课表</h3>
           <button onClick={onClose} aria-label="关闭" className="w-7 h-7 rounded-lg bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-600 flex items-center justify-center text-sm transition-colors leading-none">✕</button>
@@ -110,13 +138,13 @@ export default function ExportDialog({ view = 'week', defaultStart, defaultEnd, 
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm text-gray-500 dark:text-gray-400 mb-1">开始日期</label>
-                  <input type="date"
+                  <input type="date" lang="zh-CN"
                     className="w-full p-3 text-base bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg"
                     value={start} onChange={e => setStart(e.target.value)} />
                 </div>
                 <div>
                   <label className="block text-sm text-gray-500 dark:text-gray-400 mb-1">结束日期</label>
-                  <input type="date"
+                  <input type="date" lang="zh-CN"
                     className="w-full p-3 text-base bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg"
                     value={end} onChange={e => setEnd(e.target.value)} />
                 </div>

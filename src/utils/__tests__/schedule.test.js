@@ -22,6 +22,7 @@ describe('duration', () => {
   });
   it('handles overnight (cross-midnight)', () => {
     expect(duration('22:00', '08:00')).toBe(600);
+    expect(duration('22:00', '25:00')).toBe(180);
   });
   it('returns 0 for same start and end', () => {
     expect(duration('08:00', '08:00')).toBe(0);
@@ -85,6 +86,25 @@ describe('findConflictGroups', () => {
     const schedules = [
       { startTime: '08:00', endTime: '10:00' },
       { startTime: '10:00', endTime: '12:00' },
+    ];
+    const groups = findConflictGroups(schedules);
+    expect(groups).toHaveLength(2);
+  });
+
+  it('merges a cross-midnight schedule with an overlapping early-morning one', () => {
+    const schedules = [
+      { startTime: '00:30', endTime: '02:00' },
+      { startTime: '22:00', endTime: '01:00' }, // wraps to 25:00, overlaps 00:30
+    ];
+    const groups = findConflictGroups(schedules);
+    expect(groups).toHaveLength(1);
+    expect(groups[0]).toHaveLength(2);
+  });
+
+  it('does not merge a cross-midnight schedule that ends before the morning one', () => {
+    const schedules = [
+      { startTime: '02:00', endTime: '03:00' },
+      { startTime: '22:00', endTime: '01:00' }, // ends 01:00, before 02:00
     ];
     const groups = findConflictGroups(schedules);
     expect(groups).toHaveLength(2);

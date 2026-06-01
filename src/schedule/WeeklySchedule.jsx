@@ -1,6 +1,5 @@
-import { useState, useEffect, useLayoutEffect, useRef } from 'react';
+import { useState, useEffect, useLayoutEffect, useRef, useCallback } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { addDays } from '../utils/date';
 import ScheduleGrid from './ScheduleGrid';
 import ScheduleDialog from './ScheduleDialog';
 import BatchScheduleDialog from './BatchScheduleDialog';
@@ -10,13 +9,13 @@ import useScheduleExport from './useScheduleExport';
 import WeekNavBar from './WeekNavBar';
 
 export default function WeeklySchedule() {
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
   const containerRef = useRef(null);
 
   const {
     gridRef, weekStart, allDates, allSchedules, isMobile, visibleDays,
     navigateTo, navigateByDays, goToThisWeek, reload,
-  } = useWeekNavigation({ searchParams });
+  } = useWeekNavigation({ searchParams, setSearchParams });
 
   const [dialog, setDialog] = useState(null);
   const [showBatch, setShowBatch] = useState(false);
@@ -24,7 +23,11 @@ export default function WeeklySchedule() {
   const {
     exporting, showExport, exportStart, exportEnd,
     openExport, exportPNG, exportCSV, setShowExport,
-  } = useScheduleExport({ weekStart, visibleDays, addDays });
+  } = useScheduleExport({ weekStart, visibleDays });
+
+  const handleScheduleClick = useCallback((s) => {
+    setDialog({ schedule: s, date: s.date, startTime: s.startTime });
+  }, []);
 
   useEffect(() => { containerRef.current?.focus(); }, []);
 
@@ -57,7 +60,7 @@ export default function WeeklySchedule() {
           schedules={allSchedules}
           visibleDays={visibleDays}
           weekStart={weekStart}
-          onScheduleClick={s => setDialog({ schedule: s, date: s.date, startTime: s.startTime })}
+          onScheduleClick={handleScheduleClick}
           onCellClick={(date, startTime) => setDialog({ date, startTime })}
         />
       </div>

@@ -72,6 +72,11 @@ export function getNavTarget(path, currentPath, getDate) {
   if (path === '/monthly') {
     const mo = getDate('month');
     if (mo) { const [y, m] = mo.split('-'); return `/monthly?year=${y}&month=${m}`; }
+    const wk = getDate('week');
+    if (wk) {
+      const d = new Date(wk + 'T00:00:00');
+      return `/monthly?year=${d.getFullYear()}&month=${d.getMonth()}`;
+    }
     return path;
   }
   if (path === '/yearly') {

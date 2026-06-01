@@ -2,12 +2,14 @@ import { useState, useEffect, useContext, useCallback } from 'react';
 import { api } from '../api';
 import { getClassColor, DarkContext } from '../utils/colors';
 import { useToast } from '../components/ToastProvider';
+import { useConfirm } from '../components/ConfirmDialog';
 import ClassForm from './ClassForm';
 import PricingManager from './PricingManager';
 
 export default function ClassList() {
   const dark = useContext(DarkContext);
   const toast = useToast();
+  const [confirmAction, confirmDialog] = useConfirm();
   const [classes, setClasses] = useState([]);
   const [loading, setLoading] = useState(true);
   const [expandedId, setExpandedId] = useState(null);
@@ -47,7 +49,8 @@ export default function ClassList() {
 
   async function handleDelete(id) {
     if (saving) return;
-    if (!confirm('确定删除？')) return;
+    const ok = await confirmAction('确定删除？');
+    if (!ok) return;
     setSaving(true);
     try {
       await api.deleteClass(id);
@@ -146,6 +149,7 @@ export default function ClassList() {
           </div>
         ))}
       </div>
+      {confirmDialog}
     </div>
   );
 }

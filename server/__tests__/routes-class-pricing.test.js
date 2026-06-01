@@ -41,11 +41,11 @@ describe('GET /api/classes/:classId/pricing', () => {
 describe('POST /api/classes/:classId/pricing', () => {
   it('adds a new pricing version and syncs class table', async () => {
     const res = await request(app).post(`/api/classes/${classId}/pricing`).set(auth(token))
-      .send({ studentCount: 3, unitPrice: 250, effectiveFrom: '2026-06-01' });
+      .send({ studentCount: 3, unitPrice: 250, effectiveFrom: '2099-06-01' });
     expect(res.status).toBe(200);
     expect(res.body.studentCount).toBe(3);
     expect(res.body.unitPrice).toBe(250);
-    expect(res.body.effectiveFrom).toBe('2026-06-01');
+    expect(res.body.effectiveFrom).toBe('2099-06-01');
     expect(res.body.id).toBeDefined();
 
     // Verify class table updated
@@ -100,13 +100,13 @@ describe('PUT /api/classes/:classId/pricing/:pricingId', () => {
   it('returns 409 if effectiveFrom changed to a duplicate', async () => {
     // Create a second pricing version first
     await request(app).post(`/api/classes/${classId}/pricing`).set(auth(token))
-      .send({ studentCount: 3, unitPrice: 250, effectiveFrom: '2026-06-01' });
+      .send({ studentCount: 3, unitPrice: 250, effectiveFrom: '2099-06-01' });
     const { body: all } = await request(app).get(`/api/classes/${classId}/pricing`).set(auth(token));
     const firstId = all[1].id; // the initial record (earlier effectiveFrom)
 
     // Try to change the initial record's effectiveFrom to match the second
     const res = await request(app).put(`/api/classes/${classId}/pricing/${firstId}`).set(auth(token))
-      .send({ effectiveFrom: '2026-06-01' });
+      .send({ effectiveFrom: '2099-06-01' });
     expect(res.status).toBe(409);
   });
 });
@@ -115,7 +115,7 @@ describe('DELETE /api/classes/:classId/pricing/:pricingId', () => {
   it('deletes a pricing record and syncs class table', async () => {
     // Create second pricing first
     await request(app).post(`/api/classes/${classId}/pricing`).set(auth(token))
-      .send({ studentCount: 3, unitPrice: 250, effectiveFrom: '2026-06-01' });
+      .send({ studentCount: 3, unitPrice: 250, effectiveFrom: '2099-06-01' });
     const { body: all } = await request(app).get(`/api/classes/${classId}/pricing`).set(auth(token));
     const firstId = all[1].id; // earlier (initial) record
 

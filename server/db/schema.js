@@ -93,7 +93,7 @@ export const auditLog = sqliteTable('audit_log', {
   id: integer('id').primaryKey({ autoIncrement: true }),
   teacherId: integer('teacher_id').notNull(),
   timestamp: text('timestamp').notNull(),
-  action: text('action').notNull(), // CREATE | UPDATE | DELETE | BATCH_DELETE
+  action: text('action').notNull(), // CREATE | UPDATE | DELETE | BATCH_CREATE | BATCH_UPDATE | BATCH_DELETE
   tableName: text('table_name').notNull(),
   recordId: integer('record_id'),
   beforeData: text('before_data'), // JSON

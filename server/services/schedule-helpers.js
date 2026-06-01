@@ -144,6 +144,26 @@ export function calcDurationBilling(startTime, endTime, manual) {
   return diff;
 }
 
+export function buildPricingLookup(allPricing) {
+  const byClass = {};
+  for (const p of allPricing) {
+    (byClass[p.classId] ??= []).push(p);
+  }
+  for (const arr of Object.values(byClass)) {
+    arr.sort((a, b) => a.effectiveFrom.localeCompare(b.effectiveFrom));
+  }
+  return function matchPricing(classId, date) {
+    const records = byClass[classId];
+    if (!records || records.length === 0) return null;
+    let match = null;
+    for (const p of records) {
+      if (p.effectiveFrom <= date) match = p;
+      else break;
+    }
+    return match;
+  };
+}
+
 const _semesterCache = new Map();
 export function getTeacherSemesters(db, teacherId) {
   const cached = _semesterCache.get(teacherId);

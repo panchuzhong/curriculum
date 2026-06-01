@@ -1,9 +1,6 @@
-import { getBrowser } from './browser.js';
+import { isDarkTheme, withBrowserPage } from './image-helpers.js';
 import { getCategoryColor } from './colors.js';
-
-function escapeHtml(s) {
-  return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-}
+import { escapeHtml } from './schedule-helpers.js';
 
 // ── Category logic — mirrors frontend YearlySchedule ──────────────
 function getCategory(cls) {
@@ -58,8 +55,7 @@ function buildYearList(startYear, endYear) {
 
 // ── Generate HTML for one year ────────────────────────────────────
 function renderYearHtml(schedulesWithClasses, year, { theme }) {
-  const hour = new Date().getHours();
-  const isDark = theme === 'dark' ? true : theme === 'light' ? false : (hour < 7 || hour >= 19);
+  const isDark = isDarkTheme(theme);
 
   const c = isDark ? {
     bg: '#111827', text: '#f3f4f6',
@@ -214,21 +210,11 @@ export async function generateYearlyImage(schedulesWithClasses, year, { theme = 
   ${combinedHtml}
 </body></html>`;
 
-  const browser = await getBrowser();
-  const page = await browser.newPage();
-  try {
-    await page.setContent(html, { waitUntil: 'networkidle0', timeout: 30000 });
-    await page.setViewport({ width: totalW + 32, height: 800, deviceScaleFactor: 2 });
+  return withBrowserPage(html, { width: totalW + 32, height: 800, deviceScaleFactor: 2 }, async (page) => {
     const bodyBox = await page.evaluate(() => {
       const r = document.body.getBoundingClientRect();
-      return { x: r.x, y: r.y, w: r.width, h: r.height };
+      return { x: Math.ceil(r.x), y: Math.ceil(r.y), width: Math.ceil(r.width), height: Math.ceil(r.height) };
     });
-    const buf = await page.screenshot({
-      type: 'png', timeout: 30000,
-      clip: { x: bodyBox.x, y: bodyBox.y, width: bodyBox.w, height: bodyBox.h },
-    });
-    return Buffer.from(buf);
-  } finally {
-    await page.close();
-  }
+    return bodyBox;
+  });
 }

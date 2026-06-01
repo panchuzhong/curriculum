@@ -73,13 +73,14 @@ router.put('/:id', validateUpdateHoliday, handle, (req, res) => {
 
 // Delete a holiday
 router.delete('/:id', (req, res) => {
-  const { id } = req.params;
+  const id = +req.params.id;
+  if (!id || id < 1) return res.status(400).json({ error: '无效的ID' });
   const existing = drizzleDb.select().from(holidays)
-    .where(and(eq(holidays.id, +id), eq(holidays.teacherId, req.teacherId))).get();
+    .where(and(eq(holidays.id, id), eq(holidays.teacherId, req.teacherId))).get();
   if (!existing) return res.status(404).json({ error: 'Not found' });
 
-  drizzleDb.delete(holidays).where(eq(holidays.id, +id)).run();
-  logAudit({ teacherId: req.teacherId, action: 'DELETE', tableName: 'holidays', recordId: +id, before: existing });
+  drizzleDb.delete(holidays).where(eq(holidays.id, id)).run();
+  logAudit({ teacherId: req.teacherId, action: 'DELETE', tableName: 'holidays', recordId: id, before: existing });
   res.json({ ok: true });
 });
 

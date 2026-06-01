@@ -287,11 +287,11 @@ function ModalDemo({ dark }) {
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
                 <div>
                   <label style={{ fontSize: 12, color: mutedColor, display: 'block', marginBottom: 4 }}>开始时间</label>
-                  <input type="time" defaultValue="09:00" style={{ width: '100%', padding: '9px 10px', background: inputBg, border: `1.5px solid ${dark ? '#4b5563' : '#d1d5db'}`, borderRadius: 8, color: textColor, fontSize: 13, outline: 'none', boxSizing: 'border-box' }} />
+                  <input type="time" lang="zh-CN" defaultValue="09:00" style={{ width: '100%', padding: '9px 10px', background: inputBg, border: `1.5px solid ${dark ? '#4b5563' : '#d1d5db'}`, borderRadius: 8, color: textColor, fontSize: 13, outline: 'none', boxSizing: 'border-box' }} />
                 </div>
                 <div>
                   <label style={{ fontSize: 12, color: mutedColor, display: 'block', marginBottom: 4 }}>结束时间</label>
-                  <input type="time" defaultValue="11:00" style={{ width: '100%', padding: '9px 10px', background: inputBg, border: `1.5px solid ${dark ? '#4b5563' : '#d1d5db'}`, borderRadius: 8, color: textColor, fontSize: 13, outline: 'none', boxSizing: 'border-box' }} />
+                  <input type="time" lang="zh-CN" defaultValue="11:00" style={{ width: '100%', padding: '9px 10px', background: inputBg, border: `1.5px solid ${dark ? '#4b5563' : '#d1d5db'}`, borderRadius: 8, color: textColor, fontSize: 13, outline: 'none', boxSizing: 'border-box' }} />
                 </div>
               </div>
               <div>

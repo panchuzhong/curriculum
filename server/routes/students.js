@@ -121,16 +121,17 @@ router.put('/:id', validateUpdateStudent, handle, (req, res) => {
 
 // Delete a student
 router.delete('/:id', (req, res) => {
-  const { id } = req.params;
+  const id = +req.params.id;
+  if (!id || id < 1) return res.status(400).json({ error: '无效的ID' });
   const existing = drizzleDb.select().from(students)
-    .where(and(eq(students.id, +id), eq(students.teacherId, req.teacherId))).get();
+    .where(and(eq(students.id, id), eq(students.teacherId, req.teacherId))).get();
   if (!existing) return res.status(404).json({ error: 'Not found' });
 
   db.transaction(() => {
-    drizzleDb.delete(classStudents).where(eq(classStudents.studentId, +id)).run();
-    drizzleDb.delete(students).where(eq(students.id, +id)).run();
+    drizzleDb.delete(classStudents).where(eq(classStudents.studentId, id)).run();
+    drizzleDb.delete(students).where(eq(students.id, id)).run();
   })();
-  logAudit({ teacherId: req.teacherId, action: 'DELETE', tableName: 'students', recordId: +id, before: existing });
+  logAudit({ teacherId: req.teacherId, action: 'DELETE', tableName: 'students', recordId: id, before: existing });
   res.json({ ok: true });
 });
 

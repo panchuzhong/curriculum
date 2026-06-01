@@ -56,6 +56,8 @@ router.get('/monthly', async (req, res) => {
 
     const endYear = req.query.endYear != null ? parseInt(req.query.endYear) : null;
     const endMonth = req.query.endMonth != null ? parseInt(req.query.endMonth) : null;
+    if ((endYear != null && isNaN(endYear)) || (endMonth != null && (isNaN(endMonth) || endMonth < 0 || endMonth > 11)))
+      return res.status(400).json({ error: 'endYear/endMonth 无效（endMonth 须为 0-11）' });
     const theme = req.query.theme;
 
     const teacherClasses = drizzleDb.select().from(classes)
@@ -69,6 +71,8 @@ router.get('/monthly', async (req, res) => {
     // Query schedules for the full range
     const ey = endYear != null ? endYear : year;
     const em = endMonth != null ? endMonth : month;
+    const monthSpan = (ey - year) * 12 + (em - month);
+    if (monthSpan < 0 || monthSpan > 23) return res.status(400).json({ error: '导出范围须为 1-24 个月' });
     const startDate = `${year}-${String(month + 1).padStart(2, '0')}-01`;
     const lastDay = new Date(ey, em + 1, 0).getDate();
     const endDate = `${ey}-${String(em + 1).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
@@ -97,6 +101,8 @@ router.get('/yearly', async (req, res) => {
     if (isNaN(year)) return res.status(400).json({ error: 'year required' });
 
     const endYear = req.query.endYear != null ? parseInt(req.query.endYear) : null;
+    if (endYear != null && (isNaN(endYear) || endYear < year || endYear - year > 11))
+      return res.status(400).json({ error: 'endYear 无效（最多导出 12 个年份）' });
     const theme = req.query.theme;
 
     const teacherClasses = drizzleDb.select().from(classes)

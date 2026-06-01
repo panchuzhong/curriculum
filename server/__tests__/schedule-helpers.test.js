@@ -30,6 +30,7 @@ describe('calcDurationBilling', () => {
 
   it('handles end < start (cross-midnight)', () => {
     expect(calcDurationBilling('22:00', '01:00', null)).toBe(3 * 60);
+    expect(calcDurationBilling('22:00', '25:00', null)).toBe(3 * 60);
     expect(calcDurationBilling('23:00', '00:30', null)).toBe(90);
   });
 

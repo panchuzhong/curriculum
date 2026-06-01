@@ -615,9 +615,19 @@ describe('edge cases', () => {
     expect(res.status).toBe(400);
   });
 
-  it('rejects cross-midnight schedule (end < start)', async () => {
+  it('accepts cross-midnight schedule (end < start)', async () => {
     const res = await request(app).post('/api/schedules').set(auth(token))
       .send({ classId, date: '2026-08-02', startTime: '22:00', endTime: '01:00' });
-    expect(res.status).toBe(400);
+    expect(res.status).toBe(200);
+    expect(res.body.endTime).toBe('01:00');
+    expect(res.body.durationBilling).toBe(180);
+  });
+
+  it('accepts extended end time and stores clock time', async () => {
+    const res = await request(app).post('/api/schedules').set(auth(token))
+      .send({ classId, date: '2026-08-03', startTime: '22:00', endTime: '25:00' });
+    expect(res.status).toBe(200);
+    expect(res.body.endTime).toBe('01:00');
+    expect(res.body.durationBilling).toBe(180);
   });
 });

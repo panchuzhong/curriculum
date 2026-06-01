@@ -6,8 +6,9 @@ import { authMiddleware } from '../middleware/auth.js';
 import { isHoliday } from '../services/holidays.js';
 import handle from '../validations/handle.js';
 import { validateCreateSchedule, validateBatchCreate, validateBatchUpdate, validateBatchDelete, validateUpdateSchedule } from '../validations/schedules.js';
+import { isValidScheduleEndTime, isValidTime, normalizeScheduleEndTime } from '../validations/dates.js';
 import { logAudit } from '../services/audit.js';
-import { toLocalDateStr, toMin, resolveRange, toCSV, detectConflictGroups, getScheduleWithClass, calcDurationBilling, getTeacherSemesters } from '../services/schedule-helpers.js';
+import { toLocalDateStr, toMin, resolveRange, toCSV, detectConflictGroups, getScheduleWithClass, calcDurationBilling, getTeacherSemesters, buildPricingLookup } from '../services/schedule-helpers.js';
 import { clearReportCache, getReportCache, setReportCache } from '../services/report-cache.js';
 import { students as studentsTable } from '../db/schema.js';
 
@@ -71,6 +72,7 @@ router.get('/', (req, res) => {
   const { classId, studentId, limit, offset } = req.query;
   const { start, end } = resolveRange(req.query);
   if (!start || !end) return res.status(400).json({ error: 'start/end or range required' });
+  if (start > end) return res.status(400).json({ error: 'start must be <= end' });
   const daysDiff = Math.ceil((new Date(end + 'T00:00:00') - new Date(start + 'T00:00:00')) / (1000 * 60 * 60 * 24));
   if (daysDiff > 365 && !classId && !studentId) {
     return res.status(400).json({ error: '日期范围超过365天时请指定 classId 或 studentId 筛选条件' });
@@ -110,22 +112,33 @@ router.get('/', (req, res) => {
 
 router.post('/', validateCreateSchedule, handle, (req, res) => {
   const { classId, date, startTime, endTime, durationBilling, locationName, locationLat, locationLng } = req.body;
-  if (startTime >= endTime) return res.status(400).json({ error: '结束时间必须晚于开始时间' });
+  // endTime may be 24:00–47:59 to express a next-day clock time. A 0h or ≥24h
+  // span normalizes back to startTime (and would render as a zero-height block), so reject it.
+  const storedEndTime = normalizeScheduleEndTime(endTime);
+  if (startTime === storedEndTime) return res.status(400).json({ error: '排课时长须大于 0 且小于 24 小时' });
   const cls = drizzleDb.select().from(classes)
     .where(and(eq(classes.id, classId), eq(classes.teacherId, req.teacherId), eq(classes.deleted, false))).get();
   if (!cls) return res.status(404).json({ error: 'Class not found' });
 
-  const billing = calcDurationBilling(startTime, endTime, durationBilling);
+  const billing = calcDurationBilling(startTime, storedEndTime, durationBilling);
   // Check for duplicate schedule (same class, date, startTime)
   const dup = drizzleDb.select().from(schedules)
     .where(and(eq(schedules.classId, classId), eq(schedules.date, date), eq(schedules.startTime, startTime))).get();
   if (dup) return res.status(409).json({ error: '该班级在此日期的同一时间已有排课' });
-  const result = drizzleDb.insert(schedules).values({
-    classId, date, startTime, endTime, durationBilling: billing,
-    locationName: locationName ?? cls.defaultLocationName,
-    locationLat: locationLat ?? cls.defaultLocationLat,
-    locationLng: locationLng ?? cls.defaultLocationLng,
-  }).run();
+  let result;
+  try {
+    result = drizzleDb.insert(schedules).values({
+      classId, date, startTime, endTime: storedEndTime, durationBilling: billing,
+      locationName: locationName ?? cls.defaultLocationName,
+      locationLat: locationLat ?? cls.defaultLocationLat,
+      locationLng: locationLng ?? cls.defaultLocationLng,
+    }).run();
+  } catch (e) {
+    if (e.message?.includes('UNIQUE constraint')) {
+      return res.status(409).json({ error: '该班级在此日期的同一时间已有排课' });
+    }
+    throw e;
+  }
   const created = getScheduleWithClass(Number(result.lastInsertRowid), req.teacherId);
   clearReportCache(req.teacherId);
   logAudit({ teacherId: req.teacherId, action: 'CREATE', tableName: 'schedules', recordId: created.id, after: created });
@@ -137,11 +150,13 @@ router.post('/', validateCreateSchedule, handle, (req, res) => {
 
 router.post('/batch', validateBatchCreate, handle, (req, res) => {
   const { classId, semesterId, weekday, dates: manualDates, startTime, endTime, durationBilling, preview } = req.body;
+  const storedEndTime = normalizeScheduleEndTime(endTime);
+  if (startTime === storedEndTime) return res.status(400).json({ error: '排课时长须大于 0 且小于 24 小时' });
   const cls = drizzleDb.select().from(classes)
     .where(and(eq(classes.id, classId), eq(classes.teacherId, req.teacherId), eq(classes.deleted, false))).get();
   if (!cls) return res.status(404).json({ error: 'Class not found' });
 
-  const billing = calcDurationBilling(startTime, endTime, durationBilling);
+  const billing = calcDurationBilling(startTime, storedEndTime, durationBilling);
   let targetDates = [];
 
   if (manualDates && manualDates.length > 0) {
@@ -194,7 +209,7 @@ router.post('/batch', validateBatchCreate, handle, (req, res) => {
   }
 
   const allValues = targetDates.map(date => ({
-    classId, date, startTime, endTime, durationBilling: billing,
+    classId, date, startTime, endTime: storedEndTime, durationBilling: billing,
     locationName: cls.defaultLocationName,
     locationLat: cls.defaultLocationLat,
     locationLng: cls.defaultLocationLng,
@@ -240,6 +255,16 @@ router.put('/batch', validateBatchUpdate, handle, (req, res) => {
     return res.status(400).json({ error: 'No valid fields in updates' });
   }
 
+  if (safeUpdates.startTime !== undefined && !isValidTime(safeUpdates.startTime)) {
+    return res.status(400).json({ error: '开始时间须为有效的 HH:MM (00:00-23:59)' });
+  }
+  if (safeUpdates.endTime !== undefined) {
+    if (!isValidScheduleEndTime(safeUpdates.endTime)) {
+      return res.status(400).json({ error: '结束时间须为有效的 HH:MM (00:00-47:59)' });
+    }
+    safeUpdates.endTime = normalizeScheduleEndTime(safeUpdates.endTime);
+  }
+
   const cls = drizzleDb.select().from(classes)
     .where(and(eq(classes.id, classId), eq(classes.teacherId, req.teacherId), eq(classes.deleted, false))).get();
   if (!cls) return res.status(404).json({ error: 'Class not found' });
@@ -274,6 +299,9 @@ router.put('/batch', validateBatchUpdate, handle, (req, res) => {
   const updatedIds = candidates.map(s => s.id);
   if (updatedIds.length > 0) {
     if (safeUpdates.startTime !== undefined || safeUpdates.endTime !== undefined) {
+      if (candidates.some(c => (safeUpdates.startTime ?? c.startTime) === (safeUpdates.endTime ?? c.endTime))) {
+        return res.status(400).json({ error: '排课时长须大于 0 且小于 24 小时' });
+      }
       const startTime = safeUpdates.startTime;
       const endTime = safeUpdates.endTime;
       if (startTime && endTime) {
@@ -435,6 +463,7 @@ router.put('/:id', validateUpdateSchedule, handle, (req, res) => {
     if (!newCls) return res.status(403).json({ error: 'Forbidden' });
   }
   if (updates.startTime !== undefined || updates.endTime !== undefined) {
+    if (updates.endTime !== undefined) updates.endTime = normalizeScheduleEndTime(updates.endTime);
     updates.durationBilling = calcDurationBilling(
       updates.startTime || existing.startTime,
       updates.endTime || existing.endTime,
@@ -445,7 +474,7 @@ router.put('/:id', validateUpdateSchedule, handle, (req, res) => {
   const effectiveDate = updates.date ?? existing.date;
   const effectiveStartTime = updates.startTime ?? existing.startTime;
   const effectiveEndTime = updates.endTime ?? existing.endTime;
-  if (effectiveStartTime >= effectiveEndTime) return res.status(400).json({ error: '结束时间必须晚于开始时间' });
+  if (effectiveStartTime === effectiveEndTime) return res.status(400).json({ error: '排课时长须大于 0 且小于 24 小时' });
   const dup = drizzleDb.select().from(schedules)
     .where(and(eq(schedules.classId, effectiveClassId), eq(schedules.date, effectiveDate), eq(schedules.startTime, effectiveStartTime), ne(schedules.id, +id))).get();
   if (dup) return res.status(409).json({ error: '该班级在此日期的同一时间已有排课' });
@@ -458,14 +487,16 @@ router.put('/:id', validateUpdateSchedule, handle, (req, res) => {
 });
 
 router.delete('/:id', (req, res) => {
-  const existing = drizzleDb.select().from(schedules).where(eq(schedules.id, +req.params.id)).get();
+  const id = +req.params.id;
+  if (!id || id < 1) return res.status(400).json({ error: '无效的ID' });
+  const existing = drizzleDb.select().from(schedules).where(eq(schedules.id, id)).get();
   if (!existing) return res.status(404).json({ error: 'Not found' });
   const cls = drizzleDb.select().from(classes)
     .where(and(eq(classes.id, existing.classId), eq(classes.teacherId, req.teacherId), eq(classes.deleted, false))).get();
   if (!cls) return res.status(403).json({ error: 'Forbidden' });
-  drizzleDb.delete(schedules).where(eq(schedules.id, +req.params.id)).run();
+  drizzleDb.delete(schedules).where(eq(schedules.id, id)).run();
   clearReportCache(req.teacherId);
-  logAudit({ teacherId: req.teacherId, action: 'DELETE', tableName: 'schedules', recordId: +req.params.id, before: existing });
+  logAudit({ teacherId: req.teacherId, action: 'DELETE', tableName: 'schedules', recordId: id, before: existing });
   res.json({ ok: true });
 });
 
@@ -509,23 +540,7 @@ router.get('/summary', (req, res) => {
   // Load class_pricing for revenue calculation
   const allPricing = drizzleDb.select().from(classPricing)
     .where(inArray(classPricing.classId, classIds)).all();
-  const pricingByClass = {};
-  for (const p of allPricing) {
-    (pricingByClass[p.classId] ??= []).push(p);
-  }
-  for (const arr of Object.values(pricingByClass)) {
-    arr.sort((a, b) => a.effectiveFrom.localeCompare(b.effectiveFrom));
-  }
-  function matchPricing(cid, date) {
-    const records = pricingByClass[cid];
-    if (!records || records.length === 0) return null;
-    let match = null;
-    for (const p of records) {
-      if (p.effectiveFrom <= date) match = p;
-      else break;
-    }
-    return match;
-  }
+  const matchPricing = buildPricingLookup(allPricing);
 
   const byClassMap = {};
   for (const s of scheds) {
@@ -625,23 +640,7 @@ router.get('/export', (req, res) => {
     const allPricing = cIds.length > 0
       ? drizzleDb.select().from(classPricing).where(inArray(classPricing.classId, cIds)).all()
       : [];
-    const pricingByClass = {};
-    for (const p of allPricing) {
-      (pricingByClass[p.classId] ??= []).push(p);
-    }
-    for (const arr of Object.values(pricingByClass)) {
-      arr.sort((a, b) => a.effectiveFrom.localeCompare(b.effectiveFrom));
-    }
-    function matchPricing(cid, date) {
-      const records = pricingByClass[cid];
-      if (!records || records.length === 0) return null;
-      let match = null;
-      for (const p of records) {
-        if (p.effectiveFrom <= date) match = p;
-        else break;
-      }
-      return match;
-    }
+    const matchPricing = buildPricingLookup(allPricing);
 
     const weekdayNames = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
     const rows = [['日期', '星期', '班级', '年级', '学科', '开始时间', '结束时间', '计费时长(分钟)', '上课地点', '竞赛课', '单价', '学生人数', '优惠金额']];

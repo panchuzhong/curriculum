@@ -26,6 +26,14 @@ const authLimiter = rateLimit({
   legacyHeaders: false,
 });
 
+const loginLimiter = rateLimit({
+  windowMs: 15 * 60_000,
+  max: 10,
+  message: { error: '登录尝试过多，请15分钟后再试' },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
 router.post('/register', authLimiter, validateRegister, handle, async (req, res) => {
   if (process.env.ALLOW_REGISTRATION !== 'true') {
     return res.status(403).json({ error: 'Registration is closed' });
@@ -64,7 +72,7 @@ router.post('/register', authLimiter, validateRegister, handle, async (req, res)
   res.json({ token: signToken(result.lastInsertRowid), apiKey });
 });
 
-router.post('/login', authLimiter, validateLogin, handle, async (req, res) => {
+router.post('/login', loginLimiter, validateLogin, handle, async (req, res) => {
   const { username, password } = req.body;
   const teacher = drizzleDb.select().from(teachers).where(eq(teachers.username, username)).get();
   if (!teacher || !(await bcrypt.compare(password, teacher.passwordHash))) {
@@ -78,7 +86,8 @@ router.get('/profile', authMiddleware, (req, res) => {
   if (!teacher) return res.status(404).json({ error: 'Not found' });
   let subjects = DEFAULT_SUBJECTS;
   if (teacher.subjects) { try { subjects = JSON.parse(teacher.subjects); } catch { subjects = DEFAULT_SUBJECTS; } }
-  res.json({ id: teacher.id, username: teacher.username, name: teacher.name, apiKey: teacher.apiKey, subjects });
+  const apiKey = teacher.apiKey ? teacher.apiKey.slice(0, 4) + '...' + teacher.apiKey.slice(-4) : null;
+  res.json({ id: teacher.id, username: teacher.username, name: teacher.name, apiKey, subjects });
 });
 
 router.put('/subjects', authMiddleware, validateUpdateSubjects, handle, (req, res) => {

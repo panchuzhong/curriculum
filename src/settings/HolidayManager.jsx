@@ -157,6 +157,8 @@ export default function HolidayManager() {
       toast(`导入完成：新增 ${res.count} 条记录`, 'success');
       reload();
       refreshHolidays();
+    } catch (e) {
+      toast(e.message || '导入失败');
     } finally {
       setImporting(false);
     }
@@ -190,7 +192,7 @@ export default function HolidayManager() {
 
       {showAdd && (
         <div className="flex gap-2 mb-4 p-3 bg-white dark:bg-gray-700 rounded">
-          <input type="date" className="p-2 bg-gray-100 dark:bg-gray-600 border border-gray-300 dark:border-gray-500 rounded text-sm"
+          <input type="date" lang="zh-CN" className="p-2 bg-gray-100 dark:bg-gray-600 border border-gray-300 dark:border-gray-500 rounded text-sm"
             value={form.date} onChange={e => setForm({...form, date: e.target.value})} />
           <select className="p-2 bg-gray-100 dark:bg-gray-600 border border-gray-300 dark:border-gray-500 rounded text-sm"
             value={form.type} onChange={e => setForm({...form, type: e.target.value})}>

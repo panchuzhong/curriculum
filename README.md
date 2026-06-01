@@ -208,7 +208,7 @@ sudo systemctl start curriculum-scheduler
 |------|------|------|
 | POST | /api/auth/register | 注册（需 ALLOW_REGISTRATION=true），返回 {token, apiKey} |
 | POST | /api/auth/login | 登录，返回 JWT token |
-| GET | /api/auth/profile | 获取个人信息（含 subjects、apiKey） |
+| GET | /api/auth/profile | 获取个人信息（含 subjects；apiKey 为脱敏掩码 `abcd...wxyz`，完整 key 仅在注册或重置 API Key 时返回） |
 | PUT | /api/auth/password | 修改密码 |
 | PUT | /api/auth/subjects | 更新学科列表 |
 | PUT | /api/auth/api-key | 重新生成 API Key |
@@ -248,7 +248,7 @@ sudo systemctl start curriculum-scheduler
 **排课**
 | 方法 | 路径 | 说明 |
 |------|------|------|
-| GET | /api/schedules?start=&end= | 获取日期范围内排课（含班级信息）；支持 &classId=1,2,3 逗号分隔多班级过滤、&studentId=N 按学生所属班级过滤、&limit=N&offset=N 分页（limit 上限 1000） |
+| GET | /api/schedules?start=&end= | 获取日期范围内排课（含班级信息）；支持 &classId=1,2,3 逗号分隔多班级过滤、&studentId=N 按学生所属班级过滤、&limit=N&offset=N 分页（limit 上限 1000）；范围超过 365 天且未指定 classId/studentId 时返回 400 |
 | GET | /api/schedules?range=today\|tomorrow\|week\|month | 快捷范围查询 |
 | GET | /api/schedules/:id | 获取单条排课详情 |
 | POST | /api/schedules | 创建单次排课，返回完整对象（同一 classId+date+startTime 重复返回 409） |
@@ -339,7 +339,7 @@ POST /api/schedules/batch
 }
 ```
 
-两种模式均支持可选参数：`durationBilling` 手动指定计费时长（分钟，默认为 endTime-startTime），`preview: true` 仅返回 `{count, dates}` 预览不实际创建。开始时间使用 `00:00-23:59`；结束时间推荐使用普通钟表时间 `00:00-23:59`，`endTime < startTime` 表示跨午夜。接口兼容 `24:00-47:59` 形式的结束时间，保存时会归一为普通钟表时间。
+两种模式均支持可选参数：`durationBilling` 手动指定计费时长（分钟，默认为 endTime-startTime），`preview: true` 仅返回 `{count, dates}` 预览不实际创建。开始时间使用 `00:00-23:59`；结束时间推荐使用普通钟表时间 `00:00-23:59`，`endTime < startTime` 表示跨午夜。接口兼容 `24:00-47:59` 形式的结束时间，保存时会归一为普通钟表时间。排课时长须大于 0 且小于 24 小时（开始时间等于结束时间、或跨度满 24 小时会被拒绝，返回 400 `排课时长须大于 0 且小于 24 小时`）。日期模式下若日期跨越学期边界（部分在学期内、部分在学期外）默认返回 400，可传 `crossSemester: true` 绕过。
 
 ### 批量删课
 
@@ -496,7 +496,7 @@ new_curriculum/
 │   ├── pricing/                  # 阶梯定价管理
 │   ├── reports/                  # 统计报表
 │   ├── settings/                 # 设置（节假日、学科、API Key）
-│   └── utils/                    # 颜色、常量、日期、节假日、排课工具
+│   └── utils/                    # 颜色、常量、日期、节假日、排课、跨视图导航、下载工具
 ├── tests/                        # Playwright E2E 测试
 ├── scripts/
 │   ├── release.sh                # 构建打包脚本

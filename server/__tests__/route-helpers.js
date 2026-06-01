@@ -1,5 +1,5 @@
 // Must set JWT_SECRET before any import that triggers auth.js module-level check
-process.env.JWT_SECRET = 'test-secret-key';
+process.env.JWT_SECRET = 'test-secret-key-that-is-at-least-32-chars-long';
 
 import { vi } from 'vitest';
 import express from 'express';

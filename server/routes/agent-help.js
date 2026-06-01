@@ -26,7 +26,7 @@ router.get('/help', authMiddleware, (req, res) => {
       auth: {
         'POST /api/auth/register': '注册新教师（需 ALLOW_REGISTRATION=true，注册成功后自动关闭），返回 {token, apiKey}',
         'POST /api/auth/login': '登录（需 username, password），返回 {token}',
-        'GET /api/auth/profile': '获取当前教师信息，返回 {id, username, name, apiKey, subjects}',
+        'GET /api/auth/profile': '获取当前教师信息，返回 {id, username, name, apiKey, subjects}；apiKey 为脱敏掩码（前4...后4），完整 key 仅在 POST /api/auth/register 或 PUT /api/auth/api-key 时返回',
         'PUT /api/auth/password': '修改密码（需 oldPassword 和 newPassword），返回 {ok:true}',
         'PUT /api/auth/subjects': '更新学科列表（传 subjects 字符串数组），返回 {subjects}',
         'PUT /api/auth/api-key': '重新生成 API Key，返回 {apiKey: <new-key>}',
@@ -58,7 +58,7 @@ router.get('/help', authMiddleware, (req, res) => {
         'DELETE /api/students/:id': '删除学生（同时清理所有班级关联），返回 {ok:true}',
       },
       schedules: {
-        'GET /api/schedules?start=YYYY-MM-DD&end=YYYY-MM-DD': '获取日期范围内的排课（含班级信息）；支持 &studentId=N 按学生所属班级过滤，&limit=N&offset=N 分页（limit 上限 1000，默认不分页）',
+        'GET /api/schedules?start=YYYY-MM-DD&end=YYYY-MM-DD': '获取日期范围内的排课（含班级信息）；支持 &studentId=N 按学生所属班级过滤，&limit=N&offset=N 分页（limit 上限 1000，默认不分页）；范围超过 365 天且未指定 classId/studentId 时返回 400',
         'GET /api/schedules?range=today|tomorrow|week|month': '快捷范围：today=今天，tomorrow=明天，week=本周（周一到周日），month=本月。与 start/end 互斥',
         'GET /api/schedules?start=&end=&classId=1,2,3': '同上，额外按班级 ID 过滤（逗号分隔多个，服务端过滤，节省流量）',
         'GET /api/schedules/:id': '获取单条排课详情（含班级信息）',
@@ -272,7 +272,7 @@ router.get('/help', authMiddleware, (req, res) => {
       'POST/PUT /api/schedules 返回的排课对象可能含 warnings 字段（数组），包含同一时段的冲突排课信息（id/classId/className/startTime/endTime），不阻止创建/更新',
       'conflicts 返回 {total, groups:[{date, schedules:[...]}]}，total = groups.length（冲突组数量,不是涉事排课条数）；schedules 为同一天内互相重叠的排课组（每组至少 2 条）',
       'POST /api/schedules 和 PUT /api/schedules/:id 均返回完整排课对象（含 class 字段），可直接判断是否存在冲突',
-      'durationBilling 默认由 endTime - startTime 自动计算，跨午夜时自动处理',
+      'durationBilling 默认由 endTime - startTime 自动计算，跨午夜时自动处理；排课时长须 >0 且 <24 小时，开始时间等于结束时间或跨度满 24 小时返回 400 {error:"排课时长须大于 0 且小于 24 小时"}',
       '法定节假日数据可通过 POST /api/holidays/batch 批量导入，批量排课（学期模式）自动跳过',
       '批量排课学期模式跳过假期的优先级:用户 workday 调休 > 用户 holiday > 内置法定假期。即:同一日期若同时存在内置 holiday + 用户 workday,则视为上班日(可排课);用户加 holiday 在内置 workday 上则视为节假日(跳过)。',
       '内置法定假期数据覆盖 2025-2027 三年;2028+ 年份需通过 POST /api/holidays/batch 自行导入或在 GET /api/holidays 中 type=holiday 添加,否则批量排课不会自动跳过',

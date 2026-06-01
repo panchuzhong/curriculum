@@ -13,6 +13,10 @@ if (INSECURE_SECRETS.includes(JWT_SECRET)) {
   console.error('FATAL: JWT_SECRET is set to a known insecure default. Please set a strong random secret.');
   process.exit(1);
 }
+if (JWT_SECRET.length < 32) {
+  console.error('FATAL: JWT_SECRET must be at least 32 characters long');
+  process.exit(1);
+}
 const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || '7d';
 
 export function authMiddleware(req, res, next) {

@@ -9,8 +9,8 @@ export async function geocodeAddress(address) {
   const data = await resp.json();
   if (data.status !== '1' || !data.geocodes?.length) {
     if (data.info?.includes('ENGINE_RESPONSE')) return { lat: null, lng: null, error: '未找到该地点的经纬度（地址无法识别，请尝试更详细的地名）' };
-    const amapErrors = { INVALID_USER_IP: 'API Key IP白名单限制，请在高德控制台添加服务器IP或关闭IP白名单', INVALID_USER_KEY: 'API Key无效', '10003': 'API Key无效或已过期' };
-    return { lat: null, lng: null, error: amapErrors[data.infocode] || data.info || '未找到该地点的经纬度' };
+    const amapErrors = { INVALID_USER_IP: '地理编码服务配置错误，请联系管理员', INVALID_USER_KEY: '地理编码服务配置错误，请联系管理员', '10003': '地理编码服务配置错误，请联系管理员' };
+    return { lat: null, lng: null, error: amapErrors[data.infocode] || '未找到该地点的经纬度' };
   }
   const [lng, lat] = data.geocodes[0].location.split(',').map(Number);
   return { lat, lng };

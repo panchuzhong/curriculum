@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { api } from '../api';
 import { useToast } from '../components/ToastProvider';
+import { useConfirm } from '../components/ConfirmDialog';
 
 const TYPES = [
   { value: 'spring', label: '春季' },
@@ -43,6 +44,7 @@ function getDefaultsFromSemesters(semesters) {
 
 export default function SemesterManager() {
   const toast = useToast();
+  const [confirmAction, confirmDialog] = useConfirm();
   const [semesters, setSemesters] = useState([]);
   const [showForm, setShowForm] = useState(false);
   const [editing, setEditing] = useState(null);
@@ -92,7 +94,7 @@ export default function SemesterManager() {
 
   async function handleDelete(id) {
     if (saving) return;
-    if (!confirm('确定删除此学期？')) return;
+    if (!(await confirmAction('确定删除此学期？'))) return;
     setSaving(true);
     try {
       await api.deleteSemester(id);
@@ -127,12 +129,12 @@ export default function SemesterManager() {
             </div>
             <div>
               <label className="block text-sm text-gray-500 dark:text-gray-400 mb-1">开始日期</label>
-              <input type="date" className="w-full p-2 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded"
+              <input type="date" lang="zh-CN" className="w-full p-2 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded"
                 value={form.startDate} onChange={e => setForm({...form, startDate: e.target.value})} />
             </div>
             <div>
               <label className="block text-sm text-gray-500 dark:text-gray-400 mb-1">结束日期</label>
-              <input type="date" className="w-full p-2 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded"
+              <input type="date" lang="zh-CN" className="w-full p-2 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded"
                 value={form.endDate} onChange={e => setForm({...form, endDate: e.target.value})} />
             </div>
           </div>
@@ -166,6 +168,7 @@ export default function SemesterManager() {
           <p className="text-gray-500 dark:text-gray-400">暂无学期，请先创建学期再使用批量排课</p>
         )}
       </div>
+      {confirmDialog}
     </div>
   );
 }

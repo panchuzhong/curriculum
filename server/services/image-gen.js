@@ -1,5 +1,4 @@
-import { getBrowser } from './browser.js';
-import { isHoliday, isWorkday, getHolidayName } from './holidays.js';
+import { isDarkTheme, withBrowserPage, buildDbHolidayHelpers } from './image-helpers.js';
 import { toMin, detectConflictGroups, assignColumns, toLocalDateStr, escapeHtml } from './schedule-helpers.js';
 import { getColor, getTextColor } from './colors.js';
 
@@ -24,28 +23,7 @@ export async function generateScheduleImage(schedulesWithClasses, startDate, end
   const todayStr = toLocalDateStr(new Date());
 
   // Build lookup from DB holidays (teacher-defined), fall back to built-in
-  const dbHolidayMap = {};
-  const dbWorkdaySet = new Set();
-  for (const h of dbHolidays) {
-    if (h.type === 'holiday') dbHolidayMap[h.date] = h.name || '';
-    else if (h.type === 'workday') dbWorkdaySet.add(h.date);
-  }
-  const hasDbData = dbHolidays.length > 0;
-
-  function checkIsHoliday(dateStr) {
-    if (hasDbData && dbHolidayMap[dateStr] !== undefined) return true;
-    if (hasDbData && dbWorkdaySet.has(dateStr)) return false;
-    return isHoliday(dateStr);
-  }
-  function checkIsWorkday(dateStr) {
-    if (hasDbData && dbWorkdaySet.has(dateStr)) return true;
-    if (hasDbData && dbHolidayMap[dateStr] !== undefined) return false;
-    return isWorkday(dateStr);
-  }
-  function checkHolidayName(dateStr) {
-    if (dbHolidayMap[dateStr]) return dbHolidayMap[dateStr];
-    return getHolidayName(dateStr);
-  }
+  const { checkIsHoliday, checkIsWorkday, checkHolidayName } = buildDbHolidayHelpers(dbHolidays);
 
   const byDate = {};
   dates.forEach(d => byDate[d] = []);
@@ -83,8 +61,7 @@ export async function generateScheduleImage(schedulesWithClasses, startDate, end
   const totalW = timeColW + numDays * colW;
   const HEADER_H = 52;
 
-  const hour = new Date().getHours();
-  const isDark = theme === 'dark' ? true : theme === 'light' ? false : (hour < 7 || hour >= 19);
+  const isDark = isDarkTheme(theme);
 
   const c = isDark ? {
     bg: '#111827', text: '#f3f4f6', headerBg: '#1f2937',
@@ -232,22 +209,12 @@ export async function generateScheduleImage(schedulesWithClasses, startDate, end
   </div>
 </body></html>`;
 
-  const browser = await getBrowser();
-  const page = await browser.newPage();
-  try {
-    await page.setContent(html, { waitUntil: 'networkidle0', timeout: 30000 });
-    const scaleFactor = scale ? Math.max(0.25, Math.min(4, +scale)) : 3;
-    await page.setViewport({ width: Math.ceil(totalW) + 2, height: 800, deviceScaleFactor: scaleFactor });
-    const clipRect = await page.evaluate(() => {
-      const r = document.documentElement.getBoundingClientRect();
-      return { x: 0, y: 0, w: r.width, h: r.height };
+  const scaleFactor = scale ? Math.max(0.25, Math.min(4, +scale)) : 3;
+  return withBrowserPage(html, { width: Math.ceil(totalW) + 2, height: 800, deviceScaleFactor: scaleFactor }, async (page) => {
+    const r = await page.evaluate(() => {
+      const el = document.documentElement.getBoundingClientRect();
+      return { x: 0, y: 0, width: Math.ceil(el.width), height: Math.ceil(el.height) };
     });
-    const buf = await page.screenshot({
-      type: 'png', timeout: 30000,
-      clip: { x: 0, y: 0, width: clipRect.w, height: clipRect.h },
-    });
-    return Buffer.from(buf);
-  } finally {
-    await page.close();
-  }
+    return r;
+  });
 }

@@ -1,17 +1,19 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { api } from '../api';
 import { GRADES } from '../utils/constants';
 import { useToast } from '../components/ToastProvider';
+import { useConfirm } from '../components/ConfirmDialog';
 
 function getDefaultEndTime(start) {
   if (!start) return '10:00';
   const [h, m] = start.split(':').map(Number);
-  const endH = Math.min(h + 2, 23);
+  const endH = (h + 2) % 24;
   return `${String(endH).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
 }
 
 export default function ScheduleDialog({ date, startTime, schedule, onClose, onSaved }) {
   const toast = useToast();
+  const [confirmAction, confirmDialog] = useConfirm();
   const [classes, setClasses] = useState([]);
   const [subjects, setSubjects] = useState([]);
   const [mode, setMode] = useState('existing');
@@ -29,6 +31,34 @@ export default function ScheduleDialog({ date, startTime, schedule, onClose, onS
   });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
+
+  const dialogRef = useRef(null);
+
+  useEffect(() => {
+    const el = dialogRef.current;
+    if (!el) return;
+    const previouslyFocused = document.activeElement;
+    el.focus();
+    const handleKeyDown = (e) => {
+      if (e.key !== 'Tab') return;
+      const focusable = el.querySelectorAll('button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])');
+      if (focusable.length === 0) return;
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (e.shiftKey && document.activeElement === first) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && document.activeElement === last) {
+        e.preventDefault();
+        first.focus();
+      }
+    };
+    el.addEventListener('keydown', handleKeyDown);
+    return () => {
+      el.removeEventListener('keydown', handleKeyDown);
+      previouslyFocused?.focus?.();
+    };
+  }, []);
 
   useEffect(() => {
     api.getClasses().then(setClasses).catch(e => toast(e.message || '加载班级失败'));
@@ -112,7 +142,9 @@ export default function ScheduleDialog({ date, startTime, schedule, onClose, onS
   }
 
   async function handleDelete() {
-    if (!schedule || !confirm('确定删除此排课？')) return;
+    if (!schedule) return;
+    const ok = await confirmAction('确定删除此排课？');
+    if (!ok) return;
     setSaving(true);
     setError('');
     try {
@@ -135,8 +167,8 @@ export default function ScheduleDialog({ date, startTime, schedule, onClose, onS
   }
 
   return (
-    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-3" onClick={onClose}>
-      <div className="modal-enter bg-white dark:bg-gray-800 rounded-2xl p-4 sm:p-6 w-full max-w-[480px] max-h-[90vh] overflow-auto thin-scroll shadow-xl" onClick={e => e.stopPropagation()}>
+    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-3" onClick={onClose} role="dialog" aria-modal="true" aria-label="排课编辑">
+      <div ref={dialogRef} tabIndex={-1} className="modal-enter bg-white dark:bg-gray-800 rounded-2xl p-4 sm:p-6 w-full max-w-[480px] max-h-[90vh] overflow-auto thin-scroll shadow-xl" onClick={e => e.stopPropagation()}>
         <div className="flex items-start justify-between mb-5">
           <div>
             <h3 className="text-lg font-semibold">
@@ -170,7 +202,7 @@ export default function ScheduleDialog({ date, startTime, schedule, onClose, onS
             </div>
             <div>
               <label className="block text-sm text-gray-500 dark:text-gray-400 mb-1">日期</label>
-              <input type="date" className="w-full p-2 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded" value={form.date}
+              <input type="date" lang="zh-CN" className="w-full p-2 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded" value={form.date}
                 onChange={e => setForm({...form, date: e.target.value})} />
             </div>
             <div className="grid grid-cols-2 gap-3">
@@ -290,6 +322,7 @@ export default function ScheduleDialog({ date, startTime, schedule, onClose, onS
           </div>
         )}
       </div>
+      {confirmDialog}
     </div>
   );
 }

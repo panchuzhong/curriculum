@@ -40,11 +40,23 @@ const HOLIDAY_NAMES = {
 let dbHolidays = null;
 let dbLoaded = false;
 
+const listeners = new Set();
+
+export function subscribeHolidays(fn) {
+  listeners.add(fn);
+  return () => listeners.delete(fn);
+}
+
+function notifyListeners() {
+  for (const fn of listeners) fn();
+}
+
 async function loadDbHolidays() {
   try {
     if (!getToken()) return;
     dbHolidays = await api.getHolidays();
     dbLoaded = true;
+    notifyListeners();
   } catch {}
 }
 

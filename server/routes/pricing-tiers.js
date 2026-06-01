@@ -56,13 +56,14 @@ router.put('/:id', validateUpdateTier, handle, (req, res) => {
 });
 
 router.delete('/:id', (req, res) => {
-  const { id } = req.params;
+  const id = +req.params.id;
+  if (!id || id < 1) return res.status(400).json({ error: '无效的ID' });
   const existing = drizzleDb.select().from(pricingTiers)
-    .where(and(eq(pricingTiers.id, +id), eq(pricingTiers.teacherId, req.teacherId))).get();
+    .where(and(eq(pricingTiers.id, id), eq(pricingTiers.teacherId, req.teacherId))).get();
   if (!existing) return res.status(404).json({ error: 'Not found' });
   drizzleDb.delete(pricingTiers)
-    .where(and(eq(pricingTiers.id, +id), eq(pricingTiers.teacherId, req.teacherId))).run();
-  logAudit({ teacherId: req.teacherId, action: 'DELETE', tableName: 'pricing_tiers', recordId: +id, before: existing });
+    .where(and(eq(pricingTiers.id, id), eq(pricingTiers.teacherId, req.teacherId))).run();
+  logAudit({ teacherId: req.teacherId, action: 'DELETE', tableName: 'pricing_tiers', recordId: id, before: existing });
   res.json({ ok: true });
 });
 

@@ -263,10 +263,10 @@ export default function Reports() {
         )}
         {tab === 'custom' && (
           <div className="flex items-center gap-1 sm:gap-2">
-            <input type="date" value={customStart} onChange={e => setCustomStart(e.target.value)}
+            <input type="date" lang="zh-CN" value={customStart} onChange={e => setCustomStart(e.target.value)}
               className="px-2 py-1 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded text-xs sm:text-sm" />
             <span className="text-gray-400">~</span>
-            <input type="date" value={customEnd} onChange={e => setCustomEnd(e.target.value)}
+            <input type="date" lang="zh-CN" value={customEnd} onChange={e => setCustomEnd(e.target.value)}
               className="px-2 py-1 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded text-xs sm:text-sm" />
           </div>
         )}
