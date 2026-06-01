@@ -2,8 +2,16 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import request from 'supertest';
 import { eq, and } from 'drizzle-orm';
 import { setupApp, makeUser, auth } from './route-helpers.js';
-import { clearSemesterCache } from '../services/schedule-helpers.js';
+import { clearSemesterCache, toLocalDateStr } from '../services/schedule-helpers.js';
 vi.mock('../services/holidays.js', () => ({ isHoliday: () => false, getHolidayName: () => '' }));
+
+// YYYY-MM-DD offset from today (local), matching the server's
+// toLocalDateStr(new Date()) "today" semantics — keeps date-relative tests stable.
+function daysFromToday(n) {
+  const d = new Date();
+  d.setDate(d.getDate() + n);
+  return toLocalDateStr(d);
+}
 
 let app, drizzleDb, token, classId, teacherId;
 
@@ -157,34 +165,34 @@ describe('PUT /api/schedules/batch — weekday filter', () => {
 
 describe('PUT /api/schedules/batch — toDate filter', () => {
   it('toDate alone implicitly scopes from today to toDate inclusive', async () => {
-    // Use future dates so the implicit fromDate=today lower bound is meaningful
-    // 2026-06-01 = Mon, 2026-06-08 = Mon, 2026-06-15 = Mon
+    // Dates relative to today so the implicit fromDate=today lower bound stays meaningful
+    const d1 = daysFromToday(7), d2 = daysFromToday(14), d3 = daysFromToday(21);
     await request(app).post('/api/schedules').set(auth(token))
-      .send({ classId, date: '2026-06-01', startTime: '09:00', endTime: '10:00' });
+      .send({ classId, date: d1, startTime: '09:00', endTime: '10:00' });
     await request(app).post('/api/schedules').set(auth(token))
-      .send({ classId, date: '2026-06-08', startTime: '09:00', endTime: '10:00' });
+      .send({ classId, date: d2, startTime: '09:00', endTime: '10:00' });
     await request(app).post('/api/schedules').set(auth(token))
-      .send({ classId, date: '2026-06-15', startTime: '09:00', endTime: '10:00' });
+      .send({ classId, date: d3, startTime: '09:00', endTime: '10:00' });
 
-    // toDate alone → implicit lower bound = today; only <= 2026-06-08 matches
+    // toDate alone → implicit lower bound = today; only <= d2 matches
     const res = await request(app).put('/api/schedules/batch').set(auth(token))
-      .send({ classId, toDate: '2026-06-08', updates: { locationName: '早课' } });
+      .send({ classId, toDate: d2, updates: { locationName: '早课' } });
     expect(res.status).toBe(200);
     expect(res.body.count).toBe(2);
 
-    const list = await request(app).get('/api/schedules?start=2026-06-01&end=2026-06-20').set(auth(token));
-    expect(list.body.find(s => s.date === '2026-06-01').locationName).toBe('早课');
-    expect(list.body.find(s => s.date === '2026-06-08').locationName).toBe('早课');
-    expect(list.body.find(s => s.date === '2026-06-15').locationName).toBeNull();
+    const list = await request(app).get(`/api/schedules?start=${daysFromToday(1)}&end=${daysFromToday(40)}`).set(auth(token));
+    expect(list.body.find(s => s.date === d1).locationName).toBe('早课');
+    expect(list.body.find(s => s.date === d2).locationName).toBe('早课');
+    expect(list.body.find(s => s.date === d3).locationName).toBeNull();
   });
 
   it('toDate alone skips schedules before today', async () => {
     // Create one schedule before today — should be skipped by implicit fromDate
     await request(app).post('/api/schedules').set(auth(token))
-      .send({ classId, date: '2026-01-10', startTime: '09:00', endTime: '10:00' });
+      .send({ classId, date: daysFromToday(-150), startTime: '09:00', endTime: '10:00' });
 
     const res = await request(app).put('/api/schedules/batch').set(auth(token))
-      .send({ classId, toDate: '2026-12-31', updates: { locationName: '全年' } });
+      .send({ classId, toDate: daysFromToday(200), updates: { locationName: '全年' } });
     expect(res.status).toBe(200);
     expect(res.body.count).toBe(0);
   });
@@ -210,24 +218,26 @@ describe('PUT /api/schedules/batch — toDate filter', () => {
   });
 
   it('toDate + weekday combined works', async () => {
-    // Use future dates; 2026-06-02 = Tue, 2026-06-09 = Tue, 2026-06-16 = Tue
+    // Three same-weekday future dates (7 days apart); weekday derived from the dates themselves
+    const base = daysFromToday(7), d2 = daysFromToday(14), d3 = daysFromToday(21);
+    const wd = new Date(base + 'T00:00:00').getDay();
     await request(app).post('/api/schedules').set(auth(token))
-      .send({ classId, date: '2026-06-02', startTime: '09:00', endTime: '10:00' });
+      .send({ classId, date: base, startTime: '09:00', endTime: '10:00' });
     await request(app).post('/api/schedules').set(auth(token))
-      .send({ classId, date: '2026-06-09', startTime: '09:00', endTime: '10:00' });
+      .send({ classId, date: d2, startTime: '09:00', endTime: '10:00' });
     await request(app).post('/api/schedules').set(auth(token))
-      .send({ classId, date: '2026-06-16', startTime: '09:00', endTime: '10:00' });
+      .send({ classId, date: d3, startTime: '09:00', endTime: '10:00' });
 
-    // toDate=2026-06-09 cuts off the 16th, weekday=2 = Tuesday
+    // toDate=d2 cuts off d3; weekday filter matches all three's shared weekday
     const res = await request(app).put('/api/schedules/batch').set(auth(token))
-      .send({ classId, toDate: '2026-06-09', weekday: 2, updates: { locationName: '周二早' } });
+      .send({ classId, toDate: d2, weekday: wd, updates: { locationName: '周课' } });
     expect(res.status).toBe(200);
     expect(res.body.count).toBe(2);
 
-    const list = await request(app).get('/api/schedules?start=2026-06-01&end=2026-06-20').set(auth(token));
-    expect(list.body.find(s => s.date === '2026-06-02').locationName).toBe('周二早');
-    expect(list.body.find(s => s.date === '2026-06-09').locationName).toBe('周二早');
-    expect(list.body.find(s => s.date === '2026-06-16').locationName).toBeNull();
+    const list = await request(app).get(`/api/schedules?start=${daysFromToday(1)}&end=${daysFromToday(40)}`).set(auth(token));
+    expect(list.body.find(s => s.date === base).locationName).toBe('周课');
+    expect(list.body.find(s => s.date === d2).locationName).toBe('周课');
+    expect(list.body.find(s => s.date === d3).locationName).toBeNull();
   });
 });
 
