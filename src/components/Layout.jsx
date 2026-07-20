@@ -1,6 +1,6 @@
 import { useState, useEffect, useLayoutEffect, useRef } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { clearToken } from '../api';
+import { clearToken, loginUrl } from '../api';
 import { setDarkMode, DarkContext } from '../utils/colors';
 import { getViewDate } from '../utils/viewDate';
 import { getNavTarget as computeNavTarget } from '../utils/navTarget';
@@ -228,7 +228,7 @@ export default function Layout({ children }) {
           </div>
           {(isMobile || sidebarWidth > 100) && (mode === 'auto' ? '自动模式' : mode === 'dark' ? '夜间模式' : '日间模式')}
         </button>
-        <button onClick={() => { clearToken(); window.location.href = `${import.meta.env.BASE_URL}login`; }}
+        <button onClick={() => { clearToken(); window.location.href = loginUrl(); }}
           className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700/50 hover:text-red-600 dark:hover:text-red-400 transition"
           title={!isMobile && sidebarWidth <= 100 ? '退出登录' : undefined}>
           <div className="w-7 h-7 bg-red-500 rounded-lg flex items-center justify-center shrink-0">

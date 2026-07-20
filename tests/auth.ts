@@ -85,6 +85,8 @@ function getCurrentMonday() {
   return addDays(today, diff);
 }
 
+export { toDateString, addDays, getCurrentMonday };
+
 function ensureSeedData(db: Database.Database, teacherId: number) {
   const classRow = db.prepare('SELECT id FROM classes WHERE teacher_id = ? AND name = ? AND deleted = 0')
     .get(teacherId, 'E2E数学班') as { id: number } | undefined;

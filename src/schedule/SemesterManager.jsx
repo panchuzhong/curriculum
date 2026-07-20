@@ -19,7 +19,7 @@ const SEMESTER_TEMPLATES = {
   winter: (y) => ({ name: `${y}寒假`, type: 'winter', startDate: `${y + 1}-01-15`, endDate: `${y + 1}-02-20` }),
 };
 
-function getDefaultsFromSemesters(semesters) {
+export function getDefaultsFromSemesters(semesters) {
   if (!semesters || semesters.length === 0) {
     // No semesters yet, use current date to guess
     const now = new Date();
@@ -35,10 +35,12 @@ function getDefaultsFromSemesters(semesters) {
   const sorted = [...semesters].sort((a, b) => a.endDate.localeCompare(b.endDate));
   const latest = sorted[sorted.length - 1];
   const endYear = parseInt(latest.endDate.slice(0, 4));
+  // fall/winter templates end in year y+1, so their endDate year is one ahead of the template year
+  const latestYear = (latest.type === 'fall' || latest.type === 'winter') ? endYear - 1 : endYear;
   const idx = SEMESTER_ORDER.indexOf(latest.type);
   const nextIdx = (idx + 1) % 4;
   const nextType = SEMESTER_ORDER[nextIdx];
-  const nextYear = nextIdx <= idx ? endYear + 1 : endYear; // wrap around = next year
+  const nextYear = nextIdx <= idx ? latestYear + 1 : latestYear; // wrap around = next year
   return SEMESTER_TEMPLATES[nextType](nextYear);
 }
 

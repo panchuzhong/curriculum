@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 // Set up mocks using vi.hoisted so they run before module evaluation
 const { store, localStorageMock, fetchMock } = vi.hoisted(() => {
@@ -18,7 +18,26 @@ vi.stubGlobal('fetch', fetchMock);
 vi.stubGlobal('window', { location: { href: '' } });
 
 // Static import — globals are already stubbed via vi.hoisted
-import { getToken, setToken, clearToken, api } from '../../api';
+import { getToken, setToken, clearToken, api, loginUrl } from '../../api';
+
+describe('loginUrl', () => {
+  afterEach(() => vi.unstubAllEnvs());
+
+  it('BASE_URL 无尾斜杠时补斜杠（子路径部署退出登录不应 404）', () => {
+    vi.stubEnv('BASE_URL', '/curriculum');
+    expect(loginUrl()).toBe('/curriculum/login');
+  });
+
+  it('BASE_URL 有尾斜杠时不重复拼接', () => {
+    vi.stubEnv('BASE_URL', '/curriculum/');
+    expect(loginUrl()).toBe('/curriculum/login');
+  });
+
+  it('根路径 BASE_URL', () => {
+    vi.stubEnv('BASE_URL', '/');
+    expect(loginUrl()).toBe('/login');
+  });
+});
 
 describe('token management', () => {
   beforeEach(() => localStorageMock.clear());

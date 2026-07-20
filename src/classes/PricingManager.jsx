@@ -92,18 +92,6 @@ export default function PricingManager({ classId, onChanged }) {
 
   const inp = 'w-full p-2 text-sm bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded';
 
-  if (records.length === 0) {
-    return (
-      <div className="mt-3">
-        <div className="flex items-center justify-between mb-2">
-          <h4 className="font-medium text-sm">定价管理</h4>
-          <button onClick={openAdd} className="px-3 py-1 text-sm bg-blue-600 text-white rounded hover:bg-blue-700">新增定价</button>
-        </div>
-        <p className="text-sm text-gray-400 dark:text-gray-500">暂无定价记录</p>
-      </div>
-    );
-  }
-
   return (
     <div className="mt-3">
       <div className="flex items-center justify-between mb-3">
@@ -125,6 +113,9 @@ export default function PricingManager({ classId, onChanged }) {
         </div>
       )}
 
+      {records.length === 0 ? (
+        <p className="text-sm text-gray-400 dark:text-gray-500">暂无定价记录</p>
+      ) : (
       <div className="overflow-x-auto">
         <table className="w-full text-sm">
           <thead>
@@ -156,6 +147,7 @@ export default function PricingManager({ classId, onChanged }) {
           </tbody>
         </table>
       </div>
+      )}
 
       {showForm && (
         <div className="mt-3 p-3 bg-gray-50 dark:bg-gray-700/50 rounded-lg">

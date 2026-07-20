@@ -1,4 +1,7 @@
-import { test, expect } from './auth';
+import { test, expect, ensureTestUser, toDateString, addDays, getCurrentMonday } from './auth';
+import Database from 'better-sqlite3';
+
+const E2E_DB_PATH = process.env.DB_PATH || './data/e2e.db';
 
 const scheduleCard = 'main .absolute.rounded-md.cursor-pointer';
 
@@ -8,6 +11,28 @@ async function clickFirstScheduleCard(page) {
     const card = document.querySelector(selector);
     if (card) card.click();
   }, scheduleCard);
+}
+
+// 保证本周三存在一节 22:00-23:59 的晚点课程，使周视图网格扩展出 24:00 行（幂等）。
+function ensureLateSchedule() {
+  const teacherId = ensureTestUser();
+  const db = new Database(E2E_DB_PATH);
+  try {
+    const classRow = db.prepare('SELECT id FROM classes WHERE teacher_id = ? AND name = ? AND deleted = 0')
+      .get(teacherId, 'E2E数学班') as { id: number } | undefined;
+    if (!classRow) throw new Error('E2E数学班 seed missing');
+    const wednesday = toDateString(addDays(getCurrentMonday(), 2));
+    const existing = db.prepare(
+      'SELECT id FROM schedules WHERE class_id = ? AND date = ? AND start_time = ? AND end_time = ?'
+    ).get(classRow.id, wednesday, '22:00', '23:59');
+    if (!existing) {
+      db.prepare(
+        'INSERT INTO schedules (class_id, date, start_time, end_time, duration_billing, location_name) VALUES (?, ?, ?, ?, ?, ?)'
+      ).run(classRow.id, wednesday, '22:00', '23:59', 119, 'E2E教室');
+    }
+  } finally {
+    db.close();
+  }
 }
 
 test.describe('周课表', () => {
@@ -104,5 +129,27 @@ test.describe('排课操作', () => {
     await page.getByRole('button', { name: '确认' }).click();
     // Verify card count decreased
     await expect(page.locator(scheduleCard)).toHaveCount(countBefore - 1);
+  });
+});
+
+test.describe('扩展时段格子', () => {
+  test.use({ baseURL: 'http://127.0.0.1:5174' });
+
+  test('点击 24:00 扩展行新建排课，开始时间应为合法的 00:00', async ({ authenticatedPage: page }) => {
+    ensureLateSchedule();
+    await page.goto('/');
+    // 晚点课程（22:00-23:59）使网格扩展出 24:00 行
+    const label24 = page.locator('main').getByText('24:00', { exact: true });
+    await expect(label24).toBeVisible();
+    const lateBlock = page.locator('main').getByText('22:00-23:59');
+    await expect(lateBlock).toBeVisible();
+    // 在晚点课程所在列、24:00 行内点击空白格子
+    const blockBox = (await lateBlock.boundingBox())!;
+    const labelBox = (await label24.boundingBox())!;
+    await page.mouse.click(blockBox.x + blockBox.width / 2, labelBox.y + labelBox.height + 4);
+    const dialog = page.getByRole('dialog', { name: '排课编辑' });
+    await expect(dialog).toBeVisible();
+    // 修复前：桌面端把 "24:00" 传给弹窗，time input 无法渲染（值为空），保存会被服务端拒绝
+    await expect(dialog.locator('input[type="time"]').first()).toHaveValue('00:00');
   });
 });
