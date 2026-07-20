@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { todayStr } from '../utils/date';
+import { todayStr, fmt } from '../utils/date';
 import { api } from '../api';
 import { useToast } from '../components/ToastProvider';
 
@@ -79,7 +79,7 @@ export default function BatchScheduleDialog({ onClose, onSaved }) {
     const d = new Date(rangeStart + 'T00:00:00');
     const end = new Date(rangeEnd + 'T00:00:00');
     while (d <= end) {
-      dates.push(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`);
+      dates.push(fmt(d));
       d.setDate(d.getDate() + rangeStep);
     }
     setForm(f => ({ ...f, dates: dates.join(', ') }));
@@ -250,7 +250,7 @@ export default function BatchScheduleDialog({ onClose, onSaved }) {
                         if (e.target.value && (!rangeEnd || rangeEnd <= e.target.value)) {
                           const d = new Date(e.target.value + 'T00:00:00');
                           d.setDate(d.getDate() + 9);
-                          setRangeEnd(`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`);
+                          setRangeEnd(fmt(d));
                         }
                       }} />
                     </div>
