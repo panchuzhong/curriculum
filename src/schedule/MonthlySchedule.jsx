@@ -142,7 +142,7 @@ export default function MonthlySchedule() {
             <button onClick={() => setShowBatch(true)} className={actBtn + ' bg-green-600 hover:bg-green-700'}>
               <span className="sm:hidden">批量</span><span className="hidden sm:inline">批量操作</span>
             </button>
-            <button disabled={exportHook.exporting} onClick={() => exportHook.openExport(startDate, endStr, { startYear: year, startMonth: month, endYear: year, endMonth: month })}
+            <button disabled={exportHook.exporting} onClick={() => exportHook.openExport(startDate, endStr)}
               className={actBtn + ' bg-purple-600 hover:bg-purple-700 disabled:opacity-50'}>
               {exportHook.exporting ? '…' : '导出'}
             </button>

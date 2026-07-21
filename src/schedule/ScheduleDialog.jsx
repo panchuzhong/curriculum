@@ -3,6 +3,7 @@ import { api } from '../api';
 import { GRADES } from '../utils/constants';
 import { useToast } from '../components/ToastProvider';
 import { useConfirm } from '../components/ConfirmDialog';
+import { useDialogFocusTrap } from '../hooks/useDialogFocusTrap';
 
 function getDefaultEndTime(start) {
   if (!start) return '10:00';
@@ -33,32 +34,7 @@ export default function ScheduleDialog({ date, startTime, schedule, onClose, onS
   const [error, setError] = useState('');
 
   const dialogRef = useRef(null);
-
-  useEffect(() => {
-    const el = dialogRef.current;
-    if (!el) return;
-    const previouslyFocused = document.activeElement;
-    el.focus();
-    const handleKeyDown = (e) => {
-      if (e.key !== 'Tab') return;
-      const focusable = el.querySelectorAll('button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])');
-      if (focusable.length === 0) return;
-      const first = focusable[0];
-      const last = focusable[focusable.length - 1];
-      if (e.shiftKey && document.activeElement === first) {
-        e.preventDefault();
-        last.focus();
-      } else if (!e.shiftKey && document.activeElement === last) {
-        e.preventDefault();
-        first.focus();
-      }
-    };
-    el.addEventListener('keydown', handleKeyDown);
-    return () => {
-      el.removeEventListener('keydown', handleKeyDown);
-      previouslyFocused?.focus?.();
-    };
-  }, []);
+  useDialogFocusTrap(dialogRef);
 
   useEffect(() => {
     api.getClasses().then(setClasses).catch(e => toast(e.message || '加载班级失败'));

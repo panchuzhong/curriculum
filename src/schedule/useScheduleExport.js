@@ -11,7 +11,7 @@ export default function useScheduleExport({ weekStart, visibleDays, view } = {})
   const [exportStart, setExportStart] = useState(null);
   const [exportEnd, setExportEnd] = useState(null);
 
-  function openExport(start, end, extra) {
+  function openExport(start, end) {
     if (view) {
       // Month/year mode: start and end are passed explicitly
       setExportStart(start);

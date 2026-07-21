@@ -1,5 +1,6 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useRef } from 'react';
 import { todayStr, getMonday, addDays, parseDateStr } from '../utils/date';
+import { useDialogFocusTrap } from '../hooks/useDialogFocusTrap';
 
 const MONTHS = [
   { value: 0, label: '1月' }, { value: 1, label: '2月' }, { value: 2, label: '3月' },
@@ -18,32 +19,7 @@ function monthDiff(sy, sm, ey, em) {
 
 export default function ExportDialog({ view = 'week', defaultStart, defaultEnd, defaultYear, defaultMonth, onClose, onExportPNG, onExportCSV }) {
   const dialogRef = useRef(null);
-
-  useEffect(() => {
-    const el = dialogRef.current;
-    if (!el) return;
-    const previouslyFocused = document.activeElement;
-    el.focus();
-    const handleKeyDown = (e) => {
-      if (e.key !== 'Tab') return;
-      const focusable = el.querySelectorAll('button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])');
-      if (focusable.length === 0) return;
-      const first = focusable[0];
-      const last = focusable[focusable.length - 1];
-      if (e.shiftKey && document.activeElement === first) {
-        e.preventDefault();
-        last.focus();
-      } else if (!e.shiftKey && document.activeElement === last) {
-        e.preventDefault();
-        first.focus();
-      }
-    };
-    el.addEventListener('keydown', handleKeyDown);
-    return () => {
-      el.removeEventListener('keydown', handleKeyDown);
-      previouslyFocused?.focus?.();
-    };
-  }, []);
+  useDialogFocusTrap(dialogRef);
 
   const today = todayStr();
   const now = new Date();

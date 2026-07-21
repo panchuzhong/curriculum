@@ -200,7 +200,7 @@ export default function YearlySchedule() {
             <button onClick={() => setShowBatch(true)} className={actBtn + ' bg-green-600 hover:bg-green-700'}>
               <span className="sm:hidden">批量</span><span className="hidden sm:inline">批量操作</span>
             </button>
-            <button disabled={exportHook.exporting} onClick={() => exportHook.openExport(`${year}-01-01`, `${year}-12-31`, { startYear: year, endYear: year })}
+            <button disabled={exportHook.exporting} onClick={() => exportHook.openExport(`${year}-01-01`, `${year}-12-31`)}
               className={actBtn + ' bg-purple-600 hover:bg-purple-700 disabled:opacity-50'}>
               {exportHook.exporting ? '…' : '导出'}
             </button>
