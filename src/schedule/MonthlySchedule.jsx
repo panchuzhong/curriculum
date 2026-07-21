@@ -46,9 +46,14 @@ export default function MonthlySchedule() {
   const endDate = new Date(year, month + 1, 0);
   const endStr = formatDate(year, month, endDate.getDate());
 
+  // Generation guard shared by the effect and reload(): a late response from a
+  // previous month's fetch must not overwrite the newly displayed month
+  const fetchGenRef = useRef(0);
+
   useEffect(() => {
     let cancelled = false;
-    api.getSchedules(startDate, endStr).then(data => { if (!cancelled) setSchedules(data); }).catch(e => { if (!cancelled) toast(e.message || '加载课表失败'); });
+    const gen = ++fetchGenRef.current;
+    api.getSchedules(startDate, endStr).then(data => { if (!cancelled && gen === fetchGenRef.current) setSchedules(data); }).catch(e => { if (!cancelled) toast(e.message || '加载课表失败'); });
     return () => { cancelled = true; };
   }, [year, month]);
 
@@ -109,7 +114,8 @@ export default function MonthlySchedule() {
   }
 
   const reload = useCallback(() => {
-    api.getSchedules(startDate, endStr).then(setSchedules).catch(e => toast(e.message || '加载课表失败'));
+    const gen = ++fetchGenRef.current;
+    api.getSchedules(startDate, endStr).then(data => { if (gen === fetchGenRef.current) setSchedules(data); }).catch(e => toast(e.message || '加载课表失败'));
   }, [year, month]);
 
   const navBtn = "px-2 sm:px-4 py-1.5 sm:py-2 text-xs sm:text-base bg-gray-200 dark:bg-gray-700 rounded hover:bg-gray-300 dark:hover:bg-gray-600 active:scale-95 transition-transform select-none";

@@ -1,4 +1,4 @@
-import { useState, useEffect, useLayoutEffect, useContext, useCallback, useMemo } from 'react';
+import { useState, useEffect, useLayoutEffect, useContext, useCallback, useMemo, useRef } from 'react';
 import { api } from '../api';
 import { getClassColor, DarkContext } from '../utils/colors';
 import { SUBJECT_HUES } from '../utils/constants';
@@ -68,6 +68,8 @@ export default function Reports() {
   const [filterClassId, setFilterClassId] = useState('');
   const [customStart, setCustomStart] = useState(todayStr());
   const [customEnd, setCustomEnd] = useState(todayStr());
+  // Generation guard: a stale summary response (rapid period switching) must not overwrite newer data
+  const fetchGenRef = useRef(0);
 
   useEffect(() => { api.getClasses().then(setClasses).catch(e => toast(e.message || '加载班级失败')); }, []);
 
@@ -93,13 +95,19 @@ export default function Reports() {
 
     if (!start || !end || start > end) return;
     setPeriod({ start, end });
-    api.getScheduleSummary(start, end).then(setSummary).catch(e => toast(e.message || '加载报表失败'));
+    const gen = ++fetchGenRef.current;
+    api.getScheduleSummary(start, end)
+      .then(data => { if (gen === fetchGenRef.current) setSummary(data); })
+      .catch(e => toast(e.message || '加载报表失败'));
   }, [tab, year, month, customStart, customEnd]);
 
   const loadWeek = useCallback((monday) => {
     const end = addDays(monday, 6);
     setPeriod({ start: monday, end });
-    api.getScheduleSummary(monday, end).then(setSummary).catch(e => toast(e.message || '加载报表失败'));
+    const gen = ++fetchGenRef.current;
+    api.getScheduleSummary(monday, end)
+      .then(data => { if (gen === fetchGenRef.current) setSummary(data); })
+      .catch(e => toast(e.message || '加载报表失败'));
   }, []);
 
   useLayoutEffect(() => {

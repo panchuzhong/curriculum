@@ -98,15 +98,20 @@ export default function ExportDialog({ view = 'week', defaultStart, defaultEnd, 
   }
 
   // ── CSV handler ──
-  function handleCSV() {
-    if (view === 'month') {
-      const { start: s, end: e } = monthRangeToDates();
-      onExportCSV(s, e);
-    } else if (view === 'year') {
-      const { start: s, end: e } = yearRangeToDates();
-      onExportCSV(s, e);
-    } else {
-      onExportCSV(start, end);
+  async function handleCSV() {
+    setExporting(true);
+    try {
+      if (view === 'month') {
+        const { start: s, end: e } = monthRangeToDates();
+        await onExportCSV(s, e);
+      } else if (view === 'year') {
+        const { start: s, end: e } = yearRangeToDates();
+        await onExportCSV(s, e);
+      } else {
+        await onExportCSV(start, end);
+      }
+    } finally {
+      setExporting(false);
     }
   }
 
@@ -294,8 +299,8 @@ export default function ExportDialog({ view = 'week', defaultStart, defaultEnd, 
               className="flex-1 p-3 bg-purple-600 text-white rounded-lg hover:bg-purple-700 disabled:opacity-50 font-medium">
               {exporting ? '生成中...' : '导出 PNG'}
             </button>
-            <button onClick={handleCSV}
-              className="flex-1 p-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium">
+            <button onClick={handleCSV} disabled={exporting}
+              className="flex-1 p-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 font-medium">
               导出 CSV
             </button>
             <button onClick={onClose}

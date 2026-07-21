@@ -1,4 +1,5 @@
 import { test, expect } from './auth';
+import type { Route } from '@playwright/test';
 
 function pad(n: number) { return String(n).padStart(2, '0'); }
 function todayYear() { return new Date().getFullYear(); }
@@ -175,5 +176,36 @@ test.describe('报表页面键盘导航', () => {
     // Both inputs should be today
     const today = `${todayYear()}-${pad(new Date().getMonth() + 1)}-${pad(new Date().getDate())}`;
     await expect(startInput).toHaveValue(today);
+  });
+});
+
+test.describe('报表竞态防护', () => {
+  test.use({ baseURL: 'http://127.0.0.1:5174' });
+
+  test('快速切换时段时，过期响应不应覆盖最新数据', async ({ authenticatedPage: page }) => {
+    // 挂起远古空时段（2020-01）的响应，模拟乱序到达
+    const held: Route[] = [];
+    await page.route('**/api/schedules/summary**', async (route) => {
+      if (route.request().url().includes('start=2020-01-01')) { held.push(route); return; }
+      await route.continue();
+    });
+    await page.goto('/reports');
+    // 当前周数据（非空）加载完成
+    await expect(page.getByRole('heading', { name: '按班级统计' })).toBeVisible();
+    // 查一个必定为空的远古时段（请求被挂起）
+    await page.getByRole('button', { name: '自定义' }).click();
+    const inputs = page.locator('input[type="date"]');
+    await inputs.first().fill('2020-01-01');
+    await inputs.nth(1).fill('2020-01-31');
+    // 立刻切回周报（当前周请求放行并渲染）
+    await page.getByRole('button', { name: '周报' }).click();
+    await expect(page.getByRole('heading', { name: '按班级统计' })).toBeVisible();
+    // 只放行最后被挂起的旧响应（必为空的 2020-01）：修复前它覆盖当前周数据
+    for (let i = 0; i < held.length - 1; i++) await held[i].abort();
+    expect(held.length).toBeGreaterThan(0);
+    await held[held.length - 1].continue();
+    await page.waitForTimeout(500);
+    await expect(page.getByText('该时段无排课记录')).not.toBeVisible();
+    await expect(page.getByRole('heading', { name: '按班级统计' })).toBeVisible();
   });
 });

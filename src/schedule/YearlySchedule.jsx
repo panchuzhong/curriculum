@@ -68,9 +68,14 @@ export default function YearlySchedule() {
 
   const exportHook = useScheduleExport({ view: 'yearly' });
 
+  // Generation guard shared by the effect and reload(): a late response from a
+  // previous year's fetch must not overwrite the newly displayed year
+  const fetchGenRef = useRef(0);
+
   useEffect(() => {
     let cancelled = false;
-    api.getSchedules(`${year}-01-01`, `${year}-12-31`).then(data => { if (!cancelled) setSchedules(data); }).catch(e => { if (!cancelled) toast(e.message || '加载课表失败'); });
+    const gen = ++fetchGenRef.current;
+    api.getSchedules(`${year}-01-01`, `${year}-12-31`).then(data => { if (!cancelled && gen === fetchGenRef.current) setSchedules(data); }).catch(e => { if (!cancelled) toast(e.message || '加载课表失败'); });
     api.getClasses().then(data => { if (!cancelled) setClasses(data); }).catch(e => { if (!cancelled) toast(e.message || '加载班级失败'); });
     return () => { cancelled = true; };
   }, [year]);
@@ -174,7 +179,8 @@ export default function YearlySchedule() {
   }
 
   const reload = useCallback(() => {
-    api.getSchedules(`${year}-01-01`, `${year}-12-31`).then(setSchedules).catch(e => toast(e.message || '加载课表失败'));
+    const gen = ++fetchGenRef.current;
+    api.getSchedules(`${year}-01-01`, `${year}-12-31`).then(data => { if (gen === fetchGenRef.current) setSchedules(data); }).catch(e => toast(e.message || '加载课表失败'));
   }, [year]);
 
   const navBtn = "px-2 sm:px-4 py-1.5 sm:py-2 text-xs sm:text-base bg-gray-200 dark:bg-gray-700 rounded hover:bg-gray-300 dark:hover:bg-gray-600 active:scale-95 transition-transform select-none";
