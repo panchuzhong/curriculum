@@ -37,13 +37,19 @@ export function authMiddleware(req, res, next) {
   try {
     const token = authHeader.slice(7);
     const payload = jwt.verify(token, JWT_SECRET);
-    req.teacherId = payload.teacherId;
+    // Stateful check: tokens issued before a password change are revoked.
+    // Tokens without a pwdVersion claim are treated as version 0 (legacy).
+    const teacher = drizzleDb.select().from(teachers).where(eq(teachers.id, payload.teacherId)).get();
+    if (!teacher || (payload.pwdVersion ?? 0) !== (teacher.pwdVersion ?? 0)) {
+      return res.status(401).json({ error: 'Invalid token' });
+    }
+    req.teacherId = teacher.id;
     next();
   } catch {
     res.status(401).json({ error: 'Invalid token' });
   }
 }
 
-export function signToken(teacherId) {
-  return jwt.sign({ teacherId }, JWT_SECRET, { expiresIn: JWT_EXPIRES_IN });
+export function signToken(teacherId, pwdVersion = 0) {
+  return jwt.sign({ teacherId, pwdVersion }, JWT_SECRET, { expiresIn: JWT_EXPIRES_IN });
 }

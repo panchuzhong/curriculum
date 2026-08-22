@@ -3,15 +3,32 @@ import request from 'supertest';
 import { setupApp, makeUser, auth } from './route-helpers.js';
 import { clearReportCache, getReportCache, setReportCache } from '../services/report-cache.js';
 
+const fsMocks = vi.hoisted(() => ({
+  readdirSync: vi.fn(() => []),
+  statSync: vi.fn(() => ({ mtimeMs: 0 })),
+  unlinkSync: vi.fn(),
+}));
+
 vi.mock('fs', async () => {
   const actual = await vi.importActual('fs');
-  return { ...actual, writeFileSync: vi.fn() };
+  return {
+    ...actual,
+    writeFileSync: vi.fn(),
+    readdirSync: fsMocks.readdirSync,
+    statSync: fsMocks.statSync,
+    unlinkSync: fsMocks.unlinkSync,
+  };
 });
 
 let app, drizzleDb, token, teacherId;
 
 beforeEach(async () => {
   clearReportCache();
+  fsMocks.readdirSync.mockClear();
+  fsMocks.statSync.mockClear();
+  fsMocks.unlinkSync.mockClear();
+  fsMocks.readdirSync.mockReturnValue([]);
+  fsMocks.statSync.mockImplementation(() => ({ mtimeMs: 0 }));
   ({ app, drizzleDb } = await setupApp('/api/backup', '../routes/backup.js'));
   ({ id: teacherId, token } = await makeUser(drizzleDb));
 });
@@ -196,5 +213,50 @@ describe('POST /api/backup/restore', () => {
 
     expect(res.status).toBe(200);
     expect(getReportCache(cacheKey)).toBeNull();
+  });
+});
+
+describe('pre-restore snapshot retention', () => {
+  it('keeps only the 5 newest snapshots and unlinks the rest', async () => {
+    // Seven existing snapshots with descending mtimes: snap-0 newest ... snap-6 oldest
+    const names = Array.from({ length: 7 }, (_, i) => `.backup_pre_restore_${i}.json`);
+    fsMocks.readdirSync.mockReturnValue(names);
+    fsMocks.statSync.mockImplementation((p) => {
+      const idx = names.findIndex(n => p.endsWith(n));
+      return { mtimeMs: 1000 - idx }; // lower index = newer
+    });
+
+    const res = await request(app).post('/api/backup/restore').set(auth(token)).send({
+      version: 1,
+      classes: [],
+      students: [],
+      schedules: [],
+      classStudents: [],
+      holidays: [],
+      semesters: [],
+      pricingTiers: [],
+    });
+    expect(res.status).toBe(200);
+
+    expect(fsMocks.unlinkSync).toHaveBeenCalledTimes(2);
+    const unlinked = fsMocks.unlinkSync.mock.calls.map(c => c[0]);
+    expect(unlinked.some(p => p.endsWith(names[5]))).toBe(true);
+    expect(unlinked.some(p => p.endsWith(names[6]))).toBe(true);
+    expect(unlinked.some(p => p.endsWith(names[0]))).toBe(false);
+  });
+
+  it('never unlinks unrelated files in the data directory', async () => {
+    fsMocks.readdirSync.mockReturnValue(['data.db', '.backup_pre_restore_a.json']);
+    fsMocks.statSync.mockImplementation((p) => ({
+      mtimeMs: p.endsWith('.backup_pre_restore_a.json') ? 1 : 2,
+    }));
+
+    await request(app).post('/api/backup/restore').set(auth(token)).send({
+      version: 1, classes: [], students: [], schedules: [],
+      classStudents: [], holidays: [], semesters: [], pricingTiers: [],
+    });
+
+    const unlinked = fsMocks.unlinkSync.mock.calls.map(c => c[0]);
+    expect(unlinked.some(p => p.endsWith('data.db'))).toBe(false);
   });
 });

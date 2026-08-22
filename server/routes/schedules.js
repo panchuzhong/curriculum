@@ -6,7 +6,7 @@ import { authMiddleware } from '../middleware/auth.js';
 import { isHoliday } from '../services/holidays.js';
 import handle from '../validations/handle.js';
 import { validateCreateSchedule, validateBatchCreate, validateBatchUpdate, validateBatchDelete, validateUpdateSchedule } from '../validations/schedules.js';
-import { isValidScheduleEndTime, isValidTime, normalizeScheduleEndTime } from '../validations/dates.js';
+import { isValidDate, isValidScheduleEndTime, isValidTime, normalizeScheduleEndTime } from '../validations/dates.js';
 import { logAudit } from '../services/audit.js';
 import { toLocalDateStr, toMin, resolveRange, toCSV, detectConflictGroups, getScheduleWithClass, calcDurationBilling, getTeacherSemesters, buildPricingLookup } from '../services/schedule-helpers.js';
 import { clearReportCache, getReportCache, setReportCache } from '../services/report-cache.js';
@@ -14,6 +14,11 @@ import { students as studentsTable } from '../db/schema.js';
 
 function filterBySemesters(candidates, { semesterOnly, drizzleDb, teacherId }) {
   let filtered = 0;
+  // Semester scoping only kicks in when candidates STRADDLE a semester boundary
+  // (some inside, some outside). If every candidate is outside — e.g. legacy
+  // schedules recorded before the teacher defined any semester — they are left
+  // untouched so historical data remains operable. This asymmetry is asserted
+  // by the batch update/delete tests in routes-schedules.test.js.
   if (semesterOnly !== false) {
     const teacherSemesters = getTeacherSemesters(drizzleDb, teacherId);
     if (teacherSemesters.length > 0) {
@@ -187,10 +192,16 @@ router.post('/batch', validateBatchCreate, handle, (req, res) => {
       .from(holidays).where(eq(holidays.teacherId, req.teacherId)).all();
     const userHolidayDates = new Set(userHolidays.filter(h => h.type === 'holiday').map(h => h.date));
     const userWorkdayDates = new Set(userHolidays.filter(h => h.type === 'workday').map(h => h.date));
+    // DB entries are authoritative per year (same semantics as the frontend):
+    // once a teacher has any holiday record for a year, built-in data for that
+    // year is ignored — deleting a built-in holiday in Settings must take effect.
+    const dbHolidayYears = new Set(userHolidays.map(h => h.date.slice(0, 4)));
 
     while (current <= end) {
       const dateStr = toLocalDateStr(current);
-      const isOff = !userWorkdayDates.has(dateStr) && (isHoliday(dateStr) || userHolidayDates.has(dateStr));
+      const isOff = !userWorkdayDates.has(dateStr)
+        && (userHolidayDates.has(dateStr)
+          || (!dbHolidayYears.has(dateStr.slice(0, 4)) && isHoliday(dateStr)));
       if (current.getDay() === weekday && !isOff) {
         targetDates.push(dateStr);
       }
@@ -318,7 +329,16 @@ router.put('/batch', validateBatchUpdate, handle, (req, res) => {
         safeUpdates.durationBilling = calcDurationBilling(startTime || candidates[0].startTime, endTime || candidates[0].endTime, null);
       }
     }
-    drizzleDb.update(schedules).set(safeUpdates).where(inArray(schedules.id, updatedIds)).run();
+    try {
+      drizzleDb.update(schedules).set(safeUpdates).where(inArray(schedules.id, updatedIds)).run();
+    } catch (e) {
+      // Batch-updating several rows to the same start time on the same date
+      // violates idx_schedules_unique — surface it as a conflict, not a 500.
+      if (e.message?.includes('UNIQUE constraint')) {
+        return res.status(409).json({ error: '批量修改会导致该班级同日期同一时间重复排课，请调整时间或缩小范围' });
+      }
+      throw e;
+    }
   }
 
   logAudit({
@@ -698,6 +718,16 @@ function getFreeSlotsForDate(dateStr, teacherId, dayStart = '08:00', dayEnd = '2
 
 router.get('/free-slots', (req, res) => {
   const { date, start, end, dayStart, dayEnd, after, before, minDuration } = req.query;
+  for (const [key, value] of Object.entries({ date, start, end })) {
+    if (value != null && !isValidDate(value)) {
+      return res.status(400).json({ error: `${key} 须为有效的 YYYY-MM-DD` });
+    }
+  }
+  for (const [key, value] of Object.entries({ dayStart, dayEnd, after, before })) {
+    if (value != null && !isValidTime(value)) {
+      return res.status(400).json({ error: `${key} 须为有效的 HH:MM (00:00-23:59)` });
+    }
+  }
   const dStart = after || dayStart || '08:00';
   const dEnd = before || dayEnd || '22:30';
   if (dStart >= dEnd) {

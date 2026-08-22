@@ -153,3 +153,114 @@ test.describe('扩展时段格子', () => {
     await expect(dialog.locator('input[type="time"]').first()).toHaveValue('00:00');
   });
 });
+
+test.describe('排课弹窗保存按钮状态', () => {
+  test.use({ baseURL: 'http://127.0.0.1:5174' });
+
+  test('未选择班级时保存禁用，选择后启用', async ({ authenticatedPage: page }) => {
+    await page.goto('/');
+    // Click an empty cell in the Saturday column (seed schedules are Mon-Wed only)
+    // The 21-day buffer renders three Saturdays (last/current/next week);
+    // index 1 is the visible current-week one.
+    const satHeader = page.locator('main').getByText('周六', { exact: true }).nth(1);
+    await expect(satHeader).toBeVisible();
+    const box = (await satHeader.boundingBox())!;
+    await page.mouse.click(box.x + box.width / 2, box.y + box.height + 120);
+
+    const dialog = page.getByRole('dialog', { name: '排课编辑' });
+    await expect(dialog).toBeVisible();
+    const save = dialog.getByRole('button', { name: '保存', exact: true });
+    // Before the fix the button was clickable but the handler silently no-opped
+    await expect(save).toBeDisabled();
+
+    await dialog.getByRole('combobox').selectOption({ index: 1 });
+    await expect(save).toBeEnabled();
+    await dialog.getByRole('button', { name: '取消' }).click();
+    await expect(dialog).not.toBeVisible();
+  });
+});
+
+test.describe('批量删课预览', () => {
+  test.use({ baseURL: 'http://127.0.0.1:5174' });
+
+  test('预览数量与实际删除范围一致（含学期过滤）', async ({ authenticatedPage: page }) => {
+    const expected = ensureDeletePreviewData();
+    await page.goto('/');
+    await page.getByRole('button', { name: '批量操作' }).click();
+    const dialog = page.getByRole('dialog', { name: '批量排课' });
+    await expect(dialog).toBeVisible();
+
+    await dialog.getByRole('button', { name: '批量删课' }).click();
+    await dialog.getByRole('button', { name: '日期范围' }).click();
+
+    await dialog.locator('input[type="date"]').nth(0).fill(expected.start);
+    await dialog.locator('input[type="date"]').nth(1).fill(expected.end);
+    const mathOption = dialog.getByRole('option', { name: /E2E数学班/ });
+    await dialog.getByRole('combobox').selectOption(await mathOption.getAttribute('value'));
+    await dialog.getByRole('button', { name: '预览删除' }).click();
+
+    // Oracle computed from the DB with the same semantics as the server:
+    // only schedules inside at least one semester are deletable by default.
+    await expect(dialog.getByText(`将删除 ${expected.willDelete} 条排课，操作不可撤销`)).toBeVisible();
+    if (expected.filtered > 0) {
+      await expect(dialog.getByText(`另有 ${expected.filtered} 条因不在当前学期内不会删除`)).toBeVisible();
+    } else {
+      await expect(dialog.getByText(/因不在当前学期内不会删除/)).toHaveCount(0);
+    }
+
+    // Cancel returns to the pre-preview state (dry-run must not have deleted)
+    await dialog.getByRole('button', { name: '取消', exact: true }).click();
+    await expect(dialog.getByRole('button', { name: '预览删除' })).toBeVisible();
+    await dialog.getByRole('button', { name: '关闭' }).click();
+    await expect(dialog).not.toBeVisible();
+  });
+});
+
+// Seeds three extra E2E数学班 schedules (16:00, idempotent): two deep in the
+// past (inside the seeded semester for current run dates) and one recent, then
+// computes the expected preview from the DB using server-equivalent semantics.
+function ensureDeletePreviewData() {
+  const teacherId = ensureTestUser();
+  const db = new Database(E2E_DB_PATH);
+  try {
+    const cls = db.prepare("SELECT id FROM classes WHERE teacher_id = ? AND name = 'E2E数学班' AND deleted = 0")
+      .get(teacherId) as { id: number };
+    if (!cls) throw new Error('E2E数学班 seed missing');
+
+    const today = new Date();
+    const day = (n: number) => {
+      const d = new Date(today);
+      d.setDate(d.getDate() + n);
+      return toDateString(d);
+    };
+    const start = day(-30);
+    const end = toDateString(today);
+    const dates = [day(-25), day(-20), day(-5)];
+    for (const date of dates) {
+      const existing = db.prepare(
+        'SELECT id FROM schedules WHERE class_id = ? AND date = ? AND start_time = ?'
+      ).get(cls.id, date, '16:00');
+      if (!existing) {
+        db.prepare('INSERT INTO schedules (class_id, date, start_time, end_time, duration_billing, location_name) VALUES (?, ?, ?, ?, ?, ?)')
+          .run(cls.id, date, '16:00', '17:30', 90, 'E2E教室');
+      }
+    }
+
+    // Oracle: same semantics as PUT/DELETE /api/schedules/batch
+    const rows = db.prepare(
+      "SELECT date FROM schedules WHERE class_id = ? AND date >= ? AND date <= ?"
+    ).all(cls.id, start, end) as { date: string }[];
+    const semesters = db.prepare(
+      'SELECT start_date, end_date FROM semesters WHERE teacher_id = ?'
+    ).all(teacherId) as { start_date: string; end_date: string }[];
+    const inSemester = (date: string) =>
+      semesters.some(s => date >= s.start_date && date <= s.end_date);
+    // Mirror the server's filterBySemesters asymmetry: filtering only applies
+    // when candidates straddle a semester boundary (some in, some out).
+    const inCount = rows.filter(r => inSemester(r.date)).length;
+    const willDelete = (inCount > 0 && inCount < rows.length) ? inCount : rows.length;
+    return { start, end, willDelete, filtered: rows.length - willDelete };
+  } finally {
+    db.close();
+  }
+}

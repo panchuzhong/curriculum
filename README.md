@@ -209,7 +209,7 @@ sudo systemctl start curriculum-scheduler
 | POST | /api/auth/register | 注册（需 ALLOW_REGISTRATION=true），返回 {token, apiKey} |
 | POST | /api/auth/login | 登录，返回 JWT token |
 | GET | /api/auth/profile | 获取个人信息（含 subjects；apiKey 为脱敏掩码 `abcd...wxyz`，完整 key 仅在注册或重置 API Key 时返回） |
-| PUT | /api/auth/password | 修改密码 |
+| PUT | /api/auth/password | 修改密码（吊销所有旧 JWT，返回新 token 保持当前会话） |
 | PUT | /api/auth/subjects | 更新学科列表 |
 | PUT | /api/auth/api-key | 重新生成 API Key |
 

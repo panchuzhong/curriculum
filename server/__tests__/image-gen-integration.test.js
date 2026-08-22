@@ -96,4 +96,11 @@ describe('generateScheduleImage (Puppeteer integration)', () => {
     expect(buf).toBeInstanceOf(Buffer);
     expect(buf[0]).toBe(0x89);
   });
+
+  it('falls back to the default scale for non-numeric scale instead of failing', async () => {
+    // NaN used to leak into deviceScaleFactor and crash Puppeteer (HTTP 500)
+    const buf = await generateScheduleImage([], '2026-05-11', '2026-05-17', { scale: 'abc' });
+    expect(buf).toBeInstanceOf(Buffer);
+    expect(buf[0]).toBe(0x89);
+  });
 });

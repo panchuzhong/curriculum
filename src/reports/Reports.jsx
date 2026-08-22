@@ -96,19 +96,21 @@ export default function Reports() {
     if (!start || !end || start > end) return;
     setPeriod({ start, end });
     const gen = ++fetchGenRef.current;
-    api.getScheduleSummary(start, end)
+    // Filter server-side so every dimension (including byMonth) follows the
+    // class filter — byMonth cannot be filtered client-side.
+    api.getScheduleSummary(start, end, filterClassId || undefined)
       .then(data => { if (gen === fetchGenRef.current) setSummary(data); })
       .catch(e => toast(e.message || '加载报表失败'));
-  }, [tab, year, month, customStart, customEnd]);
+  }, [tab, year, month, customStart, customEnd, filterClassId]);
 
   const loadWeek = useCallback((monday) => {
     const end = addDays(monday, 6);
     setPeriod({ start: monday, end });
     const gen = ++fetchGenRef.current;
-    api.getScheduleSummary(monday, end)
+    api.getScheduleSummary(monday, end, filterClassId || undefined)
       .then(data => { if (gen === fetchGenRef.current) setSummary(data); })
       .catch(e => toast(e.message || '加载报表失败'));
-  }, []);
+  }, [filterClassId]);
 
   useLayoutEffect(() => {
     const onKey = (e) => {

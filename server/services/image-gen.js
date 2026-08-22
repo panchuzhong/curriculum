@@ -209,7 +209,10 @@ export async function generateScheduleImage(schedulesWithClasses, startDate, end
   </div>
 </body></html>`;
 
-  const scaleFactor = scale ? Math.max(0.25, Math.min(4, +scale)) : 3;
+  const parsedScale = +scale;
+  const scaleFactor = scale != null && scale !== '' && !Number.isNaN(parsedScale)
+    ? Math.max(0.25, Math.min(4, parsedScale))
+    : 3;
   return withBrowserPage(html, { width: Math.ceil(totalW) + 2, height: 800, deviceScaleFactor: scaleFactor }, async (page) => {
     const r = await page.evaluate(() => {
       const el = document.documentElement.getBoundingClientRect();

@@ -17,6 +17,11 @@ import backupRoutes from './routes/backup.js';
 import geocodeRoutes from './routes/geocode.js';
 
 const app = express();
+
+// Backup restore payloads may be up to 50MB. This parser must be mounted
+// BEFORE the global 1MB parser: body-parser marks the body as already parsed
+// (req._body), so the stricter global limit never applies to this path.
+app.use('/api/backup/restore', express.json({ limit: '50mb' }));
 app.use(express.json({ limit: '1mb' }));
 
 // Security headers
@@ -83,8 +88,20 @@ app.use('/api/geocode', geocodeRoutes);
 // Health check
 app.get('/api/health', (req, res) => res.json({ status: 'ok' }));
 
+// Unknown API paths must return JSON 404, never the SPA fallback below
+app.use('/api', (req, res) => res.status(404).json({ error: 'Not found' }));
+
 // Serve static files in production
 if (existsSync('./dist')) {
+  // CSP only applies to the SPA responses (mounted after all /api routes).
+  // style-src needs 'unsafe-inline' for React style attributes.
+  app.use((req, res, next) => {
+    res.setHeader('Content-Security-Policy',
+      "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; " +
+      "img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self'; " +
+      "object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'");
+    next();
+  });
   app.use(express.static('./dist'));
   app.get('/{*splat}', (req, res) => res.sendFile('index.html', { root: './dist' }));
 }
@@ -92,21 +109,30 @@ if (existsSync('./dist')) {
 // Error handler
 app.use((err, req, res, next) => {
   console.error(err.stack || err);
-  res.status(500).json({ error: 'Internal server error' });
+  // Honor parser/route error statuses (e.g. body-parser 413) instead of 500
+  res.status(err.status || err.statusCode || 500).json({ error: 'Internal server error' });
 });
 
 const PORT = process.env.PORT || 8443;
 const HOST = process.env.HOST || '127.0.0.1';
-const server = app.listen(PORT, HOST, () => console.log(`Server running on http://${HOST}:${PORT}`));
-server.timeout = 300000; // 5 minutes for image generation and backup endpoints
+let server = null;
+// Test suites import this module for supertest without binding a port
+if (process.env.NODE_ENV !== 'test') {
+  server = app.listen(PORT, HOST, () => console.log(`Server running on http://${HOST}:${PORT}`));
+  server.timeout = 300000; // 5 minutes for image generation and backup endpoints
+}
 
-process.on('SIGTERM', async () => {
-  const { closeBrowser } = await import('./services/browser.js');
-  await closeBrowser();
-  server.close();
-});
-process.on('SIGINT', async () => {
-  const { closeBrowser } = await import('./services/browser.js');
-  await closeBrowser();
-  server.close();
-});
+if (server) {
+  process.on('SIGTERM', async () => {
+    const { closeBrowser } = await import('./services/browser.js');
+    await closeBrowser();
+    server.close();
+  });
+  process.on('SIGINT', async () => {
+    const { closeBrowser } = await import('./services/browser.js');
+    await closeBrowser();
+    server.close();
+  });
+}
+
+export default app;

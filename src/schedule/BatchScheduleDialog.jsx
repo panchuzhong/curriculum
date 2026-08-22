@@ -28,6 +28,12 @@ export default function BatchScheduleDialog({ onClose, onSaved }) {
   const [rangeEnd, setRangeEnd] = useState('');
   const [rangeStep, setRangeStep] = useState(1);
   const [previewCount, setPreviewCount] = useState(null);
+  const [previewHint, setPreviewHint] = useState('');
+
+  function resetPreview() {
+    setPreviewCount(null);
+    setPreviewHint('');
+  }
   const [delStart, setDelStart] = useState(todayStr());
   const [delEnd, setDelEnd] = useState('');
   const [saving, setSaving] = useState(false);
@@ -81,8 +87,18 @@ export default function BatchScheduleDialog({ onClose, onSaved }) {
     const range = getDeleteRange();
     if (!range) return;
     try {
-      const scheds = await api.getSchedules(range.start, range.end, +form.classId);
-      setPreviewCount(scheds.length);
+      // Use the same dryRun code path as the actual delete so the preview
+      // matches what will really be removed (incl. semester filtering).
+      const res = await api.batchDeleteSchedules({
+        classId: +form.classId,
+        start: range.start,
+        end: range.end,
+        dryRun: true,
+      });
+      setPreviewCount(res.count);
+      setPreviewHint(res.semesterFiltered
+        ? `另有 ${res.semesterFiltered} 条因不在当前学期内不会删除（可设置 semesterOnly=false）`
+        : '');
     } catch (e) { toast(e.message || '查询失败'); }
   }
 
@@ -154,7 +170,7 @@ export default function BatchScheduleDialog({ onClose, onSaved }) {
             {/* 班级 */}
             <div>
               <label className="block text-sm text-gray-500 dark:text-gray-400 mb-1">选择班级</label>
-              <select className={sel} value={form.classId} onChange={e => { setForm({...form, classId: e.target.value}); setPreviewCount(null); }}>
+              <select className={sel} value={form.classId} onChange={e => { setForm({...form, classId: e.target.value}); resetPreview(); }}>
                 <option value="">-- 请选择 --</option>
                 {classes.map(c => (
                   <option key={c.id} value={c.id}>{c.isCompetition ? '★ ' : ''}{c.name} ({c.grade} {c.subject})</option>
@@ -178,7 +194,7 @@ export default function BatchScheduleDialog({ onClose, onSaved }) {
               <>
                 <div>
                   <label className="block text-sm text-gray-500 dark:text-gray-400 mb-1">选择学期（必填，自动跳过节假日）</label>
-                  <select className={sel} value={form.semesterId} onChange={e => { setForm({...form, semesterId: e.target.value}); setPreviewCount(null); }}>
+                  <select className={sel} value={form.semesterId} onChange={e => { setForm({...form, semesterId: e.target.value}); resetPreview(); }}>
                     <option value="">-- 请选择 --</option>
                     {semesters.map(s => (
                       <option key={s.id} value={s.id}>{s.name} ({s.startDate} ~ {s.endDate})</option>
@@ -265,11 +281,11 @@ export default function BatchScheduleDialog({ onClose, onSaved }) {
                 <div className="grid grid-cols-2 gap-2">
                   <div>
                     <label className="block text-sm text-gray-500 dark:text-gray-400 mb-1">开始日期</label>
-                    <input type="date" lang="zh-CN" className={sel} value={delStart} onChange={e => { setDelStart(e.target.value); setPreviewCount(null); }} />
+                    <input type="date" lang="zh-CN" className={sel} value={delStart} onChange={e => { setDelStart(e.target.value); resetPreview(); }} />
                   </div>
                   <div>
                     <label className="block text-sm text-gray-500 dark:text-gray-400 mb-1">结束日期</label>
-                    <input type="date" lang="zh-CN" className={sel} value={delEnd} onChange={e => { setDelEnd(e.target.value); setPreviewCount(null); }} />
+                    <input type="date" lang="zh-CN" className={sel} value={delEnd} onChange={e => { setDelEnd(e.target.value); resetPreview(); }} />
                   </div>
                 </div>
                 {delStart && delEnd ? (
@@ -324,10 +340,15 @@ export default function BatchScheduleDialog({ onClose, onSaved }) {
               </div>
             )}
 
-            <div className="flex gap-2 mt-4">
+            <div className="flex flex-wrap gap-2 mt-4">
               {op === 'delete' ? (
                 previewCount != null ? (
                   <>
+                    {previewHint && (
+                      <p className="w-full text-xs text-amber-600 dark:text-amber-400 text-center px-2">
+                        {previewHint}
+                      </p>
+                    )}
                     <p className="flex-1 p-2 text-sm text-red-600 dark:text-red-400 font-medium text-center">
                       将删除 {previewCount} 条排课，操作不可撤销
                     </p>
@@ -335,7 +356,7 @@ export default function BatchScheduleDialog({ onClose, onSaved }) {
                       className="px-4 p-2 text-white bg-red-600 hover:bg-red-700 rounded disabled:opacity-50">
                       {saving ? '处理中...' : '确认'}
                     </button>
-                    <button onClick={() => setPreviewCount(null)} className="p-2 bg-gray-300 dark:bg-gray-600 rounded">取消</button>
+                    <button onClick={resetPreview} className="p-2 bg-gray-300 dark:bg-gray-600 rounded">取消</button>
                   </>
                 ) : (
                   <>

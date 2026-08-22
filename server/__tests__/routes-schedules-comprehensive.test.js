@@ -846,8 +846,12 @@ describe('GET /api/schedules/conflicts — classId filter', () => {
 describe('POST /api/schedules/batch — preview mode', () => {
   it('preview=true returns dates without creating (semester mode)', async () => {
     const { semesters } = await import('../db/schema.js');
+    // Date-relative so the semester never ends in the past (semester-mode
+    // batch scheduling starts from max(today, semester.start)).
+    const semStart = daysFromToday(7);
+    const semEnd = daysFromToday(37);
     const r = drizzleDb.insert(semesters).values({
-      teacherId, name: '预览期', type: 'spring', startDate: '2026-07-01', endDate: '2026-07-31',
+      teacherId, name: '预览期', type: 'spring', startDate: semStart, endDate: semEnd,
     }).run();
     const semId = Number(r.lastInsertRowid);
 

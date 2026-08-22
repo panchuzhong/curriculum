@@ -69,7 +69,7 @@ router.post('/register', authLimiter, validateRegister, handle, async (req, res)
     writeFileSync(envPath, envContent);
   } catch { /* non-fatal: .env may not exist or be writable */ }
 
-  res.json({ token: signToken(result.lastInsertRowid), apiKey });
+  res.json({ token: signToken(Number(result.lastInsertRowid), 0), apiKey });
 });
 
 router.post('/login', loginLimiter, validateLogin, handle, async (req, res) => {
@@ -78,7 +78,7 @@ router.post('/login', loginLimiter, validateLogin, handle, async (req, res) => {
   if (!teacher || !(await bcrypt.compare(password, teacher.passwordHash))) {
     return res.status(401).json({ error: 'Invalid credentials' });
   }
-  res.json({ token: signToken(teacher.id) });
+  res.json({ token: signToken(teacher.id, teacher.pwdVersion ?? 0) });
 });
 
 router.get('/profile', authMiddleware, (req, res) => {
@@ -111,9 +111,11 @@ router.put('/password', authMiddleware, authLimiter, validateChangePassword, han
     return res.status(401).json({ error: '当前密码错误' });
   }
   const passwordHash = await bcrypt.hash(newPassword, 12);
-  drizzleDb.update(teachers).set({ passwordHash }).where(eq(teachers.id, req.teacherId)).run();
+  const newPwdVersion = (teacher.pwdVersion ?? 0) + 1;
+  drizzleDb.update(teachers).set({ passwordHash, pwdVersion: newPwdVersion }).where(eq(teachers.id, req.teacherId)).run();
   logAudit({ teacherId: req.teacherId, action: 'UPDATE', tableName: 'teachers', recordId: req.teacherId, after: { passwordChanged: true } });
-  res.json({ ok: true });
+  // Return a fresh token so the current session survives revoking old ones
+  res.json({ ok: true, token: signToken(req.teacherId, newPwdVersion) });
 });
 
 export default router;

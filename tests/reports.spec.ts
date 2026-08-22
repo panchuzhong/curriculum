@@ -1,5 +1,36 @@
-import { test, expect } from './auth';
+import { test, expect, ensureTestUser } from './auth';
+import Database from 'better-sqlite3';
 import type { Route } from '@playwright/test';
+
+const E2E_DB_PATH = process.env.DB_PATH || './data/e2e.db';
+
+function pad2(n: number) { return String(n).padStart(2, '0'); }
+
+// Guarantees the unfiltered year report spans ≥2 months while E2E英语班
+// (seeded with only current-week schedules) spans exactly 1 month. This makes
+// the month-chart filter assertion date-independent.
+function ensureMonthFilterData() {
+  const teacherId = ensureTestUser(); // also seeds E2E英语班 (current week only)
+  const db = new Database(E2E_DB_PATH);
+  try {
+    const math = db.prepare("SELECT id FROM classes WHERE teacher_id = ? AND name = 'E2E数学班' AND deleted = 0")
+      .get(teacherId) as { id: number };
+    if (!math) throw new Error('E2E数学班 seed missing');
+    // A 数学班 schedule in an adjacent month (day 15, 08:00, idempotent)
+    const now = new Date();
+    const adj = new Date(now.getFullYear(), now.getMonth() + 1, 15);
+    const adjDate = `${adj.getFullYear()}-${pad2(adj.getMonth() + 1)}-15`;
+    const existing = db.prepare(
+      'SELECT id FROM schedules WHERE class_id = ? AND date = ? AND start_time = ?'
+    ).get(math.id, adjDate, '08:00');
+    if (!existing) {
+      db.prepare('INSERT INTO schedules (class_id, date, start_time, end_time, duration_billing, location_name) VALUES (?, ?, ?, ?, ?, ?)')
+        .run(math.id, adjDate, '08:00', '09:30', 90, 'E2E教室');
+    }
+  } finally {
+    db.close();
+  }
+}
 
 function pad(n: number) { return String(n).padStart(2, '0'); }
 function todayYear() { return new Date().getFullYear(); }
@@ -207,5 +238,28 @@ test.describe('报表竞态防护', () => {
     await page.waitForTimeout(500);
     await expect(page.getByText('该时段无排课记录')).not.toBeVisible();
     await expect(page.getByRole('heading', { name: '按班级统计' })).toBeVisible();
+  });
+});
+
+test.describe('报表班级筛选联动', () => {
+  test.use({ baseURL: 'http://127.0.0.1:5174' });
+
+  test('按月份统计图表跟随班级筛选（服务端过滤）', async ({ authenticatedPage: page }) => {
+    ensureMonthFilterData();
+    await page.goto('/reports');
+    await page.getByRole('button', { name: '年报' }).click();
+
+    // Unfiltered: 数学班 spans ≥2 months → month chart visible
+    await expect(page.getByRole('heading', { name: '按月份统计' })).toBeVisible();
+
+    // Filter to 英语班 (current-week only): 1 month → month chart collapses.
+    // Before the fix, byMonth came unfiltered from the server so the chart
+    // (and its numbers) ignored the class filter.
+    await page.getByRole('combobox').selectOption({ label: 'E2E英语班' });
+    await expect(page.getByRole('heading', { name: '按月份统计' })).not.toBeVisible();
+
+    // Back to all classes: chart returns
+    await page.getByRole('combobox').selectOption({ label: '全部班级' });
+    await expect(page.getByRole('heading', { name: '按月份统计' })).toBeVisible();
   });
 });

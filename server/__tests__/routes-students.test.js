@@ -46,6 +46,24 @@ describe('POST /api/students', () => {
       .send({ name: '张三', birthDate: 'not-a-date' });
     expect(res.status).toBe(400);
   });
+
+  it('deduplicates repeated classIds instead of crashing on the junction PK', async () => {
+    const { classes } = await import('../db/schema.js');
+    const r = drizzleDb.insert(classes).values({
+      teacherId: 1, name: '数学班', grade: '高一', subject: '数学', studentCount: 2, unitPrice: 100,
+    }).run();
+    const classId = Number(r.lastInsertRowid);
+
+    const create = await request(app).post('/api/students').set(auth(token))
+      .send({ name: '张三', classIds: [classId, classId, classId] });
+    expect(create.status).toBe(200);
+    expect(create.body.classIds).toEqual([classId]);
+
+    const update = await request(app).put(`/api/students/${create.body.id}`).set(auth(token))
+      .send({ classIds: [classId, classId] });
+    expect(update.status).toBe(200);
+    expect(update.body.classIds).toEqual([classId]);
+  });
 });
 
 describe('GET /api/students', () => {

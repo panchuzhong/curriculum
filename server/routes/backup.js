@@ -4,12 +4,13 @@ import { drizzleDb, db } from '../db/index.js';
 import { classes, pricingTiers, students, classStudents, schedules, holidays, semesters, auditLog, classPricing } from '../db/schema.js';
 import { eq, inArray } from 'drizzle-orm';
 import { authMiddleware } from '../middleware/auth.js';
-import { writeFileSync } from 'fs';
+import { writeFileSync, readdirSync, statSync, unlinkSync } from 'fs';
 import { randomUUID } from 'crypto';
 import { clearSemesterCache } from '../services/schedule-helpers.js';
 import { clearReportCache } from '../services/report-cache.js';
 
 const BACKUP_VERSION = 1;
+const MAX_PRE_RESTORE_SNAPSHOTS = 5;
 
 const router = Router();
 router.use(authMiddleware);
@@ -97,6 +98,7 @@ router.post('/restore', express.json({ limit: '50mb' }), (req, res) => {
       auditLog: drizzleDb.select().from(auditLog).where(eq(auditLog.teacherId, tid)).all(),
     };
     writeFileSync(`./data/.backup_pre_restore_${randomUUID()}.json`, JSON.stringify(snapshot));
+    prunePreRestoreSnapshots();
   } catch (e) {
     console.error('Backup snapshot failed:', e);
     return res.status(500).json({ error: '还原前备份快照失败' });
@@ -198,5 +200,20 @@ router.post('/restore', express.json({ limit: '50mb' }), (req, res) => {
   clearReportCache(tid);
   res.json({ ok: true, restored: counts });
 });
+
+// Keep only the newest pre-restore snapshots; restore is rare, so keeping a
+// handful of rollback points is enough and prevents unbounded disk growth.
+function prunePreRestoreSnapshots() {
+  const files = readdirSync('./data')
+    .filter(f => f.startsWith('.backup_pre_restore_') && f.endsWith('.json'))
+    .map(f => {
+      const stats = statSync(`./data/${f}`);
+      return { name: f, mtime: stats.mtimeMs };
+    })
+    .sort((a, b) => b.mtime - a.mtime);
+  for (const { name } of files.slice(MAX_PRE_RESTORE_SNAPSHOTS)) {
+    unlinkSync(`./data/${name}`);
+  }
+}
 
 export default router;

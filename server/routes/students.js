@@ -75,10 +75,12 @@ router.post('/', validateCreateStudent, handle, (req, res) => {
   const studentId = Number(result.lastInsertRowid);
 
   if (classIds && classIds.length > 0) {
+    // classIds may contain duplicates; the junction table PK would reject them
+    const uniqueClassIds = [...new Set(classIds)];
     const valid = new Set(drizzleDb.select({ id: classes.id }).from(classes)
-      .where(and(eq(classes.teacherId, req.teacherId), eq(classes.deleted, false), inArray(classes.id, classIds)))
+      .where(and(eq(classes.teacherId, req.teacherId), eq(classes.deleted, false), inArray(classes.id, uniqueClassIds)))
       .all().map(c => c.id));
-    const inserts = classIds.filter(cid => valid.has(cid)).map(classId => ({ classId, studentId }));
+    const inserts = uniqueClassIds.filter(cid => valid.has(cid)).map(classId => ({ classId, studentId }));
     if (inserts.length) drizzleDb.insert(classStudents).values(inserts).run();
   }
 
@@ -104,12 +106,13 @@ router.put('/:id', validateUpdateStudent, handle, (req, res) => {
 
   const { classIds } = req.body;
   if (classIds !== undefined) {
+    const uniqueClassIds = [...new Set(classIds)];
     const valid = new Set(drizzleDb.select({ id: classes.id }).from(classes)
-      .where(and(eq(classes.teacherId, req.teacherId), eq(classes.deleted, false), inArray(classes.id, classIds)))
+      .where(and(eq(classes.teacherId, req.teacherId), eq(classes.deleted, false), inArray(classes.id, uniqueClassIds)))
       .all().map(c => c.id));
     db.transaction(() => {
       drizzleDb.delete(classStudents).where(eq(classStudents.studentId, +id)).run();
-      const inserts = classIds.filter(cid => valid.has(cid)).map(classId => ({ classId, studentId: +id }));
+      const inserts = uniqueClassIds.filter(cid => valid.has(cid)).map(classId => ({ classId, studentId: +id }));
       if (inserts.length) drizzleDb.insert(classStudents).values(inserts).run();
     })();
   }

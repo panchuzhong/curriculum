@@ -327,6 +327,32 @@ describe('DELETE /api/schedules/batch', () => {
   });
 });
 
+describe('PUT /api/schedules/batch — uniqueness conflicts', () => {
+  it('returns 409 (not 500) when the batch would create duplicate (class,date,startTime)', async () => {
+    // Two schedules on the same date at different times
+    await request(app).post('/api/schedules').set(auth(token))
+      .send({ classId, date: '2026-05-04', startTime: '08:00', endTime: '09:00' });
+    await request(app).post('/api/schedules').set(auth(token))
+      .send({ classId, date: '2026-05-04', startTime: '10:00', endTime: '11:00' });
+
+    const res = await request(app).put('/api/schedules/batch').set(auth(token))
+      .send({
+        classId,
+        fromDate: '2026-05-04',
+        toDate: '2026-05-04',
+        updates: { startTime: '14:00', endTime: '15:00' },
+      });
+    expect(res.status).toBe(409);
+    expect(res.body.error).toContain('重复排课');
+
+    // Nothing was partially applied
+    const list = await request(app).get('/api/schedules')
+      .query({ start: '2026-05-04', end: '2026-05-04' }).set(auth(token));
+    expect(list.body).toHaveLength(2);
+    expect(list.body.map(s => s.startTime).sort()).toEqual(['08:00', '10:00']);
+  });
+});
+
 describe('GET /api/schedules/summary', () => {
   it('returns empty summary when no schedules', async () => {
     const res = await request(app).get('/api/schedules/summary?start=2026-05-01&end=2026-05-31').set(auth(token));
@@ -395,6 +421,37 @@ describe('GET /api/schedules/free-slots edge cases', () => {
   it('rejects when after >= before', async () => {
     const res = await request(app).get('/api/schedules/free-slots?date=2026-05-04&after=20:00&before=10:00').set(auth(token));
     expect(res.status).toBe(400);
+  });
+});
+
+describe('GET /api/schedules/free-slots parameter validation', () => {
+  it('rejects invalid after time format', async () => {
+    const res = await request(app).get('/api/schedules/free-slots?date=2026-05-04&after=not-a-time').set(auth(token));
+    expect(res.status).toBe(400);
+    expect(res.body.error).toContain('after');
+  });
+
+  it('rejects invalid before time format', async () => {
+    const res = await request(app).get('/api/schedules/free-slots?date=2026-05-04&before=99:00').set(auth(token));
+    expect(res.status).toBe(400);
+    expect(res.body.error).toContain('before');
+  });
+
+  it('rejects invalid date format', async () => {
+    const res = await request(app).get('/api/schedules/free-slots?date=not-a-date').set(auth(token));
+    expect(res.status).toBe(400);
+    expect(res.body.error).toContain('date');
+  });
+
+  it('rejects invalid range dates in multi-day mode', async () => {
+    const res = await request(app).get('/api/schedules/free-slots?start=2026-13-01&end=2026-05-05').set(auth(token));
+    expect(res.status).toBe(400);
+    expect(res.body.error).toContain('start');
+  });
+
+  it('still accepts valid parameters', async () => {
+    const res = await request(app).get('/api/schedules/free-slots?date=2026-05-04&after=08:00&before=22:00').set(auth(token));
+    expect(res.status).toBe(200);
   });
 });
 

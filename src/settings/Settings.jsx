@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { api } from '../api';
+import { api, setToken } from '../api';
 import PricingTierManager from '../pricing/PricingTierManager';
 import HolidayManager from './HolidayManager';
 import { getSubjectColor } from '../utils/colors';
@@ -217,7 +217,9 @@ function PasswordSection() {
       return;
     }
     try {
-      await api.changePassword({ oldPassword: form.oldPassword, newPassword: form.newPassword });
+      const res = await api.changePassword({ oldPassword: form.oldPassword, newPassword: form.newPassword });
+      // Password change revokes old tokens; keep the current session alive
+      if (res?.token) setToken(res.token);
       setSuccess('密码修改成功');
       setForm({ oldPassword: '', newPassword: '', confirmPassword: '' });
     } catch (err) {

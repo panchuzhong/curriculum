@@ -145,11 +145,49 @@ function ensureSeedData(db: Database.Database, teacherId: number) {
       ).run(classId, date, '09:00', '10:30', 90, 'E2E教室');
     }
   }
+
+  // Second seed class with schedules ONLY in the current week (never in May),
+  // used by the reports class-filter test: the unfiltered year view spans two
+  // months; filtering to this class must collapse the month chart to one.
+  const englishRow = db.prepare('SELECT id FROM classes WHERE teacher_id = ? AND name = ? AND deleted = 0')
+    .get(teacherId, 'E2E英语班') as { id: number } | undefined;
+  let englishId = englishRow?.id;
+  if (!englishId) {
+    const result = db.prepare(
+      `INSERT INTO classes
+       (teacher_id, name, grade, subject, student_count, unit_price, discount_amount, is_competition)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+    ).run(teacherId, 'E2E英语班', '高二', '英语', 1, 500, 0, 0);
+    englishId = Number(result.lastInsertRowid);
+  }
+  const englishPricing = db.prepare('SELECT COUNT(*) AS count FROM class_pricing WHERE class_id = ?')
+    .get(englishId) as { count: number };
+  if (englishPricing.count === 0) {
+    db.prepare('INSERT INTO class_pricing (class_id, student_count, unit_price, discount_amount, effective_from) VALUES (?, ?, ?, ?, ?)')
+      .run(englishId, 1, 500, 0, '2026-01-01');
+  }
+  const englishDate = toDateString(addDays(monday, 1));
+  const englishSchedule = db.prepare(
+    'SELECT id FROM schedules WHERE class_id = ? AND date = ? AND start_time = ?'
+  ).get(englishId, englishDate, '14:00');
+  if (!englishSchedule) {
+    db.prepare('INSERT INTO schedules (class_id, date, start_time, end_time, duration_billing, location_name) VALUES (?, ?, ?, ?, ?, ?)')
+      .run(englishId, englishDate, '14:00', '15:30', 90, 'E2E教室');
+  }
 }
 
 function getTestToken() {
   const teacherId = ensureTestUser();
-  return jwt.sign({ teacherId }, getJwtSecret(), { expiresIn: '7d' });
+  // Password changes bump pwd_version and revoke stale tokens, so the claim
+  // must reflect the teacher's current version (legacy tokens are version 0).
+  const db = new Database(E2E_DB_PATH);
+  try {
+    const row = db.prepare('SELECT pwd_version FROM teachers WHERE id = ?').get(teacherId) as { pwd_version?: number } | undefined;
+    const pwdVersion = row?.pwd_version ?? 0;
+    return jwt.sign({ teacherId, pwdVersion }, getJwtSecret(), { expiresIn: '7d' });
+  } finally {
+    db.close();
+  }
 }
 
 export const test = base.extend<{ authenticatedPage: Page }>({

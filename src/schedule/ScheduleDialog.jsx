@@ -209,7 +209,7 @@ export default function ScheduleDialog({ date, startTime, schedule, onClose, onS
                 placeholder="留空则使用班级默认地点" />
             </div>
             <div className="flex gap-2 mt-4">
-              <button onClick={handleSave} disabled={saving}
+              <button onClick={handleSave} disabled={saving || !form.classId}
                 className="flex-1 p-2 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50">{saving ? '保存中...' : '保存'}</button>
               {schedule && (
                 <button onClick={handleDelete} disabled={saving}

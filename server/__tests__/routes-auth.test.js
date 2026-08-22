@@ -109,6 +109,35 @@ describe('PUT /api/auth/password', () => {
     expect(newLogin.status).toBe(200);
   });
 
+  it('returns a fresh token and revokes the pre-change token', async () => {
+    const { token: oldToken } = await makeUser(drizzleDb);
+    const res = await request(app).put('/api/auth/password').set(auth(oldToken))
+      .send({ oldPassword: 'pass123', newPassword: 'newpass123' });
+    expect(res.status).toBe(200);
+    expect(res.body.ok).toBe(true);
+    expect(res.body.token).toBeDefined();
+    expect(res.body.token).not.toBe(oldToken);
+
+    // Old token is rejected everywhere (revoked by pwd_version bump)
+    const oldProfile = await request(app).get('/api/auth/profile').set(auth(oldToken));
+    expect(oldProfile.status).toBe(401);
+
+    // Fresh token keeps the session alive
+    const newProfile = await request(app).get('/api/auth/profile').set(auth(res.body.token));
+    expect(newProfile.status).toBe(200);
+  });
+
+  it('login after password change issues a versioned token that stays valid', async () => {
+    const { token } = await makeUser(drizzleDb);
+    await request(app).put('/api/auth/password').set(auth(token))
+      .send({ oldPassword: 'pass123', newPassword: 'newpass123' });
+    const login = await request(app).post('/api/auth/login')
+      .send({ username: 'testuser', password: 'newpass123' });
+    expect(login.status).toBe(200);
+    const profile = await request(app).get('/api/auth/profile').set(auth(login.body.token));
+    expect(profile.status).toBe(200);
+  });
+
   it('rejects wrong old password', async () => {
     const { token } = await makeUser(drizzleDb);
     const res = await request(app).put('/api/auth/password').set(auth(token))

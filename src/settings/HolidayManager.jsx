@@ -4,7 +4,7 @@ import { refreshHolidays } from '../utils/holidays';
 import { useToast } from '../components/ToastProvider';
 
 // Built-in holiday data for quick import
-const BUILT_IN_HOLIDAYS = {
+export const BUILT_IN_HOLIDAYS = {
   '2025': [
     { date: '2025-01-01', type: 'holiday', name: '元旦' },
     { date: '2025-01-28', type: 'holiday', name: '春节' },
