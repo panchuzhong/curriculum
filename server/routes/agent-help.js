@@ -275,7 +275,7 @@ router.get('/help', authMiddleware, (req, res) => {
       'durationBilling 默认由 endTime - startTime 自动计算，跨午夜时自动处理；排课时长须 >0 且 <24 小时，开始时间等于结束时间或跨度满 24 小时返回 400 {error:"排课时长须大于 0 且小于 24 小时"}',
       '法定节假日数据可通过 POST /api/holidays/batch 批量导入，批量排课（学期模式）自动跳过',
       '批量排课学期模式跳过假期的优先级:用户 workday 调休 > 用户 holiday > 内置法定假期。即:同一日期若同时存在内置 holiday + 用户 workday,则视为上班日(可排课);用户加 holiday 在内置 workday 上则视为节假日(跳过)。内置假期按年回退:教师一旦在某年有任何节假日记录,该年的内置数据即被忽略(与前端课表显示一致),删除内置节假日也会生效。',
-      '内置法定假期数据覆盖 2025-2027 三年;2028+ 年份需通过 POST /api/holidays/batch 自行导入或在 GET /api/holidays 中 type=holiday 添加,否则批量排课不会自动跳过',
+      '内置法定假期数据仅覆盖国务院已发布的年份(当前 2025-2026);其余年份需通过 POST /api/holidays/batch 自行导入或在 GET /api/holidays 中 type=holiday 添加,否则批量排课不会自动跳过。学期模式排到无节假日数据的年份时,响应附加 holidayDataMissing(年份数组)与 hint 提示,便于调用方察觉',
       '批量端点 dates/items 数组长度上限 365 条,超出返回 400',
       '周课表图片导出范围最多 31 天；生成失败时返回 JSON {error}（不含内部 detail）；rowH 范围 16-60，默认 40；班级名/地点名等用户输入在生成 HTML 时统一 HTML 转义,无 XSS 风险',
       'PUT /api/schedules/batch 只允许修改时间和地点字段，classId/date 等核心字段不可批量篡改',

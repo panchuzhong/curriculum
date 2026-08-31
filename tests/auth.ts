@@ -125,12 +125,23 @@ function ensureSeedData(db: Database.Database, teacherId: number) {
     db.prepare('INSERT INTO class_students (class_id, student_id) VALUES (?, ?)').run(classId, studentId);
   }
 
+  // Anchor the seeded semester to the run date, and re-anchor it on every run.
+  // A fixed range silently drifts into the past; once every candidate schedule
+  // falls outside it, the delete-preview test still passes but stops exercising
+  // semester filtering at all. Starting at day(-22) keeps the day(-25) preview
+  // schedule outside the semester so the straddle branch stays live.
+  const today = new Date();
+  const semesterStart = toDateString(addDays(today, -22));
+  const semesterEnd = toDateString(addDays(today, 120));
   const semester = db.prepare('SELECT id FROM semesters WHERE teacher_id = ? AND name = ?')
-    .get(teacherId, 'E2E春季学期');
-  if (!semester) {
+    .get(teacherId, 'E2E春季学期') as { id: number } | undefined;
+  if (semester) {
+    db.prepare('UPDATE semesters SET start_date = ?, end_date = ? WHERE id = ?')
+      .run(semesterStart, semesterEnd, semester.id);
+  } else {
     db.prepare(
       'INSERT INTO semesters (teacher_id, name, type, start_date, end_date) VALUES (?, ?, ?, ?, ?)'
-    ).run(teacherId, 'E2E春季学期', 'spring', '2026-02-23', '2026-07-15');
+    ).run(teacherId, 'E2E春季学期', 'spring', semesterStart, semesterEnd);
   }
 
   const monday = getCurrentMonday();

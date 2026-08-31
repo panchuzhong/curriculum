@@ -3,6 +3,7 @@ import { todayStr, fmt } from '../utils/date';
 import { api } from '../api';
 import { useToast } from '../components/ToastProvider';
 import { useDialogFocusTrap } from '../hooks/useDialogFocusTrap';
+import { useBackdropClose } from '../hooks/useBackdropClose';
 
 const WEEKDAY_OPTIONS = [
   { value: 1, label: '周一' },
@@ -14,10 +15,26 @@ const WEEKDAY_OPTIONS = [
   { value: 0, label: '周日' },
 ];
 
+// Preselect the semester the teacher is most likely to schedule into: the one
+// in progress, else the one starting soonest. Returns null when every semester
+// has ended, so the dialog keeps asking rather than defaulting to a dead range.
+// The server rejects overlapping semesters (409 on POST and PUT), so at most
+// one can be in progress. GET /api/semesters has no ORDER BY, so "soonest"
+// must compare dates instead of taking the first element.
+export function pickDefaultSemesterId(semesters, today) {
+  const ongoing = semesters.find(s => s.startDate <= today && today <= s.endDate);
+  if (ongoing) return ongoing.id;
+  const upcoming = semesters
+    .filter(s => s.startDate > today)
+    .sort((a, b) => a.startDate.localeCompare(b.startDate))[0];
+  return upcoming ? upcoming.id : null;
+}
+
 export default function BatchScheduleDialog({ onClose, onSaved }) {
   const toast = useToast();
   const dialogRef = useRef(null);
   useDialogFocusTrap(dialogRef);
+  const backdrop = useBackdropClose(onClose);
 
   const [classes, setClasses] = useState([]);
   const [semesters, setSemesters] = useState([]);
@@ -62,7 +79,12 @@ export default function BatchScheduleDialog({ onClose, onSaved }) {
 
   useEffect(() => {
     api.getClasses().then(setClasses).catch(e => toast(e.message || '加载班级失败'));
-    api.getSemesters().then(setSemesters).catch(e => toast(e.message || '加载学期失败'));
+    api.getSemesters().then(list => {
+      setSemesters(list);
+      const defaultId = pickDefaultSemesterId(list, todayStr());
+      // Fill only an untouched field, so a choice made while loading survives.
+      if (defaultId != null) setForm(f => (f.semesterId ? f : { ...f, semesterId: String(defaultId) }));
+    }).catch(e => toast(e.message || '加载学期失败'));
   }, []);
 
   const selectedSemester = semesters.find(s => s.id === +form.semesterId);
@@ -159,7 +181,9 @@ export default function BatchScheduleDialog({ onClose, onSaved }) {
   const sel = 'w-full p-2 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded';
 
   return (
-    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-3" onClick={onClose} role="dialog" aria-modal="true" aria-label="批量排课">
+    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-3"
+      {...backdrop}
+      role="dialog" aria-modal="true" aria-label="批量排课">
       <div ref={dialogRef} tabIndex={-1} className="modal-enter bg-white dark:bg-gray-800 rounded-2xl p-4 sm:p-6 w-full max-w-[500px] max-h-[90vh] overflow-auto thin-scroll shadow-xl" onClick={e => e.stopPropagation()}>
         <div className="flex items-center justify-between mb-4">
           <h3 className="text-lg font-semibold">批量操作</h3>

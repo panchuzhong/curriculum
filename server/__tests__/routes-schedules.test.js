@@ -4,7 +4,7 @@ import { eq } from 'drizzle-orm';
 import { setupApp, makeUser, auth } from './route-helpers.js';
 import { clearSemesterCache } from '../services/schedule-helpers.js';
 import { clearReportCache } from '../services/report-cache.js';
-vi.mock('../services/holidays.js', () => ({ isHoliday: () => false, getHolidayName: () => '' }));
+vi.mock('../services/holidays.js', () => ({ isHoliday: () => false, getHolidayName: () => '', getHolidaysForYear: () => ['01-01'] }));
 
 let app, drizzleDb, token, classId, teacherId;
 
@@ -794,5 +794,55 @@ describe('edge cases', () => {
       .send({ locationName: null, locationLat: null, locationLng: null });
     expect(res.status).toBe(200);
     expect(res.body).toMatchObject({ locationName: null, locationLat: null, locationLng: null });
+  });
+});
+
+describe('PUT /api/schedules/:id location clearing', () => {
+  it('clears stale coordinates when the location name is removed', async () => {
+    const created = await request(app).post('/api/schedules').set(auth(token))
+      .send({ classId, date: '2026-05-04', startTime: '09:00', endTime: '10:30',
+              locationName: '一中', locationLat: 39.9, locationLng: 116.4 });
+    expect(created.status).toBe(200);
+
+    const res = await request(app).put(`/api/schedules/${created.body.id}`).set(auth(token))
+      .send({ locationName: null });
+    expect(res.status).toBe(200);
+    // Keeping 39.9/116.4 would leave the row pointing at the place just removed
+    expect(res.body.locationName).toBeNull();
+    expect(res.body.locationLat).toBeNull();
+    expect(res.body.locationLng).toBeNull();
+  });
+
+  it('keeps explicitly supplied coordinates even when the name is cleared', async () => {
+    const created = await request(app).post('/api/schedules').set(auth(token))
+      .send({ classId, date: '2026-05-05', startTime: '09:00', endTime: '10:30',
+              locationName: '一中', locationLat: 39.9, locationLng: 116.4 });
+
+    const res = await request(app).put(`/api/schedules/${created.body.id}`).set(auth(token))
+      .send({ locationName: null, locationLat: 31.2, locationLng: 121.5 });
+    expect(res.status).toBe(200);
+    expect(res.body.locationLat).toBe(31.2);
+    expect(res.body.locationLng).toBe(121.5);
+  });
+});
+
+describe('GET /api/schedules/free-slots minDuration compatibility', () => {
+  it('treats an empty minDuration the same as omitting it', async () => {
+    const omitted = await request(app).get('/api/schedules/free-slots?date=2026-05-04').set(auth(token));
+    // A client that always appends &minDuration= must not get a 400
+    const blank = await request(app).get('/api/schedules/free-slots?date=2026-05-04&minDuration=').set(auth(token));
+    expect(blank.status).toBe(200);
+    expect(blank.body).toEqual(omitted.body);
+  });
+
+  it('still rejects a non-numeric minDuration', async () => {
+    const res = await request(app).get('/api/schedules/free-slots?date=2026-05-04&minDuration=abc').set(auth(token));
+    expect(res.status).toBe(400);
+    expect(res.body.error).toContain('minDuration');
+  });
+
+  it('still rejects a negative minDuration', async () => {
+    const res = await request(app).get('/api/schedules/free-slots?date=2026-05-04&minDuration=-5').set(auth(token));
+    expect(res.status).toBe(400);
   });
 });

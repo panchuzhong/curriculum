@@ -247,6 +247,48 @@ test.describe('批量删课预览', () => {
   });
 });
 
+test.describe('批量排课学期预选', () => {
+  test.use({ baseURL: 'http://127.0.0.1:5174' });
+
+  test('默认选中进行中的学期', async ({ authenticatedPage: page }) => {
+    // 种子里的「E2E春季学期」按运行日期锚定，始终覆盖今天。
+    // 单元测试只覆盖 pickDefaultSemesterId 的选取规则，这里覆盖它到下拉框的接线。
+    await page.goto('/');
+    await page.getByRole('button', { name: '批量操作' }).click();
+    const dialog = page.getByRole('dialog', { name: '批量排课' });
+    await expect(dialog).toBeVisible();
+    // 默认状态为「批量排课 + 学期模式」，select 依次为：班级、学期、每周几
+    const semesterSelect = dialog.locator('select').nth(1);
+    await expect(semesterSelect.locator('option:checked')).toHaveText(/E2E春季学期/);
+  });
+});
+
+test.describe('批量排课弹窗防误关', () => {
+  test.use({ baseURL: 'http://127.0.0.1:5174' });
+
+  test('在日期列表内起手拖选、松手落在遮罩上时不应关闭弹窗', async ({ authenticatedPage: page }) => {
+    await page.goto('/');
+    await page.getByRole('button', { name: '批量操作' }).click();
+    const dialog = page.getByRole('dialog', { name: '批量排课' });
+    await expect(dialog).toBeVisible();
+    await dialog.getByRole('button', { name: '指定日期' }).click();
+
+    const textarea = dialog.locator('textarea');
+    await textarea.fill('2026-09-01, 2026-09-08, 2026-09-15');
+    // 在 textarea 内按下、拖到面板外的遮罩上松开：浏览器会把 click 派发到
+    // 两者的最近公共祖先（遮罩），仅凭 e.target === e.currentTarget 无法区分
+    // 这种误触与真正的点击遮罩关闭。
+    const box = (await textarea.boundingBox())!;
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(5, 5);
+    await page.mouse.up();
+
+    await expect(dialog).toBeVisible();
+    await expect(textarea).toHaveValue('2026-09-01, 2026-09-08, 2026-09-15');
+  });
+});
+
 test.describe('登录后的节假日覆盖', () => {
   test('无需刷新页面即可加载数据库节假日', async ({ page }) => {
     const teacherId = ensureTestUser();

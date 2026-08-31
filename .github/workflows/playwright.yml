@@ -20,7 +20,7 @@ jobs:
       run: npx playwright install --with-deps
     - name: Run Playwright tests
       env:
-        JWT_SECRET: test-jwt-secret-for-ci-only
+        JWT_SECRET: test-jwt-secret-for-ci-only-not-a-real-secret
         PORT: 8443
         HOST: 127.0.0.1
         DB_PATH: ./data/e2e.db

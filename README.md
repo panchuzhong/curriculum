@@ -45,7 +45,7 @@
 ### 设置
 - 学科管理（自定义学科及顺序）
 - 定价阶梯管理
-- 法定节假日管理（内置 2025-2027 数据，可手动修改）
+- 法定节假日管理（内置 2025-2026 数据，仅收录国务院已发布的年份，可手动修改）
 - API Key 管理（供 AI Agent 使用）
 - 修改密码
 
@@ -192,7 +192,7 @@ sudo systemctl start curriculum-scheduler
 
 - **单资源 POST/PUT**：统一返回完整资源对象(含 `id` 与所有派生字段,如 classes 的 `isDeleted`、students 的 `classIds`、schedules 的 `class` 与 `warnings`)
 - **单资源 DELETE**：返回 `{ok: true}`
-- **批量端点**(`POST/PUT/DELETE /api/*/batch`、`POST /api/holidays/batch`):返回 `{count, ids?, ...}`,跨学期过滤时附加 `semesterFiltered` 与 `hint`
+- **批量端点**(`POST/PUT/DELETE /api/*/batch`、`POST /api/holidays/batch`):返回 `{count, ids?, ...}`,跨学期过滤时附加 `semesterFiltered` 与 `hint`;学期模式排到无节假日数据的年份时附加 `holidayDataMissing` 与 `hint`
 - **错误**:统一 HTTP 状态码 + `{error: "..."}`,前端只看状态码,不依赖 `ok` 字段
 
 ### 端点一览
@@ -339,7 +339,7 @@ POST /api/schedules/batch
 }
 ```
 
-两种模式均支持可选参数：`durationBilling` 手动指定计费时长（分钟，默认为 endTime-startTime），`preview: true` 仅返回 `{count, dates}` 预览不实际创建。开始时间使用 `00:00-23:59`；结束时间推荐使用普通钟表时间 `00:00-23:59`，`endTime < startTime` 表示跨午夜。接口兼容 `24:00-47:59` 形式的结束时间，保存时会归一为普通钟表时间。排课时长须大于 0 且小于 24 小时（开始时间等于结束时间、或跨度满 24 小时会被拒绝，返回 400 `排课时长须大于 0 且小于 24 小时`）。日期模式下若日期跨越学期边界（部分在学期内、部分在学期外）默认返回 400，可传 `crossSemester: true` 绕过。
+两种模式均支持可选参数：`durationBilling` 手动指定计费时长（分钟，默认为 endTime-startTime），`preview: true` 仅返回 `{count, dates}` 预览不实际创建。学期模式仅对有节假日数据的年份跳过节假日；若排课日期落在既无内置数据、也无自定义记录的年份，响应会附加 `holidayDataMissing`（年份数组）与 `hint`，提示先导入该年份的节假日。开始时间使用 `00:00-23:59`；结束时间推荐使用普通钟表时间 `00:00-23:59`，`endTime < startTime` 表示跨午夜。接口兼容 `24:00-47:59` 形式的结束时间，保存时会归一为普通钟表时间。排课时长须大于 0 且小于 24 小时（开始时间等于结束时间、或跨度满 24 小时会被拒绝，返回 400 `排课时长须大于 0 且小于 24 小时`）。日期模式下若日期跨越学期边界（部分在学期内、部分在学期外）默认返回 400，可传 `crossSemester: true` 绕过。
 
 ### 批量删课
 
@@ -471,7 +471,7 @@ new_curriculum/
 │   ├── __tests__/                # vitest 集成测试（supertest HTTP 测试 + 单元测试）
 │   └── services/
 │       ├── holidays.js           # 节假日数据与查询
-│       ├── holidays-data.js      # 内置节假日数据（2025-2027）
+│       ├── holidays-data.js      # 内置节假日数据（2025-2026，仅已发布年份）
 │       ├── browser.js            # Puppeteer 浏览器单例（复用）
 │       ├── image-gen.js          # Puppeteer 周课表 PNG 渲染
 │       ├── image-gen-monthly.js  # Puppeteer 月课表 PNG 渲染

@@ -1,6 +1,7 @@
 import { useState, useRef } from 'react';
 import { todayStr, getMonday, addDays, parseDateStr } from '../utils/date';
 import { useDialogFocusTrap } from '../hooks/useDialogFocusTrap';
+import { useBackdropClose } from '../hooks/useBackdropClose';
 
 const MONTHS = [
   { value: 0, label: '1月' }, { value: 1, label: '2月' }, { value: 2, label: '3月' },
@@ -20,6 +21,7 @@ function monthDiff(sy, sm, ey, em) {
 export default function ExportDialog({ view = 'week', defaultStart, defaultEnd, defaultYear, defaultMonth, onClose, onExportPNG, onExportCSV }) {
   const dialogRef = useRef(null);
   useDialogFocusTrap(dialogRef);
+  const backdrop = useBackdropClose(onClose);
 
   const today = todayStr();
   const now = new Date();
@@ -105,7 +107,9 @@ export default function ExportDialog({ view = 'week', defaultStart, defaultEnd, 
   const nYears = view === 'year' ? (yEndYear - yStartYear + 1) : 0;
 
   return (
-    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-3" onClick={onClose} role="dialog" aria-modal="true" aria-label="导出课表">
+    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-3"
+      {...backdrop}
+      role="dialog" aria-modal="true" aria-label="导出课表">
       <div ref={dialogRef} tabIndex={-1} className="modal-enter bg-white dark:bg-gray-800 rounded-2xl p-4 sm:p-6 w-full max-w-[480px] max-h-[90vh] overflow-auto thin-scroll shadow-xl" onClick={e => e.stopPropagation()}>
         <div className="flex items-center justify-between mb-4">
           <h3 className="text-lg font-semibold">导出课表</h3>

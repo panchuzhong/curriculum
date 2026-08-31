@@ -3,7 +3,7 @@ import { drizzleDb, db } from '../db/index.js';
 import { schedules, classes, semesters, holidays, classStudents, classPricing } from '../db/schema.js';
 import { eq, and, gte, lte, inArray, sql, ne } from 'drizzle-orm';
 import { authMiddleware } from '../middleware/auth.js';
-import { isHoliday } from '../services/holidays.js';
+import { isHoliday, getHolidaysForYear } from '../services/holidays.js';
 import handle from '../validations/handle.js';
 import { validateCreateSchedule, validateBatchCreate, validateBatchUpdate, validateBatchDelete, validateUpdateSchedule } from '../validations/schedules.js';
 import { isValidDate, isValidScheduleEndTime, isValidScheduleSpan, isValidTime, normalizeScheduleEndTime } from '../validations/dates.js';
@@ -182,6 +182,8 @@ router.post('/batch', validateBatchCreate, handle, (req, res) => {
 
   const billing = calcDurationBilling(startTime, storedEndTime, durationBilling);
   let targetDates = [];
+  // Years the semester spans that have no holiday data at all (see below).
+  let uncoveredYears = [];
 
   if (manualDates && manualDates.length > 0) {
     targetDates = manualDates;
@@ -226,6 +228,14 @@ router.post('/batch', validateBatchCreate, handle, (req, res) => {
       }
       current.setDate(current.getDate() + 1);
     }
+
+    // Semester mode advertises "skips holidays automatically". For a year with
+    // neither built-in nor teacher-defined holiday data no skipping happened at
+    // all, so the caller would silently get classes booked on 国庆. Report it
+    // instead of staying quiet; built-in data only covers published years.
+    uncoveredYears = [...new Set(targetDates.map(d => d.slice(0, 4)))]
+      .filter(y => !dbHolidayYears.has(y) && getHolidaysForYear(y).length === 0)
+      .sort();
   } else {
     return res.status(400).json({ error: 'Provide semesterId+weekday or dates[]' });
   }
@@ -234,8 +244,13 @@ router.post('/batch', validateBatchCreate, handle, (req, res) => {
     return res.status(400).json({ error: 'No valid dates to schedule' });
   }
 
+  const holidayWarning = uncoveredYears.length === 0 ? {} : {
+    holidayDataMissing: uncoveredYears,
+    hint: `${uncoveredYears.join('、')} 年没有内置或自定义的法定节假日数据，这些年份的排课未跳过节假日，请先通过 POST /api/holidays/batch 导入`,
+  };
+
   if (preview) {
-    return res.json({ count: targetDates.length, dates: targetDates });
+    return res.json({ count: targetDates.length, dates: targetDates, ...holidayWarning });
   }
 
   const allValues = targetDates.map(date => ({
@@ -263,7 +278,7 @@ router.post('/batch', validateBatchCreate, handle, (req, res) => {
   }
   logAudit({ teacherId: req.teacherId, action: 'BATCH_CREATE', tableName: 'schedules', after: { count: idList.length, ids: idList } });
   clearReportCache(req.teacherId);
-  res.json({ count: idList.length, ids: idList });
+  res.json({ count: idList.length, ids: idList, ...holidayWarning });
 });
 
 router.put('/batch', validateBatchUpdate, handle, (req, res) => {
@@ -503,6 +518,12 @@ router.put('/:id', validateUpdateSchedule, handle, (req, res) => {
   if (Object.keys(updates).length === 0) return res.status(400).json({ error: 'No valid fields' });
   if (updates.locationLat != null) updates.locationLat = Number(updates.locationLat);
   if (updates.locationLng != null) updates.locationLng = Number(updates.locationLng);
+  // Coordinates without a name point at a place the caller just removed, so
+  // clear them alongside it unless the caller supplied new ones explicitly.
+  if ('locationName' in updates && updates.locationName == null) {
+    if (!('locationLat' in updates)) updates.locationLat = null;
+    if (!('locationLng' in updates)) updates.locationLng = null;
+  }
 
   // Validate new classId belongs to this teacher and is not deleted
   if (updates.classId !== undefined) {
@@ -781,10 +802,13 @@ router.get('/free-slots', (req, res) => {
   if (dStart >= dEnd) {
     return res.status(400).json({ error: 'after/dayStart 须早于 before/dayEnd（不支持跨午夜查询）' });
   }
-  if (minDuration != null && (String(minDuration).trim() === '' || !Number.isFinite(+minDuration) || +minDuration < 0)) {
+  // An empty value means "no minimum", the same as omitting the param. Clients
+  // that always append &minDuration= must not get a 400 for leaving it blank.
+  const rawMinDuration = minDuration == null || String(minDuration).trim() === '' ? null : minDuration;
+  if (rawMinDuration != null && (!Number.isFinite(+rawMinDuration) || +rawMinDuration < 0)) {
     return res.status(400).json({ error: 'minDuration 须为非负数字' });
   }
-  const minDur = minDuration == null ? 0 : +minDuration;
+  const minDur = rawMinDuration == null ? 0 : +rawMinDuration;
 
   function filterSlots(slots) {
     if (!minDur) return slots;

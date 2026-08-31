@@ -62,6 +62,45 @@ describe('batch create holiday precedence (per-year DB override)', () => {
       });
     expect(res.status).toBe(200);
     expect(res.body.dates).toEqual(['2027-10-01']);
+    // Not skipping is correct (the 2027 calendar is unpublished), but staying
+    // silent is not: semester mode advertises automatic holiday skipping, so a
+    // year with no data at all has to be reported.
+    expect(res.body.holidayDataMissing).toEqual(['2027']);
+    expect(res.body.hint).toContain('2027');
+  });
+
+  it('reports no missing-holiday-data warning for a covered year', async () => {
+    const { semesters } = await import('../db/schema.js');
+    const weekday = new Date('2026-10-08T00:00:00').getDay();
+    const sem = drizzleDb.insert(semesters).values({
+      teacherId, name: '2026秋', type: 'fall', startDate: '2026-10-08', endDate: '2026-10-09',
+    }).run();
+
+    const res = await request(app).post('/api/schedules/batch').set(auth(token))
+      .send({
+        classId, semesterId: Number(sem.lastInsertRowid), weekday,
+        startTime: '08:00', endTime: '09:00', preview: true,
+      });
+    expect(res.status).toBe(200);
+    expect(res.body.holidayDataMissing).toBeUndefined();
+    expect(res.body.hint).toBeUndefined();
+  });
+
+  it('treats a teacher-defined record as coverage for an otherwise unknown year', async () => {
+    const { holidays, semesters } = await import('../db/schema.js');
+    drizzleDb.insert(holidays).values({ teacherId, date: '2027-10-01', type: 'holiday', name: '国庆' }).run();
+    const weekday = new Date('2027-10-01T00:00:00').getDay();
+    const sem = drizzleDb.insert(semesters).values({
+      teacherId, name: '国庆学期', type: 'fall', startDate: '2027-09-30', endDate: '2027-10-02',
+    }).run();
+
+    const res = await request(app).post('/api/schedules/batch').set(auth(token))
+      .send({
+        classId, semesterId: Number(sem.lastInsertRowid), weekday,
+        startTime: '08:00', endTime: '09:00', preview: true,
+      });
+    expect(res.status).toBe(400); // 唯一候选日被自定义节假日跳过，无可排日期
+    expect(res.body.holidayDataMissing).toBeUndefined();
   });
 
   it('still honors an explicit teacher workday overriding a built-in holiday', async () => {

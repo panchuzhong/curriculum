@@ -3,7 +3,7 @@ import request from 'supertest';
 import { eq, and } from 'drizzle-orm';
 import { setupApp, makeUser, auth } from './route-helpers.js';
 import { clearSemesterCache, toLocalDateStr } from '../services/schedule-helpers.js';
-vi.mock('../services/holidays.js', () => ({ isHoliday: () => false, getHolidayName: () => '' }));
+vi.mock('../services/holidays.js', () => ({ isHoliday: () => false, getHolidayName: () => '', getHolidaysForYear: () => ['01-01'] }));
 
 // YYYY-MM-DD offset from today (local), matching the server's
 // toLocalDateStr(new Date()) "today" semantics — keeps date-relative tests stable.
