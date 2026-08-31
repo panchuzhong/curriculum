@@ -70,7 +70,7 @@ export default function ScheduleDialog({ date, startTime, schedule, onClose, onS
         startTime: form.startTime,
         endTime: form.endTime,
         durationBilling: form.durationBilling !== '' ? +form.durationBilling : undefined,
-        locationName: form.locationName || undefined,
+        locationName: schedule ? (form.locationName || null) : (form.locationName || undefined),
       };
       if (schedule) {
         await api.updateSchedule(schedule.id, data);
@@ -143,7 +143,9 @@ export default function ScheduleDialog({ date, startTime, schedule, onClose, onS
   }
 
   return (
-    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-3" onClick={onClose} role="dialog" aria-modal="true" aria-label="排课编辑">
+    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-3"
+      onClick={e => { if (e.target === e.currentTarget) onClose(); }}
+      role="dialog" aria-modal="true" aria-label="排课编辑">
       <div ref={dialogRef} tabIndex={-1} className="modal-enter bg-white dark:bg-gray-800 rounded-2xl p-4 sm:p-6 w-full max-w-[480px] max-h-[90vh] overflow-auto thin-scroll shadow-xl" onClick={e => e.stopPropagation()}>
         <div className="flex items-start justify-between mb-5">
           <div>

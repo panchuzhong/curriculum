@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import bcrypt from 'bcryptjs';
-import { v4 as uuidv4 } from 'uuid';
+import { randomUUID } from 'node:crypto';
 import { readFileSync, writeFileSync } from 'fs';
 import { resolve, dirname } from 'path';
 import { fileURLToPath } from 'url';
@@ -43,7 +43,7 @@ router.post('/register', authLimiter, validateRegister, handle, async (req, res)
   if (existing) return res.status(409).json({ error: 'Username taken' });
 
   const passwordHash = await bcrypt.hash(password, 12);
-  const apiKey = uuidv4();
+  const apiKey = randomUUID();
   const subjects = JSON.stringify(DEFAULT_SUBJECTS);
   let result;
   try {
@@ -98,7 +98,7 @@ router.put('/subjects', authMiddleware, validateUpdateSubjects, handle, (req, re
 });
 
 router.put('/api-key', authMiddleware, authLimiter, (req, res) => {
-  const newKey = uuidv4();
+  const newKey = randomUUID();
   drizzleDb.update(teachers).set({ apiKey: newKey }).where(eq(teachers.id, req.teacherId)).run();
   logAudit({ teacherId: req.teacherId, action: 'UPDATE', tableName: 'teachers', recordId: req.teacherId, after: { apiKeyRotated: true } });
   res.json({ apiKey: newKey });

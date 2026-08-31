@@ -47,6 +47,17 @@ describe('POST /api/classes', () => {
     expect(res.status).toBe(200);
     expect(res.body.unitPrice).toBe(100);
   });
+
+  it('stores blank optional coordinates as null', async () => {
+    const res = await request(app).post('/api/classes').set(auth(token))
+      .send({
+        name: '线上班', grade: '高一', subject: '数学', studentCount: 5,
+        defaultLocationLat: '', defaultLocationLng: '',
+      });
+    expect(res.status).toBe(200);
+    expect(res.body.defaultLocationLat).toBeNull();
+    expect(res.body.defaultLocationLng).toBeNull();
+  });
 });
 
 describe('GET /api/classes', () => {
@@ -125,6 +136,19 @@ describe('PUT /api/classes/:id', () => {
     expect(res.status).toBe(200);
     expect(res.body.unitPrice).toBe(0);
   });
+
+  it('clears optional coordinates to null', async () => {
+    const { body: { id } } = await request(app).post('/api/classes').set(auth(token))
+      .send({
+        name: '线下班', grade: '高一', subject: '数学', studentCount: 5,
+        defaultLocationLat: 31.2, defaultLocationLng: 121.4,
+      });
+    const res = await request(app).put(`/api/classes/${id}`).set(auth(token))
+      .send({ defaultLocationLat: '', defaultLocationLng: '' });
+    expect(res.status).toBe(200);
+    expect(res.body.defaultLocationLat).toBeNull();
+    expect(res.body.defaultLocationLng).toBeNull();
+  });
 });
 
 describe('POST /api/classes/:classId/students validation', () => {
@@ -133,6 +157,14 @@ describe('POST /api/classes/:classId/students validation', () => {
       .send({ name: '班', grade: '高一', subject: '数学', studentCount: 5 });
     const res = await request(app).post(`/api/classes/${classId}/students`).set(auth(token))
       .send({ name: '张三', phone: '123' });
+    expect(res.status).toBe(400);
+  });
+
+  it('rejects a calendar-impossible birthDate in the sub-router', async () => {
+    const { body: { id: classId } } = await request(app).post('/api/classes').set(auth(token))
+      .send({ name: '班', grade: '高一', subject: '数学', studentCount: 5 });
+    const res = await request(app).post(`/api/classes/${classId}/students`).set(auth(token))
+      .send({ name: '张三', birthDate: '2026-02-30' });
     expect(res.status).toBe(400);
   });
 });

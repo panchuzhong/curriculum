@@ -2,7 +2,7 @@ import { useState, useEffect, useLayoutEffect, useRef, useContext, useCallback, 
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { api } from '../api';
 import { getClassColor, getTextColor, DarkContext } from '../utils/colors';
-import { isHoliday, getHolidayName, isWorkday } from '../utils/holidays';
+import { isHoliday, getHolidayName, isWorkday, subscribeHolidays } from '../utils/holidays';
 import { todayStr, getMonday } from '../utils/date';
 import { toMin, findConflictGroups, assignColumns } from '../utils/schedule';
 import { setViewDate } from '../utils/viewDate';
@@ -36,9 +36,12 @@ export default function MonthlySchedule() {
   const [month, setMonth] = useState(searchParams.get('month') != null ? +searchParams.get('month') : now.getMonth());
   const [schedules, setSchedules] = useState([]);
   const [animKey, setAnimKey] = useState(0);
+  const [, setHolidayRevision] = useState(0);
   const animDir = useRef(1);
   const containerRef = useRef(null);
   const [showBatch, setShowBatch] = useState(false);
+
+  useEffect(() => subscribeHolidays(() => setHolidayRevision(v => v + 1)), []);
 
   const exportHook = useScheduleExport({ view: 'monthly' });
 

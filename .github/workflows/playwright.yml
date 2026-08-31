@@ -1,10 +1,10 @@
 name: Playwright Tests
 on:
-  workflow_dispatch:  # 只允许手动触发
-#  push:
-#    branches: [ main, master ]
-#  pull_request:
-#    branches: [ main, master ]
+  workflow_dispatch:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
 jobs:
   test:
     timeout-minutes: 60

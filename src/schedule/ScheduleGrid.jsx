@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
 import { todayStr, addDays } from '../utils/date';
-import { isHoliday, isWorkday } from '../utils/holidays';
+import { isHoliday, isWorkday, subscribeHolidays } from '../utils/holidays';
 import TimeColumn from './TimeColumn';
 import DayHeader from './DayHeader';
 import ScheduleBlock from './ScheduleBlock';
@@ -55,12 +55,15 @@ export default function ScheduleGrid({ dates, schedules, visibleDays = 7, weekSt
   const today = todayStr();
   const timeBodyRef = useRef(null);
   const [rowHeight, setRowHeight] = useState(MIN_ROW_HEIGHT);
+  const [, setHolidayRevision] = useState(0);
   const gridStateRef = useRef({});
   const schedLpRef = useRef(null);
 
   const { handleDayTouchStart, handleDayTouchMove, handleDayTouchEnd, dayBodyEls } =
     useGridTouch({ gridStateRef, onCellClick });
   const wasRecentTouch = useTouchTime();
+
+  useEffect(() => subscribeHolidays(() => setHolidayRevision(v => v + 1)), []);
 
   const N = dates.length;
 
@@ -169,7 +172,7 @@ export default function ScheduleGrid({ dates, schedules, visibleDays = 7, weekSt
                   } ${holiday ? 'bg-red-50/30 dark:bg-red-900/5' : ''} ${workday ? 'bg-orange-50/30 dark:bg-orange-900/5' : ''}`}>
                   {/* Top gap */}
                   <div style={{ height: topGapHeight }}
-                    onClick={() => { if (!wasRecentTouch()) onCellClick?.(date, `${String(startHour).padStart(2, '0')}:45`); }}
+                    onClick={() => { if (!wasRecentTouch()) onCellClick?.(date, `${String(startHour).padStart(2, '0')}:00`); }}
                     className="cursor-pointer hover:bg-gray-100/50 dark:hover:bg-gray-800/30 transition-colors" />
 
                   {/* Hour cells — hours >= 24 (extended rows) wrap to next-day times like the touch path */}

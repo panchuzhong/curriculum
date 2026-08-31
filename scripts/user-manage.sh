@@ -47,7 +47,7 @@ if [ ! -f "$DB" ]; then
 fi
 
 validate_tid() {
-  if [[ ! "$1" =~ ^[0-9]+$ ]]; then
+  if [[ ! "$1" =~ ^[0-9]+$ ]] || [ "$1" -lt 1 ]; then
     echo "Error: teacher-id must be a positive integer, got: $1"
     exit 1
   fi
@@ -102,6 +102,18 @@ if [ "$CMD" = "register" ]; then
     echo "Usage: bash scripts/user-manage.sh register <username> <name> <password>"
     exit 1
   fi
+  if [[ ! "$USERNAME" =~ ^[A-Za-z0-9]{3,20}$ ]]; then
+    echo "Error: username must be 3-20 ASCII letters or digits."
+    exit 1
+  fi
+  if [ "${#NAME}" -gt 100 ]; then
+    echo "Error: name must be at most 100 characters."
+    exit 1
+  fi
+  if [ "${#PASS}" -lt 8 ] || [ "${#PASS}" -gt 128 ]; then
+    echo "Error: password must be 8-128 characters."
+    exit 1
+  fi
 
   # Escape single quotes for SQL safety
   SQL_USER="${USERNAME//\'/\'\'}"
@@ -114,21 +126,27 @@ if [ "$CMD" = "register" ]; then
   fi
 
   HASH=$(node -e "const bcrypt=require('bcryptjs');bcrypt.hash(process.argv[1],12).then(h=>console.log(h))" "$PASS")
-  API_KEY=$(node -e "const {v4}=require('uuid');console.log(v4())")
+  API_KEY=$(node -e "console.log(require('node:crypto').randomUUID())")
   SUBJECTS='["数学","物理","化学","英语","语文","生物","历史","地理","政治"]'
 
-  sqlite3 "$DB" "INSERT INTO teachers (username, password_hash, name, api_key, subjects) VALUES ('${SQL_USER}', '$HASH', '${SQL_NAME}', '$API_KEY', '$SUBJECTS');"
-
-  TID=$(sqlite3 "$DB" "SELECT last_insert_rowid();")
-
-  # Seed default pricing tiers
-  sqlite3 "$DB" <<SQL
-INSERT INTO pricing_tiers (teacher_id, min_students, max_students, price_per_student_per_hour) VALUES ($TID, 1, 1, 800);
-INSERT INTO pricing_tiers (teacher_id, min_students, max_students, price_per_student_per_hour) VALUES ($TID, 2, 2, 600);
-INSERT INTO pricing_tiers (teacher_id, min_students, max_students, price_per_student_per_hour) VALUES ($TID, 3, 3, 500);
-INSERT INTO pricing_tiers (teacher_id, min_students, max_students, price_per_student_per_hour) VALUES ($TID, 4, 4, 400);
-INSERT INTO pricing_tiers (teacher_id, min_students, max_students, price_per_student_per_hour) VALUES ($TID, 5, 999, 200);
+  # Registration and tier seeding must share one SQLite connection and one
+  # transaction. last_insert_rowid() is connection-local, so querying it from
+  # a later sqlite3 process would incorrectly return 0.
+  TID=$(sqlite3 -bail "$DB" <<SQL
+PRAGMA foreign_keys = ON;
+BEGIN IMMEDIATE;
+INSERT INTO teachers (username, password_hash, name, api_key, subjects)
+  VALUES ('${SQL_USER}', '$HASH', '${SQL_NAME}', '$API_KEY', '$SUBJECTS')
+  RETURNING id;
+INSERT INTO pricing_tiers (teacher_id, min_students, max_students, price_per_student_per_hour)
+  SELECT id, 1, 1, 800 FROM teachers WHERE username = '${SQL_USER}'
+  UNION ALL SELECT id, 2, 2, 600 FROM teachers WHERE username = '${SQL_USER}'
+  UNION ALL SELECT id, 3, 3, 500 FROM teachers WHERE username = '${SQL_USER}'
+  UNION ALL SELECT id, 4, 4, 400 FROM teachers WHERE username = '${SQL_USER}'
+  UNION ALL SELECT id, 5, 999, 200 FROM teachers WHERE username = '${SQL_USER}';
+COMMIT;
 SQL
+  )
 
   echo "Teacher registered successfully."
   echo ""
@@ -148,6 +166,10 @@ if [ "$CMD" = "reset-pw" ]; then
     echo "Usage: bash scripts/user-manage.sh reset-pw <new-password> [teacher-id]"
     exit 1
   fi
+  if [ "${#PASS}" -lt 8 ] || [ "${#PASS}" -gt 128 ]; then
+    echo "Error: password must be 8-128 characters."
+    exit 1
+  fi
 
   validate_tid "$TID"
   EXISTS=$(sqlite3 "$DB" "SELECT COUNT(*) FROM teachers WHERE id = $TID;")
@@ -156,9 +178,9 @@ if [ "$CMD" = "reset-pw" ]; then
     exit 1
   fi
 
-  HASH=$(node -e "const bcrypt=require('bcryptjs');bcrypt.hash(process.argv[1],10).then(h=>console.log(h))" "$PASS")
+  HASH=$(node -e "const bcrypt=require('bcryptjs');bcrypt.hash(process.argv[1],12).then(h=>console.log(h))" "$PASS")
   SQL_HASH="${HASH//\'/\'\'}"
-  sqlite3 "$DB" "UPDATE teachers SET password_hash = '${SQL_HASH}' WHERE id = $TID;"
+  sqlite3 -bail "$DB" "UPDATE teachers SET password_hash = '${SQL_HASH}', pwd_version = COALESCE(pwd_version, 0) + 1 WHERE id = $TID;"
   echo "Password updated for teacher id=$TID."
   exit 0
 fi
@@ -194,17 +216,19 @@ if [ "$CMD" = "delete" ]; then
   echo "  Schedules   : $SCHED_COUNT"
   echo "  (plus pricing tiers, semesters, holidays, audit log)"
   echo ""
-  read -p "Type 'yes' to confirm: " CONFIRM
+  read -r -p "Type 'yes' to confirm: " CONFIRM
   if [ "$CONFIRM" != "yes" ]; then
     echo "Aborted."
     exit 0
   fi
 
-  sqlite3 "$DB" <<SQL
-BEGIN TRANSACTION;
+  sqlite3 -bail "$DB" <<SQL
+PRAGMA foreign_keys = ON;
+BEGIN IMMEDIATE;
   DELETE FROM schedules    WHERE class_id IN (SELECT id FROM classes WHERE teacher_id = $TID);
   DELETE FROM class_students WHERE class_id IN (SELECT id FROM classes WHERE teacher_id = $TID)
                                 OR student_id IN (SELECT id FROM students WHERE teacher_id = $TID);
+  DELETE FROM class_pricing  WHERE class_id IN (SELECT id FROM classes WHERE teacher_id = $TID);
   DELETE FROM classes        WHERE teacher_id = $TID;
   DELETE FROM students       WHERE teacher_id = $TID;
   DELETE FROM pricing_tiers  WHERE teacher_id = $TID;

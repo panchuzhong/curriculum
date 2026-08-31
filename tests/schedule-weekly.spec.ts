@@ -1,4 +1,4 @@
-import { test, expect, ensureTestUser, toDateString, addDays, getCurrentMonday } from './auth';
+import { test, expect, ensureTestUser, toDateString, addDays, getCurrentMonday, TEST_USER } from './auth';
 import Database from 'better-sqlite3';
 
 const E2E_DB_PATH = process.env.DB_PATH || './data/e2e.db';
@@ -117,6 +117,16 @@ test.describe('排课操作', () => {
     await expect(page.getByRole('heading', { name: '编辑排课' })).not.toBeVisible();
   });
 
+  test('取消删除确认后保留排课弹窗', async ({ authenticatedPage: page }) => {
+    await clickFirstScheduleCard(page);
+    const editDialog = page.getByRole('dialog', { name: '排课编辑' });
+    await editDialog.getByRole('button', { name: '删除' }).click();
+    const confirmDialog = page.locator('dialog');
+    await expect(confirmDialog).toBeVisible();
+    await confirmDialog.getByRole('button', { name: '取消' }).click();
+    await expect(editDialog).toBeVisible();
+  });
+
   test('删除排课', async ({ authenticatedPage: page }) => {
     // Count cards before
     await page.waitForSelector(scheduleCard, { timeout: 10000 });
@@ -213,6 +223,48 @@ test.describe('批量删课预览', () => {
     await expect(dialog.getByRole('button', { name: '预览删除' })).toBeVisible();
     await dialog.getByRole('button', { name: '关闭' }).click();
     await expect(dialog).not.toBeVisible();
+  });
+
+  test('切换删除模式后旧预览失效', async ({ authenticatedPage: page }) => {
+    await page.goto('/');
+    await page.getByRole('button', { name: '批量操作' }).click();
+    const dialog = page.getByRole('dialog', { name: '批量排课' });
+    await dialog.getByRole('button', { name: '批量删课' }).click();
+    await dialog.getByRole('button', { name: '日期范围' }).click();
+    const dates = dialog.locator('input[type="date"]');
+    await dates.first().fill(toDateString(addDays(new Date(), -7)));
+    await dates.nth(1).fill(toDateString(new Date()));
+    const classSelect = dialog.getByRole('combobox').first();
+    const classValue = await classSelect.locator('option', { hasText: 'E2E数学班' }).first().getAttribute('value');
+    expect(classValue).not.toBeNull();
+    await classSelect.selectOption(classValue!);
+    await dialog.getByRole('button', { name: '预览删除' }).click();
+    await expect(dialog.getByText(/将删除 \d+ 条排课/)).toBeVisible();
+
+    await dialog.getByRole('button', { name: '学期模式' }).click();
+    await expect(dialog.getByText(/将删除 \d+ 条排课/)).not.toBeVisible();
+    await expect(dialog.getByRole('button', { name: '预览删除' })).toBeVisible();
+  });
+});
+
+test.describe('登录后的节假日覆盖', () => {
+  test('无需刷新页面即可加载数据库节假日', async ({ page }) => {
+    const teacherId = ensureTestUser();
+    const date = toDateString(getCurrentMonday());
+    const db = new Database(E2E_DB_PATH);
+    try {
+      db.prepare('DELETE FROM holidays WHERE teacher_id = ? AND date = ?').run(teacherId, date);
+      db.prepare('INSERT INTO holidays (teacher_id, date, type, name) VALUES (?, ?, ?, ?)')
+        .run(teacherId, date, 'holiday', '登录后加载');
+    } finally {
+      db.close();
+    }
+
+    await page.goto('/login');
+    await page.getByPlaceholder('请输入用户名').fill(TEST_USER.username);
+    await page.getByPlaceholder('请输入密码').fill(TEST_USER.password);
+    await page.getByRole('button', { name: '登录' }).click();
+    await expect(page.getByText('登录后加载', { exact: true })).toBeVisible();
   });
 });
 

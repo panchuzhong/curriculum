@@ -7,8 +7,9 @@ export const validateCreateSchedule = [
   body('startTime').custom(v => { if (!isValidTime(v)) throw new Error('开始时间须为有效的 HH:MM (00:00-23:59)'); return true; }),
   body('endTime').custom(v => { if (!isValidScheduleEndTime(v)) throw new Error('结束时间须为有效的 HH:MM (00:00-47:59)'); return true; }),
   body('durationBilling').optional().isInt({ min: 0 }).withMessage('durationBilling 须为非负整数'),
-  body('locationLat').optional().isFloat({ min: -90, max: 90 }).withMessage('纬度须为 -90 到 90'),
-  body('locationLng').optional().isFloat({ min: -180, max: 180 }).withMessage('经度须为 -180 到 180'),
+  body('locationName').optional({ values: 'null' }).isString().isLength({ max: 200 }).withMessage('地点最多200个字符'),
+  body('locationLat').optional({ values: 'null' }).isFloat({ min: -90, max: 90 }).withMessage('纬度须为 -90 到 90'),
+  body('locationLng').optional({ values: 'null' }).isFloat({ min: -180, max: 180 }).withMessage('经度须为 -180 到 180'),
 ];
 
 export const validateBatchCreate = [
@@ -21,6 +22,7 @@ export const validateBatchCreate = [
   body('semesterId').optional().isInt({ min: 1 }).withMessage('semesterId 须为正整数'),
   body('durationBilling').optional().isInt({ min: 0 }).withMessage('durationBilling 须为非负整数'),
   body('preview').optional().isBoolean().withMessage('preview 须为布尔值'),
+  body('crossSemester').optional().isBoolean().withMessage('crossSemester 须为布尔值'),
 ];
 
 export const validateBatchUpdate = [
@@ -32,6 +34,10 @@ export const validateBatchUpdate = [
   body('updates').isObject().withMessage('updates 须为对象'),
   body('updates.startTime').optional().custom(v => { if (!isValidTime(v)) throw new Error('开始时间须为有效的 HH:MM (00:00-23:59)'); return true; }),
   body('updates.endTime').optional().custom(v => { if (!isValidScheduleEndTime(v)) throw new Error('结束时间须为有效的 HH:MM (00:00-47:59)'); return true; }),
+  body('updates.durationBilling').optional().isInt({ min: 0 }).withMessage('durationBilling 须为非负整数'),
+  body('updates.locationName').optional({ values: 'null' }).isString().isLength({ max: 200 }).withMessage('locationName 最多200个字符'),
+  body('updates.locationLat').optional({ values: 'null' }).isFloat({ min: -90, max: 90 }).withMessage('locationLat 纬度须为 -90 到 90'),
+  body('updates.locationLng').optional({ values: 'null' }).isFloat({ min: -180, max: 180 }).withMessage('locationLng 经度须为 -180 到 180'),
 ];
 
 export const validateBatchDelete = [
@@ -51,6 +57,7 @@ export const validateUpdateSchedule = [
   body('startTime').optional().custom(v => { if (!isValidTime(v)) throw new Error('开始时间须为有效的 HH:MM (00:00-23:59)'); return true; }),
   body('endTime').optional().custom(v => { if (!isValidScheduleEndTime(v)) throw new Error('结束时间须为有效的 HH:MM (00:00-47:59)'); return true; }),
   body('durationBilling').optional().isInt({ min: 0 }).withMessage('durationBilling 须为非负整数'),
-  body('locationLat').optional().isFloat({ min: -90, max: 90 }).withMessage('纬度须为 -90 到 90'),
-  body('locationLng').optional().isFloat({ min: -180, max: 180 }).withMessage('经度须为 -180 到 180'),
+  body('locationName').optional({ values: 'null' }).isString().isLength({ max: 200 }).withMessage('地点最多200个字符'),
+  body('locationLat').optional({ values: 'null' }).isFloat({ min: -90, max: 90 }).withMessage('纬度须为 -90 到 90'),
+  body('locationLng').optional({ values: 'null' }).isFloat({ min: -180, max: 180 }).withMessage('经度须为 -180 到 180'),
 ];

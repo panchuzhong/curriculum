@@ -127,6 +127,12 @@ describe('POST /api/holidays/batch', () => {
     expect(res.status).toBe(400);
   });
 
+  it('rejects batch entries missing required fields', async () => {
+    const res = await request(app).post('/api/holidays/batch').set(auth(token))
+      .send({ items: [{ date: '2026-01-01' }] });
+    expect(res.status).toBe(400);
+  });
+
   it('rejects items array > 365', async () => {
     const items = Array.from({ length: 366 }, (_, i) => ({
       date: `2026-01-${String((i % 28) + 1).padStart(2, '0')}`, type: 'holiday', name: 'x',
@@ -139,6 +145,13 @@ describe('POST /api/holidays/batch', () => {
     const res = await request(app).post('/api/holidays/batch').set(auth(token)).send({ items: [] });
     expect(res.status).toBe(200);
     expect(res.body.count).toBe(0);
+  });
+});
+
+describe('GET /api/holidays/:year', () => {
+  it('rejects a malformed year', async () => {
+    const res = await request(app).get('/api/holidays/2026oops').set(auth(token));
+    expect(res.status).toBe(400);
   });
 });
 

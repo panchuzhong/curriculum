@@ -68,4 +68,15 @@ test.describe('学生CRUD', () => {
     await page.getByRole('button', { name: '保存' }).click();
     await expect(page.getByRole('heading', { name: '学生管理' })).toBeVisible();
   });
+
+  test('取消删除确认后保留编辑弹窗', async ({ authenticatedPage: page }) => {
+    await page.goto('/students');
+    await page.getByRole('button', { name: '编辑' }).first().click();
+    const editDialog = page.getByRole('dialog', { name: '编辑学生' });
+    await editDialog.getByRole('button', { name: '删除' }).click();
+    const confirmDialog = page.locator('dialog');
+    await expect(confirmDialog).toBeVisible();
+    await confirmDialog.getByRole('button', { name: '取消' }).click();
+    await expect(editDialog).toBeVisible();
+  });
 });

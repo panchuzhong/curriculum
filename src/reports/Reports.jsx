@@ -42,7 +42,7 @@ function BarChart({ data, maxVal }) {
   return (
     <div className="space-y-2">
       {data.map(item => (
-        <div key={item.label} className="flex items-center gap-2">
+        <div key={item.key ?? item.label} className="flex items-center gap-2">
           <div className="w-12 sm:w-20 text-xs sm:text-sm text-right text-gray-600 dark:text-gray-400 truncate">{item.label}</div>
           <div className="flex-1 bg-gray-200 dark:bg-gray-700 rounded h-6 overflow-hidden">
             <div className="h-full rounded flex items-center pl-2 text-[10px] sm:text-xs text-white font-medium whitespace-nowrap"
@@ -63,6 +63,7 @@ export default function Reports() {
   const [classes, setClasses] = useState([]);
   const [summary, setSummary] = useState(null);
   const [period, setPeriod] = useState(null);
+  const [weekStart, setWeekStart] = useState(() => getMonday(todayStr()));
   const [year, setYear] = useState(new Date().getFullYear());
   const [month, setMonth] = useState(new Date().getMonth());
   const [filterClassId, setFilterClassId] = useState('');
@@ -78,7 +79,7 @@ export default function Reports() {
     const today = todayStr();
 
     if (tab === 'week') {
-      start = getMonday(today);
+      start = weekStart;
       end = addDays(start, 6);
     } else if (tab === 'month') {
       const r = getMonthRange(year, month);
@@ -101,16 +102,16 @@ export default function Reports() {
     api.getScheduleSummary(start, end, filterClassId || undefined)
       .then(data => { if (gen === fetchGenRef.current) setSummary(data); })
       .catch(e => toast(e.message || '加载报表失败'));
-  }, [tab, year, month, customStart, customEnd, filterClassId]);
+  }, [tab, weekStart, year, month, customStart, customEnd, filterClassId]);
 
   const loadWeek = useCallback((monday) => {
-    const end = addDays(monday, 6);
-    setPeriod({ start: monday, end });
-    const gen = ++fetchGenRef.current;
-    api.getScheduleSummary(monday, end, filterClassId || undefined)
-      .then(data => { if (gen === fetchGenRef.current) setSummary(data); })
-      .catch(e => toast(e.message || '加载报表失败'));
-  }, [filterClassId]);
+    setWeekStart(monday);
+    // Keep the visible range in the same React update as the durable week
+    // state. Waiting for the fetch effect to copy weekStart into period leaves
+    // one render where the navigation action has completed but the old range
+    // is still shown.
+    setPeriod({ start: monday, end: addDays(monday, 6) });
+  }, []);
 
   useLayoutEffect(() => {
     const onKey = (e) => {
@@ -189,6 +190,7 @@ export default function Reports() {
       .map(b => {
         const cls = classMap[b.classId] || b;
         return {
+          key: b.classId,
           label: b.name,
           value: b.count,
           hours: b.hours,

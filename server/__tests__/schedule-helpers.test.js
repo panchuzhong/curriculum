@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { toMin, calcDurationBilling, resolveRange, toCSV, detectConflictGroups } from '../services/schedule-helpers.js';
+import { toMin, calcDurationBilling, resolveRange, toCSV, detectConflictGroups, detectDatedConflictGroups, schedulesOverlap } from '../services/schedule-helpers.js';
 
 // ── toMin ──
 
@@ -186,8 +186,32 @@ describe('detectConflictGroups', () => {
     expect(groups[0]).toHaveLength(2);
   });
 
+  it('does not merge a same-date morning class with that night', () => {
+    const groups = detectConflictGroups([
+      { startTime: '00:30', endTime: '02:00' },
+      { startTime: '22:00', endTime: '01:00' },
+    ]);
+    expect(groups).toHaveLength(2);
+  });
+
   it('returns empty for empty array', () => {
     expect(detectConflictGroups([])).toEqual([]);
+  });
+});
+
+describe('dated schedule conflicts', () => {
+  const overnight = { date: '2026-05-04', startTime: '23:00', endTime: '01:00' };
+
+  it('detects overlap on the following calendar day', () => {
+    const morning = { date: '2026-05-05', startTime: '00:30', endTime: '02:00' };
+    expect(schedulesOverlap(overnight, morning)).toBe(true);
+    expect(detectDatedConflictGroups([overnight, morning])).toHaveLength(1);
+  });
+
+  it('does not treat the morning of the start date as an overlap', () => {
+    const morning = { date: '2026-05-04', startTime: '00:30', endTime: '02:00' };
+    expect(schedulesOverlap(overnight, morning)).toBe(false);
+    expect(detectDatedConflictGroups([overnight, morning])).toHaveLength(2);
   });
 });
 

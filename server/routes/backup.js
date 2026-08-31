@@ -11,6 +11,7 @@ import { clearReportCache } from '../services/report-cache.js';
 
 const BACKUP_VERSION = 1;
 const MAX_PRE_RESTORE_SNAPSHOTS = 5;
+const RESTORE_CHUNK_SIZE = 50;
 
 const router = Router();
 router.use(authMiddleware);
@@ -71,6 +72,16 @@ router.post('/restore', express.json({ limit: '50mb' }), (req, res) => {
   for (const table of requiredTables) {
     if (!Array.isArray(data[table])) {
       return res.status(400).json({ error: `备份数据缺少 ${table} 或格式不正确` });
+    }
+  }
+
+  // Version 1 relationships use exported class/student IDs as local keys. They
+  // must be present and unique so they can be safely remapped to fresh global
+  // SQLite IDs during restore.
+  for (const table of ['classes', 'students']) {
+    const ids = data[table].map(row => row?.id);
+    if (ids.some(id => !Number.isInteger(id) || id < 1) || new Set(ids).size !== ids.length) {
+      return res.status(400).json({ error: `${table} 中的 id 须为唯一正整数` });
     }
   }
 
@@ -164,27 +175,56 @@ router.post('/restore', express.json({ limit: '50mb' }), (req, res) => {
       if (existingClassIds.length > 0) {
         drizzleDb.delete(schedules).where(inArray(schedules.classId, existingClassIds)).run();
         drizzleDb.delete(classStudents).where(inArray(classStudents.classId, existingClassIds)).run();
+        // class_pricing has an immediate foreign key to classes, so it must be
+        // removed before its parent classes.
+        drizzleDb.delete(classPricing).where(inArray(classPricing.classId, existingClassIds)).run();
       }
       drizzleDb.delete(classes).where(eq(classes.teacherId, tid)).run();
       drizzleDb.delete(students).where(eq(students.teacherId, tid)).run();
       drizzleDb.delete(pricingTiers).where(eq(pricingTiers.teacherId, tid)).run();
       drizzleDb.delete(semesters).where(eq(semesters.teacherId, tid)).run();
       drizzleDb.delete(holidays).where(eq(holidays.teacherId, tid)).run();
-      // Delete class_pricing for classes owned by this teacher
-      if (existingClassIds.length > 0) {
-        drizzleDb.delete(classPricing).where(inArray(classPricing.classId, existingClassIds)).run();
-      }
       drizzleDb.delete(auditLog).where(eq(auditLog.teacherId, tid)).run();
 
-      if (restoreData.semesters.length) { drizzleDb.insert(semesters).values(restoreData.semesters).run(); clearSemesterCache(); }
-      if (restoreData.pricingTiers.length) { drizzleDb.insert(pricingTiers).values(restoreData.pricingTiers).run(); }
-      if (restoreData.students.length) { drizzleDb.insert(students).values(restoreData.students).run(); }
-      if (restoreData.classes.length) { drizzleDb.insert(classes).values(restoreData.classes).run(); }
-      if (restoreData.classStudents.length) { drizzleDb.insert(classStudents).values(restoreData.classStudents).run(); }
-      if (restoreData.schedules.length) { drizzleDb.insert(schedules).values(restoreData.schedules).run(); }
-      if (restoreData.classPricing.length) { drizzleDb.insert(classPricing).values(restoreData.classPricing).run(); }
-      if (restoreData.holidays.length) { drizzleDb.insert(holidays).values(restoreData.holidays).run(); }
-      if (restoreData.auditLog.length) { drizzleDb.insert(auditLog).values(restoreData.auditLog).run(); }
+      const withoutId = ({ id, ...row }) => row;
+      const insertChunks = (table, rows, transform = row => row) => {
+        for (let i = 0; i < rows.length; i += RESTORE_CHUNK_SIZE) {
+          drizzleDb.insert(table).values(rows.slice(i, i + RESTORE_CHUNK_SIZE).map(transform)).run();
+        }
+      };
+      const insertAndMapIds = (table, rows, transform = withoutId) => {
+        const idMap = new Map();
+        // SQLite does not guarantee RETURNING row order for a multi-row
+        // INSERT. Insert relationship roots individually so lastInsertRowid
+        // provides an unambiguous old-ID -> new-ID mapping. The surrounding
+        // transaction keeps this efficient; dependent bulk rows remain
+        // chunked below.
+        for (const row of rows) {
+          const result = drizzleDb.insert(table).values(transform(row)).run();
+          idMap.set(row.id, Number(result.lastInsertRowid));
+        }
+        return idMap;
+      };
+
+      insertChunks(semesters, restoreData.semesters, withoutId);
+      if (restoreData.semesters.length) clearSemesterCache();
+      insertChunks(pricingTiers, restoreData.pricingTiers, withoutId);
+      const studentIdMap = insertAndMapIds(students, restoreData.students);
+      const classIdMap = insertAndMapIds(classes, restoreData.classes);
+      insertChunks(classStudents, restoreData.classStudents, row => ({
+        classId: classIdMap.get(row.classId),
+        studentId: studentIdMap.get(row.studentId),
+      }));
+      insertChunks(schedules, restoreData.schedules, row => ({
+        ...withoutId(row), classId: classIdMap.get(row.classId),
+      }));
+      insertChunks(classPricing, restoreData.classPricing, row => ({
+        ...withoutId(row), classId: classIdMap.get(row.classId),
+      }));
+      insertChunks(holidays, restoreData.holidays, withoutId);
+      // Audit recordId values describe historical records and intentionally
+      // remain unchanged; only the audit row's own global ID is regenerated.
+      insertChunks(auditLog, restoreData.auditLog, withoutId);
 
       counts.classes = restoreData.classes.length;
       counts.students = restoreData.students.length;

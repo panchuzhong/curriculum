@@ -20,6 +20,7 @@ router.get('/', (req, res) => {
 // Get holidays for a specific year
 router.get('/:year', (req, res) => {
   const year = req.params.year;
+  if (!/^\d{4}$/.test(year)) return res.status(400).json({ error: 'year 须为4位年份' });
   const result = drizzleDb.select().from(holidays)
     .where(and(
       eq(holidays.teacherId, req.teacherId),
@@ -92,7 +93,6 @@ router.post('/batch', validateBatchHolidays, handle, (req, res) => {
   let skipped = 0;
   db.transaction(() => {
     for (const item of items) {
-      if (!item.date || !item.type) { skipped++; continue; }
       const existing = drizzleDb.select().from(holidays)
         .where(and(eq(holidays.teacherId, req.teacherId), eq(holidays.date, item.date))).get();
       if (!existing) {

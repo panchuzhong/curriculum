@@ -16,10 +16,10 @@ describe('isHoliday', () => {
   });
 
   it('handles date format correctly', () => {
-    // 2026 Spring Festival: Feb 16-22
-    expect(isHoliday('2026-02-16')).toBe(true);
-    expect(isHoliday('2026-02-15')).toBe(false);
-    expect(isHoliday('2026-02-23')).toBe(false);
+    // Official 2026 Spring Festival: Feb 15-23
+    expect(isHoliday('2026-02-15')).toBe(true);
+    expect(isHoliday('2026-02-23')).toBe(true);
+    expect(isHoliday('2026-02-24')).toBe(false);
   });
 });
 

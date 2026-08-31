@@ -20,10 +20,10 @@ beforeEach(async () => {
 
 // Sanity: the built-in dataset used by these assertions really contains the dates
 describe('built-in holiday data sanity', () => {
-  it('2026-10-01 and 2027-10-01 are built-in holidays, 2026-01-24 a built-in workday', () => {
+  it('contains official 2026 dates but no speculative 2027 calendar', () => {
     expect(HOLIDAYS['2026']).toContain('10-01');
-    expect(HOLIDAYS['2027']).toContain('10-01');
-    expect(WORKDAYS['2026']).toContain('01-24');
+    expect(HOLIDAYS['2027']).toBeUndefined();
+    expect(WORKDAYS['2026']).toContain('01-04');
   });
 });
 
@@ -48,7 +48,7 @@ describe('batch create holiday precedence (per-year DB override)', () => {
     expect(res.body.dates).toContain('2026-10-01');
   });
 
-  it('still skips built-in holidays for years without any teacher holiday record', async () => {
+  it('does not skip unpublished future dates based on guesses', async () => {
     const { semesters } = await import('../db/schema.js');
     const weekday = new Date('2027-10-01T00:00:00').getDay();
     const sem = drizzleDb.insert(semesters).values({
@@ -60,7 +60,8 @@ describe('batch create holiday precedence (per-year DB override)', () => {
         classId, semesterId: Number(sem.lastInsertRowid), weekday,
         startTime: '08:00', endTime: '09:00', preview: true,
       });
-    expect(res.status).toBe(400); // 10-01 skipped, 09-30/10-02 wrong weekday → nothing left
+    expect(res.status).toBe(200);
+    expect(res.body.dates).toEqual(['2027-10-01']);
   });
 
   it('still honors an explicit teacher workday overriding a built-in holiday', async () => {
@@ -86,9 +87,9 @@ describe('buildDbHolidayHelpers (image export) per-year semantics', () => {
     const { checkIsHoliday, checkIsWorkday } = buildDbHolidayHelpers([
       { date: '2026-12-25', type: 'holiday', name: '自定义' },
     ]);
-    // 2026 built-ins suppressed (10-01 holiday, 01-24 workday)
+    // 2026 built-ins suppressed (10-01 holiday, 01-04 workday)
     expect(checkIsHoliday('2026-10-01')).toBe(false);
-    expect(checkIsWorkday('2026-01-24')).toBe(false);
+    expect(checkIsWorkday('2026-01-04')).toBe(false);
     // DB entries still win
     expect(checkIsHoliday('2026-12-25')).toBe(true);
     // Years without DB data fall back to built-ins

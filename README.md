@@ -78,14 +78,14 @@
 
 ### 环境要求
 
-- Node.js >= 18
+- Node.js >= 22.12
 
 ### 安装
 
 ```bash
 git clone <repo-url>
 cd new_curriculum
-npm install
+npm ci
 ```
 
 ### 配置
@@ -410,7 +410,7 @@ curl -X POST -H "X-API-Key: <key>" -H "Content-Type: application/json" \
   http://localhost:8443/api/backup/restore -d @backup.json
 ```
 
-还原为事务原子操作：先删除当前教师所有数据，再按原 ID 重新写入。还原时 `teacherId` 强制覆盖为当前认证账号。成功返回 `{ok: true, restored: {classes, students, schedules, semesters, auditLog}}`。还原前必须成功保存当前数据快照到 `data/.backup_pre_restore_<uuid>.json`，快照失败会返回 500 并中止还原。
+还原为事务原子操作：先删除当前教师所有数据，再分批写入并为记录分配新 ID，班级、学生、排课和定价之间的关联会自动重映射，因此不会与其他账号的全局 ID 冲突。还原时 `teacherId` 强制覆盖为当前认证账号。成功返回 `{ok: true, restored: {classes, students, schedules, semesters, auditLog}}`。还原前必须成功保存当前数据快照到 `data/.backup_pre_restore_<uuid>.json`，快照失败会返回 500 并中止还原。
 
 ### 汇总统计响应示例
 

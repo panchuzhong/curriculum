@@ -17,7 +17,7 @@ export default function useGridTouch({ gridStateRef, onCellClick }) {
       const { rowHeight, topGapHeight, firstLabelMin, startHour } = gridStateRef.current;
       const relY = startY - rect.top;
       const rawMins = firstLabelMin + (relY - topGapHeight) / rowHeight * 60;
-      const cappedMins = Math.max(startHour * 60 + 45, rawMins);
+      const cappedMins = Math.max(startHour * 60, rawMins);
       const snapped = Math.round(cappedMins / 30) * 30;
       const h = Math.floor(snapped / 60) % 24;
       const m = snapped % 60;

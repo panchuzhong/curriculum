@@ -76,9 +76,6 @@ export function duration(startTime, endTime) {
 export function detectConflictGroups(daySchedules) {
   if (!daySchedules.length) return [];
   const sorted = [...daySchedules].sort((a, b) => toMin(a.startTime) - toMin(b.startTime));
-  // First pass: standard grouping by overlapping time ranges.
-  // For overnight schedules (endTime < startTime), duration() returns
-  // a value that includes the past-midnight wrap, so groupEnd can exceed 1440.
   const groups = [];
   let group = [sorted[0]];
   let groupEnd = toMin(sorted[0].startTime) + duration(sorted[0].startTime, sorted[0].endTime);
@@ -96,22 +93,44 @@ export function detectConflictGroups(daySchedules) {
   }
   groups.push({ schedules: group, end: groupEnd });
 
-  // Second pass: if the last group wraps past midnight (end > 1440), it may
-  // overlap with the first group's early-morning schedules. Merge them.
-  if (groups.length > 1) {
-    const last = groups[groups.length - 1];
-    if (last.end > 24 * 60) {
-      const morningReach = last.end - 24 * 60;
-      const firstStart = toMin(groups[0].schedules[0].startTime);
-      if (firstStart < morningReach) {
-        groups[0].schedules.push(...last.schedules);
-        groups[0].end = Math.max(groups[0].end, last.end);
-        groups.pop();
-      }
+  return groups.map(g => g.schedules);
+}
+
+export function scheduleBounds(schedule) {
+  const [year, month, day] = schedule.date.split('-').map(Number);
+  const dayStart = Date.UTC(year, month - 1, day) / 60000;
+  const start = dayStart + toMin(schedule.startTime);
+  return [start, start + duration(schedule.startTime, schedule.endTime)];
+}
+
+export function schedulesOverlap(a, b) {
+  const [aStart, aEnd] = scheduleBounds(a);
+  const [bStart, bEnd] = scheduleBounds(b);
+  return aStart < bEnd && bStart < aEnd;
+}
+
+// Unlike detectConflictGroups(), this accepts schedules from multiple dates
+// and therefore catches a late class overlapping an early class on the next
+// calendar day.
+export function detectDatedConflictGroups(items) {
+  if (!items.length) return [];
+  const sorted = [...items].sort((a, b) => scheduleBounds(a)[0] - scheduleBounds(b)[0]);
+  const groups = [];
+  let group = [sorted[0]];
+  let groupEnd = scheduleBounds(sorted[0])[1];
+  for (let i = 1; i < sorted.length; i++) {
+    const [start, end] = scheduleBounds(sorted[i]);
+    if (start < groupEnd) {
+      group.push(sorted[i]);
+      groupEnd = Math.max(groupEnd, end);
+    } else {
+      groups.push(group);
+      group = [sorted[i]];
+      groupEnd = end;
     }
   }
-
-  return groups.map(g => g.schedules);
+  groups.push(group);
+  return groups;
 }
 
 export function assignColumns(group) {

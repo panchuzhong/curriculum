@@ -34,6 +34,18 @@ export default function BatchScheduleDialog({ onClose, onSaved }) {
     setPreviewCount(null);
     setPreviewHint('');
   }
+  function invalidateConfirmation() {
+    resetPreview();
+    setCrossSemester(false);
+  }
+  function changeOperation(nextOp) {
+    setOp(nextOp);
+    invalidateConfirmation();
+  }
+  function changeMode(nextMode) {
+    setMode(nextMode);
+    invalidateConfirmation();
+  }
   const [delStart, setDelStart] = useState(todayStr());
   const [delEnd, setDelEnd] = useState('');
   const [saving, setSaving] = useState(false);
@@ -65,6 +77,7 @@ export default function BatchScheduleDialog({ onClose, onSaved }) {
       d.setDate(d.getDate() + rangeStep);
     }
     setForm(f => ({ ...f, dates: dates.join(', ') }));
+    invalidateConfirmation();
   }
 
   function getDeleteRange() {
@@ -157,11 +170,11 @@ export default function BatchScheduleDialog({ onClose, onSaved }) {
           <div className="space-y-3">
             {/* 操作类型 */}
             <div className="flex gap-2">
-              <button onClick={() => setOp('create')}
+              <button onClick={() => changeOperation('create')}
                 className={`flex-1 p-2 rounded font-medium ${op === 'create' ? 'bg-blue-600 text-white' : 'bg-gray-200 dark:bg-gray-700'}`}>
                 批量排课
               </button>
-              <button onClick={() => setOp('delete')}
+              <button onClick={() => changeOperation('delete')}
                 className={`flex-1 p-2 rounded font-medium ${op === 'delete' ? 'bg-red-600 text-white' : 'bg-gray-200 dark:bg-gray-700'}`}>
                 批量删课
               </button>
@@ -170,7 +183,7 @@ export default function BatchScheduleDialog({ onClose, onSaved }) {
             {/* 班级 */}
             <div>
               <label className="block text-sm text-gray-500 dark:text-gray-400 mb-1">选择班级</label>
-              <select className={sel} value={form.classId} onChange={e => { setForm({...form, classId: e.target.value}); resetPreview(); }}>
+              <select className={sel} value={form.classId} onChange={e => { setForm({...form, classId: e.target.value}); invalidateConfirmation(); }}>
                 <option value="">-- 请选择 --</option>
                 {classes.map(c => (
                   <option key={c.id} value={c.id}>{c.isCompetition ? '★ ' : ''}{c.name} ({c.grade} {c.subject})</option>
@@ -180,11 +193,11 @@ export default function BatchScheduleDialog({ onClose, onSaved }) {
 
             {/* 模式 */}
             <div className="flex gap-2">
-              <button onClick={() => setMode('semester')}
+              <button onClick={() => changeMode('semester')}
                 className={`flex-1 p-2 rounded ${mode === 'semester' ? 'bg-blue-600 text-white' : 'bg-gray-200 dark:bg-gray-700'}`}>
                 学期模式
               </button>
-              <button onClick={() => setMode('dates')}
+              <button onClick={() => changeMode('dates')}
                 className={`flex-1 p-2 rounded ${mode === 'dates' ? 'bg-blue-600 text-white' : 'bg-gray-200 dark:bg-gray-700'}`}>
                 {op === 'delete' ? '日期范围' : '指定日期'}
               </button>
@@ -194,7 +207,7 @@ export default function BatchScheduleDialog({ onClose, onSaved }) {
               <>
                 <div>
                   <label className="block text-sm text-gray-500 dark:text-gray-400 mb-1">选择学期（必填，自动跳过节假日）</label>
-                  <select className={sel} value={form.semesterId} onChange={e => { setForm({...form, semesterId: e.target.value}); resetPreview(); }}>
+                  <select className={sel} value={form.semesterId} onChange={e => { setForm({...form, semesterId: e.target.value}); invalidateConfirmation(); }}>
                     <option value="">-- 请选择 --</option>
                     {semesters.map(s => (
                       <option key={s.id} value={s.id}>{s.name} ({s.startDate} ~ {s.endDate})</option>
@@ -204,7 +217,7 @@ export default function BatchScheduleDialog({ onClose, onSaved }) {
                 {op === 'create' && (
                   <div>
                     <label className="block text-sm text-gray-500 dark:text-gray-400 mb-1">每周几上课</label>
-                    <select className={sel} value={form.weekday} onChange={e => setForm({...form, weekday: +e.target.value})}>
+                    <select className={sel} value={form.weekday} onChange={e => { setForm({...form, weekday: +e.target.value}); invalidateConfirmation(); }}>
                       {WEEKDAY_OPTIONS.map(w => <option key={w.value} value={w.value}>{w.label}</option>)}
                     </select>
                     {selectedSemester && (
@@ -270,7 +283,7 @@ export default function BatchScheduleDialog({ onClose, onSaved }) {
                 <div>
                   <label className="block text-sm text-gray-500 dark:text-gray-400 mb-1">日期列表（可手动编辑）</label>
                   <textarea className={`${sel} h-24`} value={form.dates}
-                    onChange={e => setForm({...form, dates: e.target.value})}
+                    onChange={e => { setForm({...form, dates: e.target.value}); invalidateConfirmation(); }}
                     placeholder="2026-05-01, 2026-05-08, 2026-05-15" />
                 </div>
               </>
@@ -305,12 +318,12 @@ export default function BatchScheduleDialog({ onClose, onSaved }) {
                 <div>
                   <label className="block text-sm text-gray-500 dark:text-gray-400 mb-1">开始时间</label>
                   <input type="time" lang="zh-CN" className={sel} value={form.startTime}
-                    onChange={e => setForm({...form, startTime: e.target.value})} />
+                    onChange={e => { setForm({...form, startTime: e.target.value}); invalidateConfirmation(); }} />
                 </div>
                 <div>
                   <label className="block text-sm text-gray-500 dark:text-gray-400 mb-1">结束时间</label>
                   <input type="time" lang="zh-CN" className={sel} value={form.endTime}
-                    onChange={e => setForm({...form, endTime: e.target.value})} />
+                    onChange={e => { setForm({...form, endTime: e.target.value}); invalidateConfirmation(); }} />
                 </div>
               </div>
             )}
@@ -319,7 +332,7 @@ export default function BatchScheduleDialog({ onClose, onSaved }) {
               <div>
                 <label className="block text-sm text-gray-500 dark:text-gray-400 mb-1">计费时长（分钟，留空自动计算）</label>
                 <input type="number" className={sel} value={form.durationBilling}
-                  onChange={e => setForm({...form, durationBilling: e.target.value === '' ? '' : +e.target.value})}
+                  onChange={e => { setForm({...form, durationBilling: e.target.value === '' ? '' : +e.target.value}); invalidateConfirmation(); }}
                   placeholder="默认由结束-开始时间计算" />
               </div>
             )}

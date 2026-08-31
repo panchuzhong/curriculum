@@ -352,7 +352,7 @@ describe('Backup — edge cases', () => {
       teacherId, name: '旧班', grade: '高三', subject: '数学', studentCount: 1, unitPrice: 100,
     }).run();
 
-    // Backup with invalid data that will fail insert
+    // Backup with invalid data that must be rejected before replacement
     const backup = {
       version: 1,
       classes: [{ /* missing required fields */ teacherId }],
@@ -364,8 +364,8 @@ describe('Backup — edge cases', () => {
       pricingTiers: [],
     };
     const res = await request(app).post('/api/backup/restore').set(auth(token)).send(backup);
-    // Should fail, old data preserved
-    expect(res.status).toBe(500);
+    // Should fail validation, old data preserved
+    expect(res.status).toBe(400);
     const exported = (await request(app).get('/api/backup').set(auth(token))).body;
     expect(exported.classes).toHaveLength(1);
     expect(exported.classes[0].name).toBe('旧班');

@@ -26,6 +26,16 @@ describe('GET /api/schedule-image', () => {
     expect(res.body.error).toContain('start/end or range');
   });
 
+  it.each([
+    ['start=2026-02-30&end=2026-03-01', '有效日期'],
+    ['start=2026-05-08&end=2026-05-01', '不晚于'],
+    ['start=2026-01-01&end=2026-02-01', '31 天'],
+  ])('rejects an invalid or unsafe image range: %s', async (query, message) => {
+    const res = await request(app).get(`/api/schedule-image?${query}`).set(auth(token));
+    expect(res.status).toBe(400);
+    expect(res.body.error).toContain(message);
+  });
+
   it('returns 404 when no classes exist', async () => {
     const res = await request(app).get('/api/schedule-image?start=2026-05-01&end=2026-05-07').set(auth(token));
     expect(res.status).toBe(404);
@@ -74,6 +84,11 @@ describe('GET /api/schedule-image/monthly', () => {
     expect(res2.status).toBe(400);
   });
 
+  it('rejects partially numeric year and month values', async () => {
+    const res = await request(app).get('/api/schedule-image/monthly?year=2026oops&month=5x').set(auth(token));
+    expect(res.status).toBe(400);
+  });
+
   it('returns 404 when no classes exist', async () => {
     const res = await request(app).get('/api/schedule-image/monthly?year=2026&month=5').set(auth(token));
     expect(res.status).toBe(404);
@@ -102,6 +117,11 @@ describe('GET /api/schedule-image/yearly', () => {
     const res = await request(app).get('/api/schedule-image/yearly').set(auth(token));
     expect(res.status).toBe(400);
     expect(res.body.error).toContain('year required');
+  });
+
+  it('rejects a partially numeric year', async () => {
+    const res = await request(app).get('/api/schedule-image/yearly?year=2026oops').set(auth(token));
+    expect(res.status).toBe(400);
   });
 
   it('returns 404 when no classes exist', async () => {

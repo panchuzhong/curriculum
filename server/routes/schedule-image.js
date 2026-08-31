@@ -8,6 +8,7 @@ import { generateScheduleImage } from '../services/image-gen.js';
 import { generateMonthlyImage } from '../services/image-gen-monthly.js';
 import { generateYearlyImage } from '../services/image-gen-yearly.js';
 import { resolveRange } from '../services/schedule-helpers.js';
+import { isValidDate } from '../validations/dates.js';
 
 const router = Router();
 router.use(authMiddleware);
@@ -15,11 +16,28 @@ if (process.env.NODE_ENV !== 'test') {
   router.use(rateLimit({ windowMs: 60 * 1000, max: 30, standardHeaders: true, legacyHeaders: false }));
 }
 
+function parseExactInt(value, { min, max } = {}) {
+  if (typeof value !== 'string' || !/^-?\d+$/.test(value)) return null;
+  const parsed = Number(value);
+  if (!Number.isSafeInteger(parsed) || (min != null && parsed < min) || (max != null && parsed > max)) return null;
+  return parsed;
+}
+
+function imageRangeError(start, end) {
+  if (!isValidDate(start) || !isValidDate(end)) return 'start/end 须为有效日期';
+  if (start > end) return 'start 须不晚于 end';
+  const days = Math.round((new Date(end + 'T00:00:00') - new Date(start + 'T00:00:00')) / 86400000) + 1;
+  if (days > 31) return '周课表图片导出范围不能超过 31 天';
+  return null;
+}
+
 router.get('/', async (req, res) => {
   try {
     const { theme, rowH, scale, highlight } = req.query;
     const { start, end } = resolveRange(req.query);
     if (!start || !end) return res.status(400).json({ error: 'start/end or range required' });
+    const rangeError = imageRangeError(start, end);
+    if (rangeError) return res.status(400).json({ error: rangeError });
 
     const teacherClasses = drizzleDb.select().from(classes)
       .where(and(eq(classes.teacherId, req.teacherId), eq(classes.deleted, false))).all();
@@ -49,14 +67,14 @@ router.get('/', async (req, res) => {
 // GET /api/schedule-image/monthly?year=2026&month=5&endYear=2026&endMonth=8&theme=auto
 router.get('/monthly', async (req, res) => {
   try {
-    const year = parseInt(req.query.year);
-    const month = parseInt(req.query.month);
-    if (isNaN(year) || isNaN(month) || month < 0 || month > 11)
+    const year = parseExactInt(req.query.year, { min: 1000, max: 9999 });
+    const month = parseExactInt(req.query.month, { min: 0, max: 11 });
+    if (year == null || month == null)
       return res.status(400).json({ error: 'year and month (0-11) required' });
 
-    const endYear = req.query.endYear != null ? parseInt(req.query.endYear) : null;
-    const endMonth = req.query.endMonth != null ? parseInt(req.query.endMonth) : null;
-    if ((endYear != null && isNaN(endYear)) || (endMonth != null && (isNaN(endMonth) || endMonth < 0 || endMonth > 11)))
+    const endYear = req.query.endYear != null ? parseExactInt(req.query.endYear, { min: 1000, max: 9999 }) : null;
+    const endMonth = req.query.endMonth != null ? parseExactInt(req.query.endMonth, { min: 0, max: 11 }) : null;
+    if ((req.query.endYear != null && endYear == null) || (req.query.endMonth != null && endMonth == null))
       return res.status(400).json({ error: 'endYear/endMonth 无效（endMonth 须为 0-11）' });
     const theme = req.query.theme;
 
@@ -97,11 +115,11 @@ router.get('/monthly', async (req, res) => {
 // GET /api/schedule-image/yearly?year=2026&endYear=2027&theme=auto
 router.get('/yearly', async (req, res) => {
   try {
-    const year = parseInt(req.query.year);
-    if (isNaN(year)) return res.status(400).json({ error: 'year required' });
+    const year = parseExactInt(req.query.year, { min: 1000, max: 9999 });
+    if (year == null) return res.status(400).json({ error: 'year required' });
 
-    const endYear = req.query.endYear != null ? parseInt(req.query.endYear) : null;
-    if (endYear != null && (isNaN(endYear) || endYear < year || endYear - year > 11))
+    const endYear = req.query.endYear != null ? parseExactInt(req.query.endYear, { min: 1000, max: 9999 }) : null;
+    if (req.query.endYear != null && (endYear == null || endYear < year || endYear - year > 11))
       return res.status(400).json({ error: 'endYear 无效（最多导出 12 个年份）' });
     const theme = req.query.theme;
 

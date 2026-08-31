@@ -3,7 +3,7 @@ import Database from 'better-sqlite3';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { readFileSync } from 'fs';
-import { v4 as uuidv4 } from 'uuid';
+import { randomUUID } from 'node:crypto';
 
 export const TEST_USER = {
   username: 'pcz',
@@ -48,7 +48,7 @@ export function ensureTestUser() {
       }
     } else {
       const result = db.prepare('INSERT INTO teachers (username, password_hash, name, api_key, subjects) VALUES (?, ?, ?, ?, ?)')
-        .run(TEST_USER.username, passwordHash, 'E2E Teacher', uuidv4(), JSON.stringify(DEFAULT_SUBJECTS));
+        .run(TEST_USER.username, passwordHash, 'E2E Teacher', randomUUID(), JSON.stringify(DEFAULT_SUBJECTS));
       teacherId = Number(result.lastInsertRowid);
     }
 

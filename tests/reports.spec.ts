@@ -262,4 +262,13 @@ test.describe('报表班级筛选联动', () => {
     await page.getByRole('combobox').selectOption({ label: '全部班级' });
     await expect(page.getByRole('heading', { name: '按月份统计' })).toBeVisible();
   });
+
+  test('历史周报切换班级时保留当前周', async ({ authenticatedPage: page }) => {
+    await page.goto('/reports');
+    await page.getByRole('button', { name: '◀' }).first().click();
+    const range = page.getByText(/\d{4}-\d{2}-\d{2} ~ \d{4}-\d{2}-\d{2}/);
+    const before = await range.textContent();
+    await page.getByRole('combobox').selectOption({ label: 'E2E数学班' });
+    await expect(range).toHaveText(before!);
+  });
 });

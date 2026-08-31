@@ -119,6 +119,67 @@ describe('POST /api/backup/restore', () => {
     expect(exported.schedules).toHaveLength(1);
   });
 
+  it('replaces an existing class that has pricing history', async () => {
+    const { classes, classPricing } = await import('../db/schema.js');
+    const cls = drizzleDb.insert(classes).values({
+      teacherId, name: '旧班级', grade: '初三', subject: '数学', studentCount: 2, unitPrice: 600,
+    }).run();
+    const oldClassId = Number(cls.lastInsertRowid);
+    drizzleDb.insert(classPricing).values({
+      classId: oldClassId, studentCount: 2, unitPrice: 600, effectiveFrom: '2026-01-01',
+    }).run();
+
+    const res = await request(app).post('/api/backup/restore').set(auth(token)).send({
+      version: 1,
+      classes: [{ id: 10, teacherId, name: '新班级', grade: '高三', subject: '物理', studentCount: 1, unitPrice: 900 }],
+      students: [], schedules: [], classStudents: [], holidays: [], semesters: [], pricingTiers: [],
+      classPricing: [{ id: 20, classId: 10, studentCount: 1, unitPrice: 900, effectiveFrom: '2026-02-01' }],
+    });
+
+    expect(res.status).toBe(200);
+    const exported = (await request(app).get('/api/backup').set(auth(token))).body;
+    expect(exported.classes.map(c => c.name)).toEqual(['新班级']);
+    expect(exported.classPricing).toHaveLength(1);
+    expect(exported.classPricing[0].classId).toBe(exported.classes[0].id);
+  });
+
+  it('remaps IDs that collide with another teacher while preserving relationships', async () => {
+    const { classes } = await import('../db/schema.js');
+    const { id: teacherId2, token: token2 } = await makeUser(drizzleDb, 'collision-owner');
+    const other = drizzleDb.insert(classes).values({
+      id: 50, teacherId: teacherId2, name: '他人班级', grade: '高一', subject: '数学', studentCount: 1, unitPrice: 100,
+    }).run();
+    expect(Number(other.lastInsertRowid)).toBe(50);
+
+    const res = await request(app).post('/api/backup/restore').set(auth(token)).send({
+      version: 1,
+      classes: [{ id: 50, teacherId, name: '恢复班级', grade: '高三', subject: '物理', studentCount: 1, unitPrice: 900 }],
+      students: [],
+      schedules: [{ id: 70, classId: 50, date: '2026-05-01', startTime: '14:00', endTime: '16:00', durationBilling: 120 }],
+      classStudents: [], holidays: [], semesters: [], pricingTiers: [], classPricing: [],
+    });
+
+    expect(res.status).toBe(200);
+    const mine = (await request(app).get('/api/backup').set(auth(token))).body;
+    expect(mine.classes[0].id).not.toBe(50);
+    expect(mine.schedules[0].classId).toBe(mine.classes[0].id);
+    const theirs = (await request(app).get('/api/backup').set(auth(token2))).body;
+    expect(theirs.classes).toEqual([expect.objectContaining({ id: 50, name: '他人班级' })]);
+  });
+
+  it('rejects duplicate relationship IDs before replacing current data', async () => {
+    const res = await request(app).post('/api/backup/restore').set(auth(token)).send({
+      version: 1,
+      classes: [
+        { id: 1, name: 'A', grade: '高一', subject: '数学', studentCount: 1, unitPrice: 100 },
+        { id: 1, name: 'B', grade: '高二', subject: '物理', studentCount: 1, unitPrice: 100 },
+      ],
+      students: [], schedules: [],
+    });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toContain('唯一正整数');
+  });
+
   it('requires authentication', async () => {
     const res = await request(app).post('/api/backup/restore')
       .send({ version: 1, classes: [], students: [], schedules: [] });

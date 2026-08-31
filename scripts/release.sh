@@ -14,7 +14,7 @@ rm -rf dist
 
 # Install dependencies
 echo "[2/4] 安装依赖..."
-npm install
+npm ci
 
 # Build frontend
 echo "[3/4] 构建前端..."
@@ -48,7 +48,7 @@ echo ""
 # Install production dependencies if needed
 if [ ! -d "node_modules" ]; then
   echo "Installing dependencies..."
-  npm install --omit=dev
+  npm ci --omit=dev
 fi
 
 # Start server. Configuration is loaded from .env by server/index.js.
@@ -68,7 +68,7 @@ After=network.target
 Type=simple
 WorkingDirectory=/opt/curriculum-scheduler
 EnvironmentFile=/opt/curriculum-scheduler/.env
-ExecStart=$(which node) /opt/curriculum-scheduler/server/index.js
+ExecStart=/usr/bin/env node /opt/curriculum-scheduler/server/index.js
 Restart=on-failure
 
 [Install]

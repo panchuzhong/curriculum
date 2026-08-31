@@ -91,14 +91,13 @@ describe('findConflictGroups', () => {
     expect(groups).toHaveLength(2);
   });
 
-  it('merges a cross-midnight schedule with an overlapping early-morning one', () => {
+  it('does not merge a same-date morning class with that night\'s overnight class', () => {
     const schedules = [
       { startTime: '00:30', endTime: '02:00' },
-      { startTime: '22:00', endTime: '01:00' }, // wraps to 25:00, overlaps 00:30
+      { startTime: '22:00', endTime: '01:00' }, // ends on the following date
     ];
     const groups = findConflictGroups(schedules);
-    expect(groups).toHaveLength(1);
-    expect(groups[0]).toHaveLength(2);
+    expect(groups).toHaveLength(2);
   });
 
   it('does not merge a cross-midnight schedule that ends before the morning one', () => {

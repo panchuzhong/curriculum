@@ -1,10 +1,12 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, afterEach } from 'vitest';
 import { getNavTarget } from '../navTarget';
 
 function dates(overrides = {}) {
   const store = { ...overrides };
   return (view) => store[view] || null;
 }
+
+afterEach(() => vi.useRealTimers());
 
 describe('getNavTarget', () => {
   describe('FROM week view', () => {
@@ -101,17 +103,15 @@ describe('getNavTarget', () => {
     });
 
     it('year → week: ignores stored week from different year', () => {
-      vi.setSystemTime(new Date('2026-05-26'));
+      vi.setSystemTime(new Date(2026, 4, 26));
       const result = getNavTarget('/', cp, dates({ year: '2026', week: '2025-12-01' }));
       expect(result).toBe('/?date=2026-05-26'); // falls back to today-in-year
-      vi.useRealTimers();
     });
 
     it('year → week: uses today-in-year when no stored data', () => {
-      vi.setSystemTime(new Date('2026-05-26'));
+      vi.setSystemTime(new Date(2026, 4, 26));
       const result = getNavTarget('/', cp, dates({ year: '2026' }));
       expect(result).toBe('/?date=2026-05-26');
-      vi.useRealTimers();
     });
 
     it('year → month: prefers stored month in same year', () => {
@@ -120,17 +120,15 @@ describe('getNavTarget', () => {
     });
 
     it('year → month: ignores stored month from different year', () => {
-      vi.setSystemTime(new Date('2026-05-26'));
+      vi.setSystemTime(new Date(2026, 4, 26));
       const result = getNavTarget('/monthly', cp, dates({ year: '2026', month: '2025-3' }));
       expect(result).toBe('/monthly?year=2026&month=4'); // May
-      vi.useRealTimers();
     });
 
     it('year → month: uses current month in year when no stored month', () => {
-      vi.setSystemTime(new Date('2026-05-26'));
+      vi.setSystemTime(new Date(2026, 4, 26));
       const result = getNavTarget('/monthly', cp, dates({ year: '2026' }));
       expect(result).toBe('/monthly?year=2026&month=4'); // May
-      vi.useRealTimers();
     });
 
     it('year → classes: returns path unchanged', () => {

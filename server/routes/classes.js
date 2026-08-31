@@ -13,6 +13,10 @@ import { validateCreateClass, validateUpdateClass, validateClassStudent, validat
 const router = Router();
 router.use(authMiddleware);
 
+function optionalCoordinate(value) {
+  return value == null || value === '' ? null : Number(value);
+}
+
 router.get('/', (req, res) => {
   const includeDeleted = req.query.includeDeleted === 'true';
   const conditions = [eq(classes.teacherId, req.teacherId)];
@@ -61,7 +65,9 @@ router.post('/', validateCreateClass, handle, (req, res) => {
       teacherId: req.teacherId, name, grade, subject, studentCount,
       unitPrice: price, discountAmount: discountAmount ?? 0, discountReason,
       isCompetition: isCompetition ?? false,
-      defaultLocationName, defaultLocationLat, defaultLocationLng,
+      defaultLocationName,
+      defaultLocationLat: optionalCoordinate(defaultLocationLat),
+      defaultLocationLng: optionalCoordinate(defaultLocationLng),
     }).run();
     newId = Number(result.lastInsertRowid);
 
@@ -89,6 +95,8 @@ router.put('/:id', validateUpdateClass, handle, (req, res) => {
   const allowed = ['name', 'grade', 'subject', 'studentCount', 'unitPrice', 'discountAmount', 'discountReason', 'isCompetition', 'defaultLocationName', 'defaultLocationLat', 'defaultLocationLng'];
   const safeUpdates = Object.fromEntries(Object.entries(req.body).filter(([k]) => allowed.includes(k)));
   if (Object.keys(safeUpdates).length === 0) return res.status(400).json({ error: 'No valid fields' });
+  if ('defaultLocationLat' in safeUpdates) safeUpdates.defaultLocationLat = optionalCoordinate(safeUpdates.defaultLocationLat);
+  if ('defaultLocationLng' in safeUpdates) safeUpdates.defaultLocationLng = optionalCoordinate(safeUpdates.defaultLocationLng);
   drizzleDb.update(classes).set(safeUpdates).where(eq(classes.id, +id)).run();
   const updated = drizzleDb.select().from(classes).where(eq(classes.id, +id)).get();
   clearReportCache(req.teacherId);

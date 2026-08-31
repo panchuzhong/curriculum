@@ -22,3 +22,16 @@ export function normalizeScheduleEndTime(val) {
   const [h, m] = val.split(':').map(Number);
   return `${String(h % 24).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
 }
+
+// End times may use 24:00-47:59 to spell an explicit next-day clock time.
+// Regardless of spelling, a schedule must occupy more than 0 and less than
+// 24 hours; otherwise normalizing the hour would silently turn a 25-hour span
+// into a 1-hour span.
+export function isValidScheduleSpan(startTime, endTime) {
+  if (!isValidTime(startTime) || !isValidScheduleEndTime(endTime)) return false;
+  const [sh, sm] = startTime.split(':').map(Number);
+  const [eh, em] = endTime.split(':').map(Number);
+  let diff = (eh * 60 + em) - (sh * 60 + sm);
+  if (eh < 24 && diff <= 0) diff += 24 * 60;
+  return diff > 0 && diff < 24 * 60;
+}

@@ -6,9 +6,9 @@ import { authMiddleware } from '../middleware/auth.js';
 import { isHoliday } from '../services/holidays.js';
 import handle from '../validations/handle.js';
 import { validateCreateSchedule, validateBatchCreate, validateBatchUpdate, validateBatchDelete, validateUpdateSchedule } from '../validations/schedules.js';
-import { isValidDate, isValidScheduleEndTime, isValidTime, normalizeScheduleEndTime } from '../validations/dates.js';
+import { isValidDate, isValidScheduleEndTime, isValidScheduleSpan, isValidTime, normalizeScheduleEndTime } from '../validations/dates.js';
 import { logAudit } from '../services/audit.js';
-import { toLocalDateStr, toMin, resolveRange, toCSV, detectConflictGroups, getScheduleWithClass, calcDurationBilling, getTeacherSemesters, buildPricingLookup } from '../services/schedule-helpers.js';
+import { toLocalDateStr, toMin, resolveRange, toCSV, detectDatedConflictGroups, getScheduleWithClass, calcDurationBilling, getTeacherSemesters, buildPricingLookup, scheduleBounds, schedulesOverlap } from '../services/schedule-helpers.js';
 import { clearReportCache, getReportCache, setReportCache } from '../services/report-cache.js';
 import { students as studentsTable } from '../db/schema.js';
 
@@ -43,7 +43,25 @@ function normalizeMultiParam(value) {
 }
 
 function parseClassIdsParam(value) {
-  return normalizeMultiParam(value).split(',').map(Number).filter(Boolean);
+  return normalizeMultiParam(value).split(',').map(Number)
+    .filter(id => Number.isInteger(id) && id > 0);
+}
+
+function dateSpanDays(start, end) {
+  return Math.round((new Date(end + 'T00:00:00') - new Date(start + 'T00:00:00')) / 86400000);
+}
+
+function validateRange(start, end, { maxDays } = {}) {
+  if (!isValidDate(start) || !isValidDate(end)) return 'start/end 须为有效的 YYYY-MM-DD';
+  if (start > end) return 'start must be <= end';
+  if (maxDays != null && dateSpanDays(start, end) > maxDays) return `日期范围不能超过 ${maxDays + 1} 天`;
+  return null;
+}
+
+function shiftDate(date, days) {
+  const d = new Date(date + 'T00:00:00');
+  d.setDate(d.getDate() + days);
+  return toLocalDateStr(d);
 }
 
 function getConflictsForSchedule(scheduleId, teacherId) {
@@ -54,16 +72,16 @@ function getConflictsForSchedule(scheduleId, teacherId) {
   const classMap = {};
   teacherClasses.forEach(c => classMap[c.id] = c);
   const teacherClassIds = Object.keys(classMap).map(Number);
-  const daySchedules = drizzleDb.select().from(schedules)
-    .where(and(eq(schedules.date, s.date), inArray(schedules.classId, teacherClassIds))).all()
+  const nearbySchedules = drizzleDb.select().from(schedules)
+    .where(and(
+      gte(schedules.date, shiftDate(s.date, -1)),
+      lte(schedules.date, shiftDate(s.date, 1)),
+      inArray(schedules.classId, teacherClassIds),
+    )).all()
     .filter(x => x.id !== scheduleId);
   const conflicts = [];
-  const sStart = toMin(s.startTime);
-  const sEnd = toMin(s.endTime) >= sStart ? toMin(s.endTime) : toMin(s.endTime) + 24 * 60;
-  for (const other of daySchedules) {
-    const oStart = toMin(other.startTime);
-    const oEnd = toMin(other.endTime) >= oStart ? toMin(other.endTime) : toMin(other.endTime) + 24 * 60;
-    if (sStart < oEnd && oStart < sEnd) {
+  for (const other of nearbySchedules) {
+    if (schedulesOverlap(s, other)) {
       const cls = classMap[other.classId];
       conflicts.push({ id: other.id, classId: other.classId, className: cls?.name, startTime: other.startTime, endTime: other.endTime });
     }
@@ -77,8 +95,9 @@ router.get('/', (req, res) => {
   const { classId, studentId, limit, offset } = req.query;
   const { start, end } = resolveRange(req.query);
   if (!start || !end) return res.status(400).json({ error: 'start/end or range required' });
-  if (start > end) return res.status(400).json({ error: 'start must be <= end' });
-  const daysDiff = Math.ceil((new Date(end + 'T00:00:00') - new Date(start + 'T00:00:00')) / (1000 * 60 * 60 * 24));
+  const rangeError = validateRange(start, end);
+  if (rangeError) return res.status(400).json({ error: rangeError });
+  const daysDiff = dateSpanDays(start, end);
   if (daysDiff > 365 && !classId && !studentId) {
     return res.status(400).json({ error: '日期范围超过365天时请指定 classId 或 studentId 筛选条件' });
   }
@@ -91,7 +110,7 @@ router.get('/', (req, res) => {
   if (classIds.length === 0) return res.json([]);
   if (classId) {
     const queryClassIds = parseClassIdsParam(classId);
-    if (queryClassIds.length) classIds = classIds.filter(id => queryClassIds.includes(id));
+    classIds = classIds.filter(id => queryClassIds.includes(id));
   }
   if (studentId) {
     const student = drizzleDb.select().from(studentsTable)
@@ -119,8 +138,8 @@ router.post('/', validateCreateSchedule, handle, (req, res) => {
   const { classId, date, startTime, endTime, durationBilling, locationName, locationLat, locationLng } = req.body;
   // endTime may be 24:00–47:59 to express a next-day clock time. A 0h or ≥24h
   // span normalizes back to startTime (and would render as a zero-height block), so reject it.
+  if (!isValidScheduleSpan(startTime, endTime)) return res.status(400).json({ error: '排课时长须大于 0 且小于 24 小时' });
   const storedEndTime = normalizeScheduleEndTime(endTime);
-  if (startTime === storedEndTime) return res.status(400).json({ error: '排课时长须大于 0 且小于 24 小时' });
   const cls = drizzleDb.select().from(classes)
     .where(and(eq(classes.id, classId), eq(classes.teacherId, req.teacherId), eq(classes.deleted, false))).get();
   if (!cls) return res.status(404).json({ error: 'Class not found' });
@@ -155,8 +174,8 @@ router.post('/', validateCreateSchedule, handle, (req, res) => {
 
 router.post('/batch', validateBatchCreate, handle, (req, res) => {
   const { classId, semesterId, weekday, dates: manualDates, startTime, endTime, durationBilling, preview } = req.body;
+  if (!isValidScheduleSpan(startTime, endTime)) return res.status(400).json({ error: '排课时长须大于 0 且小于 24 小时' });
   const storedEndTime = normalizeScheduleEndTime(endTime);
-  if (startTime === storedEndTime) return res.status(400).json({ error: '排课时长须大于 0 且小于 24 小时' });
   const cls = drizzleDb.select().from(classes)
     .where(and(eq(classes.id, classId), eq(classes.teacherId, req.teacherId), eq(classes.deleted, false))).get();
   if (!cls) return res.status(404).json({ error: 'Class not found' });
@@ -231,11 +250,9 @@ router.post('/batch', validateBatchCreate, handle, (req, res) => {
   try {
     db.transaction(() => {
       for (let i = 0; i < allValues.length; i += CHUNK) {
-        const result = drizzleDb.insert(schedules).values(allValues.slice(i, i + CHUNK)).run();
-        const firstId = Number(result.lastInsertRowid);
-        for (let j = 0; j < Math.min(CHUNK, allValues.length - i); j++) {
-          idList.push(firstId + j);
-        }
+        const inserted = drizzleDb.insert(schedules).values(allValues.slice(i, i + CHUNK))
+          .returning({ id: schedules.id }).all();
+        idList.push(...inserted.map(row => row.id));
       }
     })();
   } catch (e) {
@@ -259,21 +276,26 @@ router.put('/batch', validateBatchUpdate, handle, (req, res) => {
   if (!fromDate && !toDate && weekday == null) {
     return res.status(400).json({ error: 'fromDate, toDate, or weekday required to scope the update' });
   }
+  if (fromDate && toDate && fromDate > toDate) {
+    return res.status(400).json({ error: 'fromDate 须不晚于 toDate' });
+  }
 
   const allowed = new Set(['startTime', 'endTime', 'durationBilling', 'locationName', 'locationLat', 'locationLng']);
   const safeUpdates = Object.fromEntries(Object.entries(updates).filter(([k]) => allowed.has(k)));
   if (Object.keys(safeUpdates).length === 0) {
     return res.status(400).json({ error: 'No valid fields in updates' });
   }
+  if (safeUpdates.locationLat != null) safeUpdates.locationLat = Number(safeUpdates.locationLat);
+  if (safeUpdates.locationLng != null) safeUpdates.locationLng = Number(safeUpdates.locationLng);
 
   if (safeUpdates.startTime !== undefined && !isValidTime(safeUpdates.startTime)) {
     return res.status(400).json({ error: '开始时间须为有效的 HH:MM (00:00-23:59)' });
   }
-  if (safeUpdates.endTime !== undefined) {
-    if (!isValidScheduleEndTime(safeUpdates.endTime)) {
+  const requestedEndTime = safeUpdates.endTime;
+  if (requestedEndTime !== undefined) {
+    if (!isValidScheduleEndTime(requestedEndTime)) {
       return res.status(400).json({ error: '结束时间须为有效的 HH:MM (00:00-47:59)' });
     }
-    safeUpdates.endTime = normalizeScheduleEndTime(safeUpdates.endTime);
   }
 
   const cls = drizzleDb.select().from(classes)
@@ -310,9 +332,13 @@ router.put('/batch', validateBatchUpdate, handle, (req, res) => {
   const updatedIds = candidates.map(s => s.id);
   if (updatedIds.length > 0) {
     if (safeUpdates.startTime !== undefined || safeUpdates.endTime !== undefined) {
-      if (candidates.some(c => (safeUpdates.startTime ?? c.startTime) === (safeUpdates.endTime ?? c.endTime))) {
+      if (candidates.some(c => !isValidScheduleSpan(
+        safeUpdates.startTime ?? c.startTime,
+        requestedEndTime ?? c.endTime,
+      ))) {
         return res.status(400).json({ error: '排课时长须大于 0 且小于 24 小时' });
       }
+      if (requestedEndTime !== undefined) safeUpdates.endTime = normalizeScheduleEndTime(requestedEndTime);
       const startTime = safeUpdates.startTime;
       const endTime = safeUpdates.endTime;
       if (startTime && endTime) {
@@ -475,6 +501,8 @@ router.put('/:id', validateUpdateSchedule, handle, (req, res) => {
   const allowed = ['classId', 'date', 'startTime', 'endTime', 'durationBilling', 'locationName', 'locationLat', 'locationLng'];
   const updates = Object.fromEntries(Object.entries(req.body).filter(([k]) => allowed.includes(k)));
   if (Object.keys(updates).length === 0) return res.status(400).json({ error: 'No valid fields' });
+  if (updates.locationLat != null) updates.locationLat = Number(updates.locationLat);
+  if (updates.locationLng != null) updates.locationLng = Number(updates.locationLng);
 
   // Validate new classId belongs to this teacher and is not deleted
   if (updates.classId !== undefined) {
@@ -483,7 +511,11 @@ router.put('/:id', validateUpdateSchedule, handle, (req, res) => {
     if (!newCls) return res.status(403).json({ error: 'Forbidden' });
   }
   if (updates.startTime !== undefined || updates.endTime !== undefined) {
-    if (updates.endTime !== undefined) updates.endTime = normalizeScheduleEndTime(updates.endTime);
+    const rawEndTime = updates.endTime ?? existing.endTime;
+    if (!isValidScheduleSpan(updates.startTime ?? existing.startTime, rawEndTime)) {
+      return res.status(400).json({ error: '排课时长须大于 0 且小于 24 小时' });
+    }
+    if (updates.endTime !== undefined) updates.endTime = normalizeScheduleEndTime(rawEndTime);
     updates.durationBilling = calcDurationBilling(
       updates.startTime || existing.startTime,
       updates.endTime || existing.endTime,
@@ -525,6 +557,8 @@ router.delete('/:id', (req, res) => {
 router.get('/summary', (req, res) => {
   const { start, end, format } = resolveRange(req.query);
   if (!start || !end) return res.status(400).json({ error: 'start/end or range required' });
+  const rangeError = validateRange(start, end);
+  if (rangeError) return res.status(400).json({ error: rangeError });
 
   const teacherClasses = drizzleDb.select().from(classes)
     .where(and(eq(classes.teacherId, req.teacherId), eq(classes.deleted, false))).all();
@@ -533,7 +567,7 @@ router.get('/summary', (req, res) => {
   let classIds = teacherClasses.map(c => c.id);
   if (req.query.classId) {
     const queryClassIds = parseClassIdsParam(req.query.classId);
-    if (queryClassIds.length) classIds = classIds.filter(id => queryClassIds.includes(id));
+    classIds = classIds.filter(id => queryClassIds.includes(id));
   }
   if (classIds.length === 0) {
     const empty = { count: 0, hours: 0, revenue: 0, byClass: [], bySubject: [], byGrade: [], byMonth: [] };
@@ -638,13 +672,15 @@ router.get('/export', (req, res) => {
   const resolved = resolveRange(req.query);
   const { start, end, classId, format } = resolved;
   if (!start || !end) return res.status(400).json({ error: 'start/end or range required' });
+  const rangeError = validateRange(start, end);
+  if (rangeError) return res.status(400).json({ error: rangeError });
 
   const teacherClasses = drizzleDb.select().from(classes)
     .where(and(eq(classes.teacherId, req.teacherId), eq(classes.deleted, false))).all();
   let cIds = teacherClasses.map(c => c.id);
   if (classId) {
     const queryClassIds = parseClassIdsParam(classId);
-    if (queryClassIds.length) cIds = cIds.filter(id => queryClassIds.includes(id));
+    cIds = cIds.filter(id => queryClassIds.includes(id));
   }
 
   const classMap = {};
@@ -694,23 +730,35 @@ function getFreeSlotsForDate(dateStr, teacherId, dayStart = '08:00', dayEnd = '2
   if (classIds.length === 0) return [{ start: dayStart, end: dayEnd }];
 
   const daySchedules = drizzleDb.select().from(schedules)
-    .where(and(eq(schedules.date, dateStr), inArray(schedules.classId, classIds))).all();
+    .where(and(
+      gte(schedules.date, shiftDate(dateStr, -1)),
+      lte(schedules.date, dateStr),
+      inArray(schedules.classId, classIds),
+    )).all();
 
   if (daySchedules.length === 0) return [{ start: dayStart, end: dayEnd }];
 
-  const sorted = daySchedules.sort((a, b) => a.startTime.localeCompare(b.startTime));
+  return computeFreeSlots(daySchedules, dayStart, dayEnd, dateStr);
+}
+
+function computeFreeSlots(daySchedules, dayStart, dayEnd, dateStr) {
   const toTime = (mins) => `${String(Math.floor(mins / 60)).padStart(2, '0')}:${String(mins % 60).padStart(2, '0')}`;
   const startMin = toMin(dayStart);
   const endMin = toMin(dayEnd);
+  const targetDayStart = scheduleBounds({ date: dateStr, startTime: '00:00', endTime: '00:01' })[0];
+  const busyRanges = daySchedules.map(schedule => {
+    const [start, end] = scheduleBounds(schedule);
+    return { start: start - targetDayStart, end: end - targetDayStart };
+  }).sort((a, b) => a.start - b.start);
   const freeSlots = [];
   let cursor = startMin;
 
-  for (const s of sorted) {
-    const sStart = toMin(s.startTime);
-    const sEndRaw = toMin(s.endTime);
-    const sEnd = sEndRaw > sStart ? sEndRaw : sEndRaw + 24 * 60;
-    if (sStart > cursor) freeSlots.push({ start: toTime(cursor), end: toTime(sStart) });
-    cursor = Math.max(cursor, sEnd);
+  for (const range of busyRanges) {
+    const busyStart = Math.max(startMin, range.start);
+    const busyEnd = Math.min(endMin, range.end);
+    if (busyEnd <= startMin || busyStart >= endMin) continue;
+    if (busyStart > cursor) freeSlots.push({ start: toTime(cursor), end: toTime(busyStart) });
+    cursor = Math.max(cursor, busyEnd);
   }
   if (cursor < endMin) freeSlots.push({ start: toTime(cursor), end: toTime(endMin) });
   return freeSlots;
@@ -733,7 +781,10 @@ router.get('/free-slots', (req, res) => {
   if (dStart >= dEnd) {
     return res.status(400).json({ error: 'after/dayStart 须早于 before/dayEnd（不支持跨午夜查询）' });
   }
-  const minDur = minDuration ? Math.max(0, +minDuration) : 0;
+  if (minDuration != null && (String(minDuration).trim() === '' || !Number.isFinite(+minDuration) || +minDuration < 0)) {
+    return res.status(400).json({ error: 'minDuration 须为非负数字' });
+  }
+  const minDur = minDuration == null ? 0 : +minDuration;
 
   function filterSlots(slots) {
     if (!minDur) return slots;
@@ -748,6 +799,8 @@ router.get('/free-slots', (req, res) => {
     return res.json({ date, slots: filterSlots(getFreeSlotsForDate(date, req.teacherId, dStart, dEnd)) });
   }
   if (start && end) {
+    const rangeError = validateRange(start, end, { maxDays: 365 });
+    if (rangeError) return res.status(400).json({ error: rangeError });
     // Bulk query: fetch all schedules in range once instead of day-by-day
     const teacherClassIds = drizzleDb.select({ id: classes.id }).from(classes)
       .where(and(eq(classes.teacherId, req.teacherId), eq(classes.deleted, false))).all().map(c => c.id);
@@ -757,42 +810,27 @@ router.get('/free-slots', (req, res) => {
       const current = new Date(start + 'T00:00:00');
       const endDate = new Date(end + 'T00:00:00');
       while (current <= endDate) {
-        results.push({ date: toLocalDateStr(current), slots: [{ start: dStart, end: dEnd }] });
+        const slots = filterSlots([{ start: dStart, end: dEnd }]);
+        if (slots.length > 0) results.push({ date: toLocalDateStr(current), slots });
         current.setDate(current.getDate() + 1);
       }
       return res.json(results);
     }
     const rangeSchedules = drizzleDb.select().from(schedules)
-      .where(and(gte(schedules.date, start), lte(schedules.date, end), inArray(schedules.classId, teacherClassIds)))
+      .where(and(gte(schedules.date, shiftDate(start, -1)), lte(schedules.date, end), inArray(schedules.classId, teacherClassIds)))
       .all()
       .sort((a, b) => a.startTime.localeCompare(b.startTime));
     const byDate = {};
     for (const s of rangeSchedules) {
       (byDate[s.date] ??= []).push(s);
     }
-    const toTimeStr = (mins) => `${String(Math.floor(mins / 60)).padStart(2, '0')}:${String(mins % 60).padStart(2, '0')}`;
-    const dStartMin = toMin(dStart);
-    const dEndMin = toMin(dEnd);
-    function computeFreeSlots(dayScheds) {
-      if (!dayScheds.length) return [{ start: dStart, end: dEnd }];
-      const freeSlots = [];
-      let cursor = dStartMin;
-      for (const s of dayScheds) {
-        const sStart = toMin(s.startTime);
-        const sEndRaw = toMin(s.endTime);
-        const sEnd = sEndRaw > sStart ? sEndRaw : sEndRaw + 24 * 60;
-        if (sStart > cursor) freeSlots.push({ start: toTimeStr(cursor), end: toTimeStr(sStart) });
-        cursor = Math.max(cursor, sEnd);
-      }
-      if (cursor < dEndMin) freeSlots.push({ start: toTimeStr(cursor), end: toTimeStr(dEndMin) });
-      return freeSlots;
-    }
     const results = [];
     const current = new Date(start + 'T00:00:00');
     const endDate = new Date(end + 'T00:00:00');
     while (current <= endDate) {
       const dateStr = toLocalDateStr(current);
-      const slots = filterSlots(computeFreeSlots(byDate[dateStr] || []));
+      const relevant = [...(byDate[shiftDate(dateStr, -1)] || []), ...(byDate[dateStr] || [])];
+      const slots = filterSlots(computeFreeSlots(relevant, dStart, dEnd, dateStr));
       if (slots.length > 0) results.push({ date: dateStr, slots });
       current.setDate(current.getDate() + 1);
     }
@@ -806,6 +844,8 @@ router.get('/conflicts', (req, res) => {
   const defaultEnd = toLocalDateStr(new Date(Date.now() + 60 * 24 * 60 * 60 * 1000));
   const start = req.query.start || today;
   const end = req.query.end || defaultEnd;
+  const rangeError = validateRange(start, end);
+  if (rangeError) return res.status(400).json({ error: rangeError });
   const limit = Math.max(1, Math.min(parseInt(req.query.limit) || 20, 100));
 
   const teacherClasses = drizzleDb.select({ id: classes.id }).from(classes)
@@ -814,7 +854,7 @@ router.get('/conflicts', (req, res) => {
   const { classId } = req.query;
   if (classId) {
     const queryClassIds = parseClassIdsParam(classId);
-    if (queryClassIds.length) classIds = classIds.filter(id => queryClassIds.includes(id));
+    classIds = classIds.filter(id => queryClassIds.includes(id));
   }
   if (classIds.length === 0) return res.json({ total: 0, groups: [] });
 
@@ -822,23 +862,16 @@ router.get('/conflicts', (req, res) => {
   teacherClasses.forEach(c => classMap[c.id] = c);
 
   const allSchedules = drizzleDb.select().from(schedules)
-    .where(and(gte(schedules.date, start), lte(schedules.date, end), inArray(schedules.classId, classIds)))
+    .where(and(gte(schedules.date, shiftDate(start, -1)), lte(schedules.date, shiftDate(end, 1)), inArray(schedules.classId, classIds)))
     .all()
     .map(s => ({ ...s, class: classMap[s.classId] || null }));
 
-  const byDate = {};
-  for (const s of allSchedules) {
-    if (!byDate[s.date]) byDate[s.date] = [];
-    byDate[s.date].push(s);
-  }
-
   const conflictGroups = [];
-  for (const date of Object.keys(byDate).sort()) {
-    const groups = detectConflictGroups(byDate[date]).filter(g => g.length > 1);
-    for (const group of groups) {
-      conflictGroups.push({ date, schedules: group });
-      if (conflictGroups.length >= limit) break;
-    }
+  const groups = detectDatedConflictGroups(allSchedules).filter(group =>
+    group.length > 1 && group.some(s => s.date >= start && s.date <= end)
+  );
+  for (const group of groups) {
+    conflictGroups.push({ date: group[0].date, schedules: group });
     if (conflictGroups.length >= limit) break;
   }
   res.json({ total: conflictGroups.length, groups: conflictGroups });

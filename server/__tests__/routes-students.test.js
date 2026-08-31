@@ -47,6 +47,12 @@ describe('POST /api/students', () => {
     expect(res.status).toBe(400);
   });
 
+  it('rejects a calendar-impossible birthDate', async () => {
+    const res = await request(app).post('/api/students').set(auth(token))
+      .send({ name: '张三', birthDate: '2026-02-30' });
+    expect(res.status).toBe(400);
+  });
+
   it('deduplicates repeated classIds instead of crashing on the junction PK', async () => {
     const { classes } = await import('../db/schema.js');
     const r = drizzleDb.insert(classes).values({
