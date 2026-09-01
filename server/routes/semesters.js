@@ -19,10 +19,11 @@ router.get('/', (req, res) => {
 
 router.post('/', validateCreateSemester, handle, (req, res) => {
   const { name, type, startDate, endDate } = req.body;
-  // Check for overlapping semesters
+  // Check for overlapping semesters. Half-open comparison: a semester that
+  // starts on the day another ends is contiguous, not overlapping.
   const existing = drizzleDb.select().from(semesters)
     .where(eq(semesters.teacherId, req.teacherId)).all();
-  const overlaps = existing.some(s => startDate <= s.endDate && endDate >= s.startDate);
+  const overlaps = existing.some(s => startDate < s.endDate && endDate > s.startDate);
   if (overlaps) return res.status(409).json({ error: '该教师已有日期重叠的学期' });
   const result = drizzleDb.insert(semesters).values({
     teacherId: req.teacherId, name, type, startDate, endDate,
@@ -49,7 +50,7 @@ router.put('/:id', validateUpdateSemester, handle, (req, res) => {
   // Check for overlapping semesters (excluding current)
   const allSemesters = drizzleDb.select().from(semesters)
     .where(eq(semesters.teacherId, req.teacherId)).all();
-  const overlaps = allSemesters.some(s => s.id !== +id && newStart <= s.endDate && newEnd >= s.startDate);
+  const overlaps = allSemesters.some(s => s.id !== +id && newStart < s.endDate && newEnd > s.startDate);
   if (overlaps) return res.status(409).json({ error: '该教师已有日期重叠的学期' });
   drizzleDb.update(semesters).set(safeUpdates).where(eq(semesters.id, +id)).run();
   const updated = drizzleDb.select().from(semesters).where(eq(semesters.id, +id)).get();

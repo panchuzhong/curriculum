@@ -153,3 +153,35 @@ describe('edge cases', () => {
     expect(res.body.endDate).toBe('2026-05-01');
   });
 });
+
+describe('POST /api/semesters — contiguous boundary (adversarial)', () => {
+  it('allows a semester starting on the day another ends', async () => {
+    const first = await request(app).post('/api/semesters').set(auth(token))
+      .send({ name: '2026秋季', type: 'fall', startDate: '2026-09-01', endDate: '2027-01-15' });
+    expect(first.status).toBe(200);
+
+    const second = await request(app).post('/api/semesters').set(auth(token))
+      .send({ name: '2027寒假', type: 'winter', startDate: '2027-01-15', endDate: '2027-02-20' });
+    expect(second.status).toBe(200);
+    expect(second.body.id).toBeDefined();
+  });
+
+  it('still rejects a true overlap by one day', async () => {
+    await request(app).post('/api/semesters').set(auth(token))
+      .send({ name: '2026秋季', type: 'fall', startDate: '2026-09-01', endDate: '2027-01-15' });
+    const res = await request(app).post('/api/semesters').set(auth(token))
+      .send({ name: '重叠', type: 'winter', startDate: '2027-01-14', endDate: '2027-02-20' });
+    expect(res.status).toBe(409);
+  });
+
+  it('PUT allows moving a semester boundary to touch its neighbor', async () => {
+    const a = await request(app).post('/api/semesters').set(auth(token))
+      .send({ name: '2026秋季', type: 'fall', startDate: '2026-09-01', endDate: '2027-01-15' });
+    const b = await request(app).post('/api/semesters').set(auth(token))
+      .send({ name: '2027寒假', type: 'winter', startDate: '2027-01-16', endDate: '2027-02-20' });
+    const res = await request(app).put(`/api/semesters/${b.body.id}`).set(auth(token))
+      .send({ startDate: '2027-01-15' });
+    expect(res.status).toBe(200);
+    expect(res.body.startDate).toBe('2027-01-15');
+  });
+});
