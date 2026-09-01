@@ -33,7 +33,14 @@ cp -r server "$RELEASE_DIR/"
 rm -rf "$RELEASE_DIR/server/__tests__"
 cp -r scripts "$RELEASE_DIR/"
 cp package.json package-lock.json "$RELEASE_DIR/"
-cp .env.example "$RELEASE_DIR/.env" 2>/dev/null || cp .env "$RELEASE_DIR/.env"
+# Ship the template as the starting .env. The old fallback copied the
+# developer's real .env — live JWT_SECRET and AMAP_KEY — straight into the
+# distributed tarball whenever the template was missing. Fail loudly instead.
+if [ ! -f .env.example ]; then
+  echo "ERROR: .env.example is missing; refusing to build a release." >&2
+  exit 1
+fi
+cp .env.example "$RELEASE_DIR/.env"
 cp README.md "$RELEASE_DIR/"
 
 # Create start script
