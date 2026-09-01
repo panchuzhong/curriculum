@@ -200,3 +200,36 @@ describe('Cross-teacher authorization', () => {
     expect(res.status).toBe(404);
   });
 });
+
+describe('Cross-class scoping', () => {
+  it('PUT does not reach a pricing record belonging to another class', async () => {
+    const { body: other } = await request(app).post('/api/classes').set(auth(token))
+      .send({ name: '另一个班', grade: '高二', subject: '物理', studentCount: 2, unitPrice: 300 });
+    const { body: otherPricing } = await request(app).get(`/api/classes/${other.id}/pricing`).set(auth(token));
+
+    // Address the other class's record through this class's URL
+    const res = await request(app).put(`/api/classes/${classId}/pricing/${otherPricing[0].id}`)
+      .set(auth(token)).send({ unitPrice: 999 });
+    expect(res.status).toBe(404);
+
+    // The other class keeps its price, and so does its synced class row
+    const { body: after } = await request(app).get(`/api/classes/${other.id}/pricing`).set(auth(token));
+    expect(after[0].unitPrice).toBe(300);
+    const { body: otherClass } = await request(app).get(`/api/classes/${other.id}`).set(auth(token));
+    expect(otherClass.unitPrice).toBe(300);
+  });
+
+  it('DELETE does not reach a pricing record belonging to another class', async () => {
+    const { body: other } = await request(app).post('/api/classes').set(auth(token))
+      .send({ name: '另一个班', grade: '高二', subject: '物理', studentCount: 2, unitPrice: 300 });
+    await request(app).post(`/api/classes/${other.id}/pricing`).set(auth(token))
+      .send({ studentCount: 2, unitPrice: 400, effectiveFrom: '2099-07-01' });
+    const { body: otherPricing } = await request(app).get(`/api/classes/${other.id}/pricing`).set(auth(token));
+
+    const res = await request(app).delete(`/api/classes/${classId}/pricing/${otherPricing[0].id}`).set(auth(token));
+    expect(res.status).toBe(404);
+
+    const { body: after } = await request(app).get(`/api/classes/${other.id}/pricing`).set(auth(token));
+    expect(after).toHaveLength(2);
+  });
+});

@@ -234,6 +234,7 @@ router.post('/restore', express.json({ limit: '50mb' }), (req, res) => {
       counts.auditLog = restoreData.auditLog.length;
     })();
   } catch (err) {
+    console.error('Backup restore failed:', err);
     return res.status(500).json({ error: '还原失败，事务已回滚，原数据保留' });
   }
 

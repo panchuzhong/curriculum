@@ -1,3 +1,26 @@
+// The stored week is the first visible day, and its span can straddle a month or
+// year boundary — the week beginning 2026-08-31 runs into September. Asking
+// whether the span *touches* a period, rather than testing its first day alone,
+// keeps "this week" recognisable as belonging to "this month" on such a week.
+function weekSpan(weekStart) {
+  const start = new Date(weekStart + 'T00:00:00');
+  const end = new Date(start);
+  end.setDate(end.getDate() + 6);
+  return [start, end];
+}
+
+function weekTouchesMonth(weekStart, year, month) {
+  const [start, end] = weekSpan(weekStart);
+  const target = year * 12 + month;
+  return target >= start.getFullYear() * 12 + start.getMonth()
+    && target <= end.getFullYear() * 12 + end.getMonth();
+}
+
+function weekTouchesYear(weekStart, year) {
+  const [start, end] = weekSpan(weekStart);
+  return year >= start.getFullYear() && year <= end.getFullYear();
+}
+
 // Pure function: computes navigation target URL from current view context.
 // Parameters:
 //   path       - target path (e.g. '/monthly')
@@ -10,8 +33,21 @@ export function getNavTarget(path, currentPath, getDate) {
     const wk = getDate('week');
     if (wk) {
       const d = new Date(wk + 'T00:00:00');
-      if (path === '/monthly') return `/monthly?year=${d.getFullYear()}&month=${d.getMonth()}`;
-      if (path === '/yearly') return `/yearly?year=${d.getFullYear()}`;
+      if (path === '/monthly') {
+        // A week spanning two months belongs to whichever the views last agreed
+        // on, so long as the span still reaches it; else the start day's month.
+        const mo = getDate('month');
+        if (mo) {
+          const [my, mm] = mo.split('-').map(Number);
+          if (weekTouchesMonth(wk, my, mm)) return `/monthly?year=${my}&month=${mm}`;
+        }
+        return `/monthly?year=${d.getFullYear()}&month=${d.getMonth()}`;
+      }
+      if (path === '/yearly') {
+        const yr = getDate('year');
+        if (yr && weekTouchesYear(wk, +yr)) return `/yearly?year=${yr}`;
+        return `/yearly?year=${d.getFullYear()}`;
+      }
     }
     if (path === '/' || path === '') return wk ? `/?week=${wk}` : '/';
   }
@@ -23,10 +59,7 @@ export function getNavTarget(path, currentPath, getDate) {
       if (path === '/' || path === '') {
         // Prefer stored week if it belongs to the current displayed month
         const wk = getDate('week');
-        if (wk) {
-          const d = new Date(wk + 'T00:00:00');
-          if (d.getFullYear() === +y && d.getMonth() === +m) return `/?week=${wk}`;
-        }
+        if (wk && weekTouchesMonth(wk, +y, +m)) return `/?week=${wk}`;
         return `/?date=${y}-${String(+m + 1).padStart(2, '0')}-10`;
       }
       if (path === '/yearly') return `/yearly?year=${y}`;
@@ -41,7 +74,7 @@ export function getNavTarget(path, currentPath, getDate) {
       if (path === '/' || path === '') {
         // Prefer stored week if in same year
         const wk = getDate('week');
-        if (wk && new Date(wk + 'T00:00:00').getFullYear() === +yr) return `/?week=${wk}`;
+        if (wk && weekTouchesYear(wk, +yr)) return `/?week=${wk}`;
         // Prefer stored month if in same year
         const mo = getDate('month');
         if (mo) {

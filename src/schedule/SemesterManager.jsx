@@ -26,8 +26,10 @@ export function getDefaultsFromSemesters(semesters) {
     const y = now.getFullYear();
     const m = now.getMonth() + 1;
     if (m >= 2 && m <= 7) return SEMESTER_TEMPLATES.spring(y);
-    if (m >= 8 && m <= 9) return SEMESTER_TEMPLATES.summer(y);
-    if (m >= 10) return SEMESTER_TEMPLATES.fall(y);
+    // fall starts 09-01, so September must not fall through to the summer
+    // template — it ends 08-31 and would pre-fill a range entirely in the past.
+    if (m === 8) return SEMESTER_TEMPLATES.summer(y);
+    if (m >= 9) return SEMESTER_TEMPLATES.fall(y);
     return SEMESTER_TEMPLATES.winter(y - 1);
   }
 

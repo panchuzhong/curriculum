@@ -272,7 +272,13 @@ pricingRouter.post('/', validateCreatePricing, handle, (req, res) => {
 // Update a pricing record
 pricingRouter.put('/:pricingId', validateUpdatePricing, handle, (req, res) => {
   const pricingId = +req.params.pricingId;
-  const record = drizzleDb.select().from(classPricing).where(eq(classPricing.id, pricingId)).get();
+  const classId = +req.params.classId;
+  // The record must belong to the class named in the URL. Authorizing on
+  // record.classId alone let /api/classes/1/pricing/<record of class 2> rewrite
+  // class 2's price and sync it onto class 2's row — a silent edit to a class
+  // the caller never named.
+  const record = drizzleDb.select().from(classPricing)
+    .where(and(eq(classPricing.id, pricingId), eq(classPricing.classId, classId))).get();
   if (!record) return res.status(404).json({ error: 'Pricing record not found' });
 
   const cls = drizzleDb.select().from(classes)
@@ -292,25 +298,34 @@ pricingRouter.put('/:pricingId', validateUpdatePricing, handle, (req, res) => {
   }
 
   let updated;
-  db.transaction(() => {
-    drizzleDb.update(classPricing).set(updates).where(eq(classPricing.id, pricingId)).run();
+  try {
+    db.transaction(() => {
+      drizzleDb.update(classPricing).set(updates).where(eq(classPricing.id, pricingId)).run();
 
-    // Sync latest to classes table
-    const latest = drizzleDb.select().from(classPricing)
-      .where(eq(classPricing.classId, record.classId))
-      .orderBy(desc(classPricing.effectiveFrom))
-      .get();
-    if (latest) {
-      drizzleDb.update(classes).set({
-        studentCount: latest.studentCount,
-        unitPrice: latest.unitPrice,
-        discountAmount: latest.discountAmount,
-        discountReason: latest.discountReason,
-      }).where(eq(classes.id, record.classId)).run();
+      // Sync latest to classes table
+      const latest = drizzleDb.select().from(classPricing)
+        .where(eq(classPricing.classId, record.classId))
+        .orderBy(desc(classPricing.effectiveFrom))
+        .get();
+      if (latest) {
+        drizzleDb.update(classes).set({
+          studentCount: latest.studentCount,
+          unitPrice: latest.unitPrice,
+          discountAmount: latest.discountAmount,
+          discountReason: latest.discountReason,
+        }).where(eq(classes.id, record.classId)).run();
+      }
+
+      updated = drizzleDb.select().from(classPricing).where(eq(classPricing.id, pricingId)).get();
+    })();
+  } catch (e) {
+    // idx_cp_class_eff is the real guard: the check above can lose a race with a
+    // concurrent write, and that must surface as the same 409 POST returns.
+    if (e.message?.includes('UNIQUE constraint')) {
+      return res.status(409).json({ error: '该日期已有定价记录' });
     }
-
-    updated = drizzleDb.select().from(classPricing).where(eq(classPricing.id, pricingId)).get();
-  })();
+    throw e;
+  }
   clearReportCache(req.teacherId);
   logAudit({ teacherId: req.teacherId, action: 'UPDATE', tableName: 'class_pricing', recordId: pricingId, before: record, after: updates });
   res.json(updated);
@@ -319,7 +334,9 @@ pricingRouter.put('/:pricingId', validateUpdatePricing, handle, (req, res) => {
 // Delete a pricing record (keep at least one)
 pricingRouter.delete('/:pricingId', (req, res) => {
   const pricingId = +req.params.pricingId;
-  const record = drizzleDb.select().from(classPricing).where(eq(classPricing.id, pricingId)).get();
+  const classId = +req.params.classId;
+  const record = drizzleDb.select().from(classPricing)
+    .where(and(eq(classPricing.id, pricingId), eq(classPricing.classId, classId))).get();
   if (!record) return res.status(404).json({ error: 'Pricing record not found' });
 
   const cls = drizzleDb.select().from(classes)

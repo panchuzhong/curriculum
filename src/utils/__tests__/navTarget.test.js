@@ -209,4 +209,49 @@ describe('getNavTarget', () => {
       expect(getNavTarget('/yearly', '/', dates({}))).toBe('/yearly');
     });
   });
+  describe('Week spanning a month or year boundary', () => {
+    // The week beginning Mon 2026-08-31 runs through Sun 2026-09-06, so it is
+    // both "the last week of August" and "the week containing 2026-09-01".
+    // Matching only its first day made Home-then-navigate land a month early.
+
+    it('month → week: keeps a week that starts in the previous month', () => {
+      const result = getNavTarget('/', '/monthly', dates({ month: '2026-8', week: '2026-08-31' }));
+      expect(result).toBe('/?week=2026-08-31');
+    });
+
+    it('month → week: still keeps that week for the month it starts in', () => {
+      const result = getNavTarget('/', '/monthly', dates({ month: '2026-7', week: '2026-08-31' }));
+      expect(result).toBe('/?week=2026-08-31');
+    });
+
+    it('month → week: a week touching neither end is still rejected', () => {
+      const result = getNavTarget('/', '/monthly', dates({ month: '2026-8', week: '2026-04-06' }));
+      expect(result).toBe('/?date=2026-09-10');
+    });
+
+    it('week → month: prefers the stored month the span reaches into', () => {
+      const result = getNavTarget('/monthly', '/', dates({ week: '2026-08-31', month: '2026-8' }));
+      expect(result).toBe('/monthly?year=2026&month=8');
+    });
+
+    it('week → month: ignores a stored month the span cannot reach', () => {
+      const result = getNavTarget('/monthly', '/', dates({ week: '2026-08-31', month: '2026-2' }));
+      expect(result).toBe('/monthly?year=2026&month=7');
+    });
+
+    it('year → week: keeps a week that starts in the previous year', () => {
+      const result = getNavTarget('/', '/yearly', dates({ year: '2027', week: '2026-12-28' }));
+      expect(result).toBe('/?week=2026-12-28');
+    });
+
+    it('week → year: prefers the stored year the span reaches into', () => {
+      const result = getNavTarget('/yearly', '/', dates({ week: '2026-12-28', year: '2027' }));
+      expect(result).toBe('/yearly?year=2027');
+    });
+
+    it('week → year: ignores a stored year the span cannot reach', () => {
+      const result = getNavTarget('/yearly', '/', dates({ week: '2026-12-28', year: '2030' }));
+      expect(result).toBe('/yearly?year=2026');
+    });
+  });
 });
