@@ -1070,3 +1070,81 @@ describe('PUT /api/schedules — error paths', () => {
     expect(res.status).toBe(404);
   });
 });
+
+describe('PUT /api/schedules — midnight "00:00" billing recalculation', () => {
+  it('PUT /:id with endTime "00:00" recomputes billing as cross-midnight, not old end', async () => {
+    const create = await request(app).post('/api/schedules').set(auth(token))
+      .send({ classId, date: '2026-05-04', startTime: '23:00', endTime: '23:30' });
+    expect(create.status).toBe(200);
+    expect(create.body.durationBilling).toBe(30);
+
+    const res = await request(app).put(`/api/schedules/${create.body.id}`).set(auth(token))
+      .send({ endTime: '00:00' });
+    expect(res.status).toBe(200);
+    expect(res.body.endTime).toBe('00:00');
+    expect(res.body.durationBilling).toBe(60);
+  });
+
+  it('PUT /:id with startTime "00:00" recomputes billing from midnight, not old start', async () => {
+    const create = await request(app).post('/api/schedules').set(auth(token))
+      .send({ classId, date: '2026-05-04', startTime: '08:00', endTime: '09:00' });
+    expect(create.status).toBe(200);
+    expect(create.body.durationBilling).toBe(60);
+
+    const res = await request(app).put(`/api/schedules/${create.body.id}`).set(auth(token))
+      .send({ startTime: '00:00' });
+    expect(res.status).toBe(200);
+    expect(res.body.startTime).toBe('00:00');
+    expect(res.body.durationBilling).toBe(540);
+  });
+
+  it('PUT /batch with startTime "00:00" and endTime "01:00" recomputes billing as 60 minutes', async () => {
+    const create = await request(app).post('/api/schedules').set(auth(token))
+      .send({ classId, date: '2026-05-05', startTime: '08:00', endTime: '09:00' });
+    expect(create.status).toBe(200);
+
+    const res = await request(app).put('/api/schedules/batch').set(auth(token))
+      .send({ classId, fromDate: '2026-05-05', updates: { startTime: '00:00', endTime: '01:00' } });
+    expect(res.status).toBe(200);
+    expect(res.body.count).toBe(1);
+
+    const check = await request(app).get(`/api/schedules/${create.body.id}`).set(auth(token));
+    expect(check.body.startTime).toBe('00:00');
+    expect(check.body.endTime).toBe('01:00');
+    expect(check.body.durationBilling).toBe(60);
+  });
+});
+
+describe('GET /api/schedules/free-slots — cross-midnight adversarial', () => {
+  it('class starting after window end (23:00-01:00) leaves 08:00-22:30 fully free', async () => {
+    await request(app).post('/api/schedules').set(auth(token))
+      .send({ classId, date: '2026-05-04', startTime: '23:00', endTime: '01:00' });
+    const res = await request(app).get('/api/schedules/free-slots?date=2026-05-04&dayStart=08:00&dayEnd=22:30').set(auth(token));
+    expect(res.status).toBe(200);
+    expect(res.body.slots).toEqual([{ start: '08:00', end: '22:30' }]);
+  });
+
+  it('cross-midnight class 21:00-01:00 truncates evening free slot at 21:00', async () => {
+    await request(app).post('/api/schedules').set(auth(token))
+      .send({ classId, date: '2026-05-04', startTime: '21:00', endTime: '01:00' });
+    const res = await request(app).get('/api/schedules/free-slots?date=2026-05-04&dayStart=08:00&dayEnd=22:30').set(auth(token));
+    expect(res.status).toBe(200);
+    expect(res.body.slots).toEqual([{ start: '08:00', end: '21:00' }]);
+  });
+
+  it('previous-day tail (23:00-01:00) is subtracted from early-morning window', async () => {
+    await request(app).post('/api/schedules').set(auth(token))
+      .send({ classId, date: '2026-05-03', startTime: '23:00', endTime: '01:00' });
+    const res = await request(app).get('/api/schedules/free-slots?date=2026-05-04&after=00:30&before=02:00').set(auth(token));
+    expect(res.status).toBe(200);
+    expect(res.body.slots).toEqual([{ start: '01:00', end: '02:00' }]);
+  });
+
+  it('late-evening class 22:00-23:59 truncates free slot at 22:00', async () => {
+    await request(app).post('/api/schedules').set(auth(token))
+      .send({ classId, date: '2026-05-04', startTime: '22:00', endTime: '23:59' });
+    const res = await request(app).get('/api/schedules/free-slots?date=2026-05-04').set(auth(token));
+    expect(res.status).toBe(200);
+    expect(res.body.slots).toEqual([{ start: '08:00', end: '22:00' }]);
+  });
+});
