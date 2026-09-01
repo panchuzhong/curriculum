@@ -190,7 +190,7 @@ router.get('/help', authMiddleware, (req, res) => {
         byGrade: '按年级分组 [{grade, count, hours, revenue}]，按次数降序',
         byMonth: '按月份分组 [{month: "YYYY-MM", count, hours, revenue}]，按时间升序',
       },
-      revenueFormula: '按排课日期匹配 class_pricing 中的对应版本：(classPricing.unitPrice × classPricing.studentCount - classPricing.discountAmount) × (durationBilling 分钟 / 60)；当日无 class_pricing 时回退到班级表当前值；discount 大于课时基价时收入会为负数',
+      revenueFormula: '按排课日期匹配 class_pricing 中的对应版本：(classPricing.unitPrice × classPricing.studentCount - classPricing.discountAmount) × (durationBilling 分钟 / 60)；当日无 class_pricing 时回退到班级表当前值；discount 大于课时基价时该次课收入按 0 计（不出现负收入）',
     },
     dataModels: {
       class: {
