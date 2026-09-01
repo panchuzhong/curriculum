@@ -181,3 +181,52 @@ describe('Data isolation', () => {
     expect(res.status).toBe(404);
   });
 });
+
+describe('PUT /api/students/:id preserves links to soft-deleted classes', () => {
+  async function seedClasses() {
+    const { classes: classesTable, teachers } = await import('../db/schema.js');
+    const teacher = drizzleDb.select().from(teachers).get();
+    const mk = (name, deleted) => Number(drizzleDb.insert(classesTable).values({
+      teacherId: teacher.id, name, grade: '高一', subject: '数学',
+      studentCount: 1, unitPrice: 100, deleted,
+    }).run().lastInsertRowid);
+    return { teacherId: teacher.id, activeId: mk('在读班', false), deletedId: mk('已停课班', true) };
+  }
+
+  it('an unrelated field edit must not drop membership in a soft-deleted class', async () => {
+    const { classStudents } = await import('../db/schema.js');
+    const { activeId, deletedId } = await seedClasses();
+
+    const created = await request(app).post('/api/students').set(auth(token))
+      .send({ name: '张三', classIds: [activeId] });
+    const studentId = created.body.id;
+    // The state a class soft-deleted after the student joined leaves behind.
+    drizzleDb.insert(classStudents).values({ classId: deletedId, studentId }).run();
+
+    // GET returns both ids, so the dialog round-trips both back on save.
+    const before = await request(app).get('/api/students').set(auth(token));
+    const seen = before.body.find(s => s.id === studentId).classIds;
+    expect([...seen].sort((a, b) => a - b)).toEqual([activeId, deletedId].sort((a, b) => a - b));
+
+    const res = await request(app).put(`/api/students/${studentId}`).set(auth(token))
+      .send({ phone: '13900000000', classIds: seen });
+    expect(res.status).toBe(200);
+    expect([...res.body.classIds].sort((a, b) => a - b))
+      .toEqual([activeId, deletedId].sort((a, b) => a - b));
+  });
+
+  it("still ignores another teacher's class id", async () => {
+    const { classes: classesTable } = await import('../db/schema.js');
+    const other = await makeUser(drizzleDb, 'otherteacher');
+    const foreignId = Number(drizzleDb.insert(classesTable).values({
+      teacherId: other.id, name: '别人的班', grade: '高一', subject: '数学',
+      studentCount: 1, unitPrice: 100,
+    }).run().lastInsertRowid);
+
+    const created = await request(app).post('/api/students').set(auth(token)).send({ name: '李四' });
+    const res = await request(app).put(`/api/students/${created.body.id}`).set(auth(token))
+      .send({ classIds: [foreignId] });
+    expect(res.status).toBe(200);
+    expect(res.body.classIds).toEqual([]);
+  });
+});

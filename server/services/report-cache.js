@@ -1,5 +1,15 @@
-const CACHE_TTL_MS = Number(process.env.REPORT_CACHE_TTL_MS || 60_000);
-const MAX_CACHE_SIZE = Number(process.env.REPORT_CACHE_MAX_SIZE || 100);
+// A malformed override used to become NaN, and every comparison against NaN is
+// false — the TTL stopped expiring entries and the size cap stopped evicting
+// them, both silently. Fall back to the default instead.
+function envNumber(name, fallback) {
+  const raw = process.env[name];
+  if (raw == null || String(raw).trim() === '') return fallback;
+  const parsed = Number(raw);
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : fallback;
+}
+
+const CACHE_TTL_MS = envNumber('REPORT_CACHE_TTL_MS', 60_000);
+const MAX_CACHE_SIZE = envNumber('REPORT_CACHE_MAX_SIZE', 100);
 const cache = new Map();
 
 function makeKey({ teacherId, start, end, classId }) {
@@ -19,6 +29,10 @@ export function getReportCache(params) {
 
 export function setReportCache(params, value) {
   const key = makeKey(params);
+  // Re-inserting an existing key keeps its original position in a Map, which
+  // put the most frequently refreshed report at the front of the eviction
+  // order. Delete first so a refresh moves it to the back.
+  cache.delete(key);
   cache.set(key, { time: Date.now(), value });
   // Evict oldest entry when over the limit
   if (cache.size > MAX_CACHE_SIZE) {

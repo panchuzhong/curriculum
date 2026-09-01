@@ -112,8 +112,12 @@ router.put('/:id', validateUpdateStudent, handle, (req, res) => {
     }
     if (classIds !== undefined) {
       const uniqueClassIds = [...new Set(classIds)];
+      // Ownership is the only guard on update. Excluding soft-deleted classes
+      // silently dropped a student's membership in them on any unrelated edit:
+      // GET /api/students returns those links and the dialog sends them straight
+      // back, so restoring the class would find an empty roster.
       const valid = new Set(drizzleDb.select({ id: classes.id }).from(classes)
-        .where(and(eq(classes.teacherId, req.teacherId), eq(classes.deleted, false), inArray(classes.id, uniqueClassIds)))
+        .where(and(eq(classes.teacherId, req.teacherId), inArray(classes.id, uniqueClassIds)))
         .all().map(c => c.id));
       drizzleDb.delete(classStudents).where(eq(classStudents.studentId, +id)).run();
       const inserts = uniqueClassIds.filter(cid => valid.has(cid)).map(classId => ({ classId, studentId: +id }));

@@ -12,6 +12,8 @@ vi.mock('../db/index.js', () => ({
   get drizzleDb() { return container.drizzleDb; },
   get db() { return container.db; },
   initDb: vi.fn(),
+  // backup.js writes pre-restore snapshots beside the database file.
+  dbDir: './data',
 }));
 vi.mock('../db/seed.js', () => ({
   seedPricingTiers: vi.fn(),

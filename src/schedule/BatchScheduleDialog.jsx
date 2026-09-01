@@ -18,15 +18,23 @@ const WEEKDAY_OPTIONS = [
 // Preselect the semester the teacher is most likely to schedule into: the one
 // in progress, else the one starting soonest. Returns null when every semester
 // has ended, so the dialog keeps asking rather than defaulting to a dead range.
-// The server rejects overlapping semesters (409 on POST and PUT), so at most
-// one can be in progress. GET /api/semesters has no ORDER BY, so "soonest"
-// must compare dates instead of taking the first element.
+//
+// Two semesters can be in progress at once: the server's overlap check is
+// half-open (a term may start the day another ends) while every date range here
+// is inclusive, so they both contain the shared boundary date. Prefer the one
+// that just started — the other ends today and would leave a single day to
+// schedule into. GET /api/semesters has no ORDER BY, so both branches sort
+// explicitly rather than trusting the response order.
 export function pickDefaultSemesterId(semesters, today) {
-  const ongoing = semesters.find(s => s.startDate <= today && today <= s.endDate);
+  const byStartDesc = (a, b) => b.startDate.localeCompare(a.startDate) || a.id - b.id;
+  const byStartAsc = (a, b) => a.startDate.localeCompare(b.startDate) || a.id - b.id;
+  const ongoing = semesters
+    .filter(s => s.startDate <= today && today <= s.endDate)
+    .sort(byStartDesc)[0];
   if (ongoing) return ongoing.id;
   const upcoming = semesters
     .filter(s => s.startDate > today)
-    .sort((a, b) => a.startDate.localeCompare(b.startDate))[0];
+    .sort(byStartAsc)[0];
   return upcoming ? upcoming.id : null;
 }
 

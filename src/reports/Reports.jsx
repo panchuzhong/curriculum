@@ -357,7 +357,7 @@ export default function Reports() {
                 </thead>
                 <tbody>
                   {classData.map(d => (
-                    <tr key={d.label} className="border-b border-gray-200 dark:border-gray-700">
+                    <tr key={d.key ?? d.label} className="border-b border-gray-200 dark:border-gray-700">
                       <td className="p-2 flex items-center gap-2">
                         <span className="w-3 h-3 rounded inline-block" style={{ backgroundColor: d.color }} />
                         {d.label}

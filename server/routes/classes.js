@@ -221,37 +221,49 @@ pricingRouter.post('/', validateCreatePricing, handle, (req, res) => {
 
   const { studentCount, unitPrice, effectiveFrom, discountAmount, discountReason } = req.body;
 
-  // Check for duplicate effective date
-  const existing = drizzleDb.select().from(classPricing)
-    .where(and(eq(classPricing.classId, classId), eq(classPricing.effectiveFrom, effectiveFrom)))
-    .get();
-  if (existing) return res.status(409).json({ error: '该日期已有定价记录' });
-
   let created;
-  db.transaction(() => {
-    const result = drizzleDb.insert(classPricing).values({
-      classId, studentCount, unitPrice,
-      discountAmount: discountAmount ?? 0,
-      discountReason,
-      effectiveFrom,
-    }).run();
+  try {
+    // The duplicate check belongs inside the transaction; idx_cp_class_eff is
+    // the real guard, so a lost race surfaces as a UNIQUE constraint error and
+    // is mapped to the same 409 rather than escaping as a 500.
+    db.transaction(() => {
+      const existing = drizzleDb.select().from(classPricing)
+        .where(and(eq(classPricing.classId, classId), eq(classPricing.effectiveFrom, effectiveFrom)))
+        .get();
+      if (existing) {
+        const err = new Error('duplicate effectiveFrom');
+        err.status = 409;
+        throw err;
+      }
+      const result = drizzleDb.insert(classPricing).values({
+        classId, studentCount, unitPrice,
+        discountAmount: discountAmount ?? 0,
+        discountReason,
+        effectiveFrom,
+      }).run();
 
-    // Sync latest pricing to classes table
-    const latest = drizzleDb.select().from(classPricing)
-      .where(eq(classPricing.classId, classId))
-      .orderBy(desc(classPricing.effectiveFrom))
-      .get();
-    if (latest) {
-      drizzleDb.update(classes).set({
-        studentCount: latest.studentCount,
-        unitPrice: latest.unitPrice,
-        discountAmount: latest.discountAmount,
-        discountReason: latest.discountReason,
-      }).where(eq(classes.id, classId)).run();
+      // Sync latest pricing to classes table
+      const latest = drizzleDb.select().from(classPricing)
+        .where(eq(classPricing.classId, classId))
+        .orderBy(desc(classPricing.effectiveFrom))
+        .get();
+      if (latest) {
+        drizzleDb.update(classes).set({
+          studentCount: latest.studentCount,
+          unitPrice: latest.unitPrice,
+          discountAmount: latest.discountAmount,
+          discountReason: latest.discountReason,
+        }).where(eq(classes.id, classId)).run();
+      }
+
+      created = drizzleDb.select().from(classPricing).where(eq(classPricing.id, Number(result.lastInsertRowid))).get();
+    })();
+  } catch (e) {
+    if (e.status === 409 || e.message?.includes('UNIQUE constraint')) {
+      return res.status(409).json({ error: '该日期已有定价记录' });
     }
-
-    created = drizzleDb.select().from(classPricing).where(eq(classPricing.id, Number(result.lastInsertRowid))).get();
-  })();
+    throw e;
+  }
   clearReportCache(req.teacherId);
   logAudit({ teacherId: req.teacherId, action: 'CREATE', tableName: 'class_pricing', recordId: created.id, after: created });
   res.json(created);

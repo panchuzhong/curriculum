@@ -36,4 +36,23 @@ describe('pickDefaultSemesterId', () => {
   it('学期列表为空时不做预选', () => {
     expect(pickDefaultSemesterId([], '2026-07-20')).toBeNull();
   });
+
+  // 178b146 relaxed the server's overlap check to a half-open comparison so
+  // contiguous semesters may share a boundary date. Ranges are inclusive
+  // everywhere else, so on that one day two semesters are both "in progress"
+  // and the choice must not depend on the order the API happened to return.
+  it('在两个学期共享的边界日上，结果与列表顺序无关', () => {
+    const ending = { id: 1, name: '春季', startDate: '2026-01-01', endDate: '2026-06-30' };
+    const starting = { id: 2, name: '暑期', startDate: '2026-06-30', endDate: '2026-08-31' };
+    const boundary = '2026-06-30';
+    expect(pickDefaultSemesterId([ending, starting], boundary))
+      .toBe(pickDefaultSemesterId([starting, ending], boundary));
+  });
+
+  it('边界日优先选刚开始的那个学期，而不是当天结束的', () => {
+    const ending = { id: 1, name: '春季', startDate: '2026-01-01', endDate: '2026-06-30' };
+    const starting = { id: 2, name: '暑期', startDate: '2026-06-30', endDate: '2026-08-31' };
+    // 从今天起排课：结束的学期只剩 1 天，刚开始的才是有意义的目标
+    expect(pickDefaultSemesterId([ending, starting], '2026-06-30')).toBe(starting.id);
+  });
 });

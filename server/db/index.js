@@ -2,10 +2,14 @@ import Database from 'better-sqlite3';
 import { drizzle } from 'drizzle-orm/better-sqlite3';
 import * as schema from './schema.js';
 import { existsSync, mkdirSync } from 'fs';
+import { dirname } from 'path';
 
 const dbPath = process.env.DB_PATH || './data/data.db';
 
-if (!existsSync('./data')) mkdirSync('./data', { recursive: true });
+// Derive the directory from DB_PATH: hardcoding ./data left a stray directory
+// in the cwd and still failed with SQLITE_CANTOPEN for any other location.
+export const dbDir = dirname(dbPath);
+if (dbDir && !existsSync(dbDir)) mkdirSync(dbDir, { recursive: true });
 
 const db = new Database(dbPath);
 db.pragma('journal_mode = WAL');
@@ -224,10 +228,24 @@ export function initDb() {
     applied.delete(3);
   }
 
-  for (const m of migrations) {
-    if (!applied.has(m.version)) {
-      m.up(db);
-      db.prepare(`INSERT INTO _migrations (version, name) VALUES (?, ?)`).run(m.version, m.name);
+  const pending = migrations.filter(m => !applied.has(m.version));
+  if (pending.length > 0) {
+    // v2 swaps the students table with DROP + RENAME. DROP TABLE performs an
+    // implicit DELETE that trips class_students' foreign key, and that check
+    // cannot be deferred (defer_foreign_keys does not cover it), so foreign
+    // keys have to be off — which PRAGMA only honours outside a transaction.
+    // Each migration still commits atomically, so a failure cannot leave a
+    // half-applied schema that wedges the next start.
+    db.pragma('foreign_keys = OFF');
+    try {
+      for (const m of pending) {
+        db.transaction(() => {
+          m.up(db);
+          db.prepare(`INSERT INTO _migrations (version, name) VALUES (?, ?)`).run(m.version, m.name);
+        })();
+      }
+    } finally {
+      db.pragma('foreign_keys = ON');
     }
   }
 

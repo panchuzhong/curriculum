@@ -17,14 +17,17 @@ function launchBrowser() {
 }
 
 export async function getBrowser() {
-  if (browserPromise) {
+  const pending = browserPromise;
+  if (pending) {
     try {
-      const browser = await browserPromise;
+      const browser = await pending;
       if (browser.connected) return browser;
-      browserPromise = null;
-    } catch {
-      browserPromise = null;
-    }
+    } catch { /* launch failed; fall through and retry below */ }
+    // Awaiting yielded, so another caller may already have replaced the dead
+    // browser. Only retire the entry we actually observed — clearing blindly
+    // would discard their fresh browser and orphan the Chromium process.
+    if (browserPromise === pending) browserPromise = null;
+    else if (browserPromise) return browserPromise;
   }
   browserPromise = launchBrowser().catch(err => {
     browserPromise = null;
@@ -34,9 +37,11 @@ export async function getBrowser() {
 }
 
 export async function closeBrowser() {
-  if (browserPromise) {
-    const browser = await browserPromise;
+  const pending = browserPromise;
+  browserPromise = null;
+  if (!pending) return;
+  try {
+    const browser = await pending;
     await browser.close();
-    browserPromise = null;
-  }
+  } catch { /* launch failed or already gone — nothing left to close */ }
 }
