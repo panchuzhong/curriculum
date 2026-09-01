@@ -74,3 +74,18 @@ describe('getHolidayName', () => {
     expect(getHolidayName('2026-01-01')).toBe('元旦');
   });
 });
+
+describe('getHolidayName year awareness', () => {
+  // HOLIDAY_NAMES is keyed by month-day and holds 2025's and 2026's lunar
+  // dates side by side. A teacher who batch-imports 2027 holidays without
+  // names would otherwise see 2027-02-04 badged 春节 — that is 2025's date.
+  it('does not borrow another year\'s festival name for an uncovered year', () => {
+    expect(getHolidayName('2025-02-04')).toBe('春节');   // 2025 really has it
+    expect(getHolidayName('2027-02-04')).toBe('节假日'); // 2027 has no data
+  });
+
+  it('does not name a date the covered year does not list', () => {
+    expect(getHolidayName('2026-01-28')).toBe('节假日'); // 2025's 春节 date
+    expect(getHolidayName('2026-02-17')).toBe('春节');   // 2026's own date
+  });
+});

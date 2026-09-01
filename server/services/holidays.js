@@ -14,7 +14,13 @@ export function isWorkday(dateStr) {
 }
 
 export function getHolidayName(dateStr) {
+  const year = dateStr.slice(0, 4);
   const mmDd = dateStr.slice(5);
+  // HOLIDAY_NAMES is keyed by month-day alone and mixes the lunar dates of
+  // several years, so consulting it for a year the built-in data does not cover
+  // would borrow another year's festival — 2027-02-04 reading as 春节 because
+  // 2025's Spring Festival fell there. Only name dates this year actually has.
+  if (!(HOLIDAYS[year] || []).includes(mmDd)) return '节假日';
   return HOLIDAY_NAMES[mmDd] || '节假日';
 }
 

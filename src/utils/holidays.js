@@ -117,7 +117,11 @@ export function getHolidayName(dateStr) {
     const dbMatch = dbHolidays.find(h => h.date === dateStr && h.type === 'holiday');
     if (dbMatch && dbMatch.name) return dbMatch.name;
   }
+  const year = dateStr.slice(0, 4);
   const mmDd = dateStr.slice(5);
+  // Mirrors the server: HOLIDAY_NAMES is month-day keyed and mixes years, so a
+  // year without built-in data must not borrow another year's festival name.
+  if (!(BUILT_IN_HOLIDAYS[year] || []).includes(mmDd)) return '节假日';
   return HOLIDAY_NAMES[mmDd] || '节假日';
 }
 

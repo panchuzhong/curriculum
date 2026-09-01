@@ -21,6 +21,7 @@ const DEFAULT_TIERS = [
 
 const E2E_DB_PATH = process.env.DB_PATH || './data/e2e.db';
 let preparedTeacherId: number | null = null;
+let prunedStaleSemesters = false;
 
 function getJwtSecret() {
   if (process.env.JWT_SECRET) return process.env.JWT_SECRET;
@@ -123,6 +124,16 @@ function ensureSeedData(db: Database.Database, teacherId: number) {
     .get(classId, studentId);
   if (!link) {
     db.prepare('INSERT INTO class_students (class_id, student_id) VALUES (?, ?)').run(classId, studentId);
+  }
+
+  // Semester tests add rows that were never removed, and the edit test used to
+  // rename this very seed row, so each run left two more behind. They pile up
+  // into several semesters covering the same dates, which makes "which semester
+  // is current" ambiguous. Prune once per worker, before any test runs.
+  if (!prunedStaleSemesters) {
+    db.prepare('DELETE FROM semesters WHERE teacher_id = ? AND name <> ?')
+      .run(teacherId, 'E2E春季学期');
+    prunedStaleSemesters = true;
   }
 
   // Anchor the seeded semester to the run date, and re-anchor it on every run.

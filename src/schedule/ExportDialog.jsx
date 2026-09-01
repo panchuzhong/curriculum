@@ -243,7 +243,7 @@ export default function ExportDialog({ view = 'week', defaultStart, defaultEnd, 
                 <div>
                   <label className="block text-sm text-gray-500 dark:text-gray-400 mb-1.5">开始</label>
                   <select className={sel + ' w-full'} value={yStartYear} onChange={e => setYStartYear(+e.target.value)}>
-                    {Array.from({ length: 7 }, (_, i) => curYear - 3 + i).map(y => (
+                    {Array.from({ length: 8 }, (_, i) => curYear - 3 + i).map(y => (
                       <option key={y} value={y}>{y}年</option>
                     ))}
                   </select>
@@ -251,7 +251,7 @@ export default function ExportDialog({ view = 'week', defaultStart, defaultEnd, 
                 <div>
                   <label className="block text-sm text-gray-500 dark:text-gray-400 mb-1.5">结束</label>
                   <select className={sel + ' w-full'} value={yEndYear} onChange={e => setYEndYear(+e.target.value)}>
-                    {Array.from({ length: 7 }, (_, i) => curYear - 3 + i).map(y => (
+                    {Array.from({ length: 8 }, (_, i) => curYear - 3 + i).map(y => (
                       <option key={y} value={y}>{y}年</option>
                     ))}
                   </select>
@@ -264,6 +264,9 @@ export default function ExportDialog({ view = 'week', defaultStart, defaultEnd, 
                     className={quickBtn}>今年</button>
                   <button onClick={() => { setYStartYear(curYear); setYEndYear(curYear + 2); }}
                     className={quickBtn}>近3年</button>
+                  {/* curYear + 4 must stay within the option range above, or the
+                      select falls back to displaying its first option while state
+                      holds a year that is not shown. */}
                   <button onClick={() => { setYStartYear(curYear); setYEndYear(curYear + 4); }}
                     className={quickBtn}>近5年</button>
                 </div>

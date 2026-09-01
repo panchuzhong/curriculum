@@ -57,7 +57,14 @@ export default function ClassForm({ initial, onSubmit, onCancel, compact, action
           <div className="flex gap-2">
             <select className="flex-1 p-2 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded" value={form.subject}
               onChange={e => setForm({...form, subject: e.target.value})}>
-              {subjects.map(s => <option key={s} value={s}>{s}</option>)}
+              {/* A class keeps the subject it was created with even after that
+                  subject is removed in Settings. Without an option for it the
+                  browser displays the first entry instead, misreporting the
+                  class — and one stray click would silently rewrite it. */}
+              {(form.subject && !subjects.includes(form.subject)
+                ? [form.subject, ...subjects]
+                : subjects
+              ).map(s => <option key={s} value={s}>{s}</option>)}
             </select>
             <div className="w-10 h-10 rounded flex items-center justify-center text-xs font-bold shrink-0"
               style={{ backgroundColor: getClassColor(form, dark), color: getTextColor(form, dark) }}>

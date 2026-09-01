@@ -35,16 +35,42 @@ test.describe('学期CRUD', () => {
     await page.locator('input[type="date"]').last().fill(`${year}-06-30`);
     await page.getByRole('button', { name: '保存' }).click();
     await expect(page.getByText(uniqueName)).toBeVisible();
+
+    // Clean up: leaving the row behind accumulates a semester per run.
+    const created = page.locator('div.flex.items-center').filter({ hasText: uniqueName });
+    await created.getByRole('button', { name: '删除' }).click();
+    await page.getByRole('button', { name: '确认' }).click();
+    await expect(page.getByText(uniqueName)).not.toBeVisible();
   });
 
   test('编辑学期名称', async ({ authenticatedPage: page }) => {
     await page.goto('/semesters');
-    await page.getByRole('button', { name: '编辑' }).first().click();
+    // Edit a semester this test owns. Editing whatever happens to be first
+    // renamed the shared seed row, which the seeder then recreated — leaving
+    // two semesters over the same dates behind on every run.
+    const originalName = `待编辑_${Date.now()}`;
+    const year = 3200 + Math.floor(Date.now() % 700);
+    await page.getByRole('button', { name: '新建学期' }).click();
+    await page.getByPlaceholder('如：2026春季').fill(originalName);
+    await page.locator('input[type="date"]').first().fill(`${year}-02-01`);
+    await page.locator('input[type="date"]').last().fill(`${year}-06-30`);
+    await page.getByRole('button', { name: '保存' }).click();
+    await expect(page.getByText(originalName)).toBeVisible();
+
+    const renamed = `编辑后_${Date.now()}`;
+    const row = page.locator('div.flex.items-center').filter({ hasText: originalName });
+    await row.getByRole('button', { name: '编辑' }).click();
     const nameInput = page.getByPlaceholder('如：2026春季');
     await nameInput.clear();
-    await nameInput.fill(`编辑后_${Date.now()}`);
+    await nameInput.fill(renamed);
     await page.getByRole('button', { name: '保存' }).click();
-    await expect(page.getByRole('heading', { name: '学期管理' })).toBeVisible();
+    await expect(page.getByText(renamed)).toBeVisible();
+    await expect(page.getByText(originalName)).not.toBeVisible();
+
+    const renamedRow = page.locator('div.flex.items-center').filter({ hasText: renamed });
+    await renamedRow.getByRole('button', { name: '删除' }).click();
+    await page.getByRole('button', { name: '确认' }).click();
+    await expect(page.getByText(renamed)).not.toBeVisible();
   });
 
   test('删除学期', async ({ authenticatedPage: page }) => {

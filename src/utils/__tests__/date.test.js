@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { parseDateStr, fmt, todayStr, getMonday, addDays, getMonthRange, getYearRange, toHours, toHoursAbs } from '../date';
+import { parseDateStr, fmt, todayStr, getMonday, addDays, getMonthRange, getYearRange, toHours, toHoursAbs, intParam } from '../date';
 
 describe('parseDateStr', () => {
   it('parses YYYY-MM-DD to Date at midnight', () => {
@@ -99,5 +99,26 @@ describe('toHoursAbs', () => {
   });
   it('returns 0 for zero', () => {
     expect(toHoursAbs(0)).toBe(0);
+  });
+});
+
+describe('intParam', () => {
+  // ?year=abc used to become NaN and render "NaN年" with an unrecoverable view.
+  it('falls back on non-numeric, empty and missing values', () => {
+    expect(intParam('abc', 2026)).toBe(2026);
+    expect(intParam('', 2026)).toBe(2026);
+    expect(intParam(null, 2026)).toBe(2026);
+    expect(intParam('  ', 2026)).toBe(2026);
+  });
+
+  it('falls back on non-integers and out-of-range values', () => {
+    expect(intParam('2026.5', 2026)).toBe(2026);
+    expect(intParam('13', 5, { min: 0, max: 11 })).toBe(5);
+    expect(intParam('-1', 5, { min: 0, max: 11 })).toBe(5);
+  });
+
+  it('accepts valid values, including 0', () => {
+    expect(intParam('2027', 2026, { min: 1000, max: 9999 })).toBe(2027);
+    expect(intParam('0', 5, { min: 0, max: 11 })).toBe(0);
   });
 });

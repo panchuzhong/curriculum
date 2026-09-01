@@ -42,3 +42,15 @@ export function toHoursAbs(durationBilling) {
   if (durationBilling == null) return 0;
   return Math.abs(durationBilling) / 60;
 }
+
+// URL query params are user-editable. `+'abc'` is NaN, and a NaN year poisons
+// every date derived from it — the view renders "NaN年" and the API call 400s
+// with no way back except editing the URL by hand.
+export function intParam(value, fallback, { min, max } = {}) {
+  if (value == null || String(value).trim() === '') return fallback;
+  const n = Number(value);
+  if (!Number.isInteger(n)) return fallback;
+  if (min != null && n < min) return fallback;
+  if (max != null && n > max) return fallback;
+  return n;
+}

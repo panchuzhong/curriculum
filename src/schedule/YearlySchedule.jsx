@@ -2,7 +2,7 @@ import { useState, useEffect, useLayoutEffect, useRef, useContext, useCallback, 
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { api } from '../api';
 import { getCategoryColor, DarkContext } from '../utils/colors';
-import { toHoursAbs, todayStr, getMonday } from '../utils/date';
+import { toHoursAbs, todayStr, getMonday, intParam } from '../utils/date';
 import { setViewDate } from '../utils/viewDate';
 import { useSimpleSwipe } from '../hooks/useSimpleSwipe';
 import { useToast } from '../components/ToastProvider';
@@ -56,7 +56,7 @@ export default function YearlySchedule() {
   const toast = useToast();
   const dark = useContext(DarkContext);
   const [searchParams, setSearchParams] = useSearchParams();
-  const [year, setYear] = useState(searchParams.get('year') ? +searchParams.get('year') : new Date().getFullYear());
+  const [year, setYear] = useState(() => intParam(searchParams.get('year'), new Date().getFullYear(), { min: 1000, max: 9999 }));
   const [schedules, setSchedules] = useState([]);
   const [classes, setClasses] = useState([]);
   const [animKey, setAnimKey] = useState(0);
