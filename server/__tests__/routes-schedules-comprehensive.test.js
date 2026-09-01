@@ -1169,3 +1169,21 @@ describe('GET /api/schedules/summary — negative revenue clamp', () => {
     expect(monthRow.revenue).toBeGreaterThanOrEqual(0);
   });
 });
+
+describe('PUT /api/schedules/:id — duplicate conflict returns 409', () => {
+  it('rejects updating into an existing (classId, date, startTime) triple', async () => {
+    await request(app).post('/api/schedules').set(auth(token))
+      .send({ classId, date: '2026-05-06', startTime: '09:00', endTime: '10:00' });
+    const second = await request(app).post('/api/schedules').set(auth(token))
+      .send({ classId, date: '2026-05-06', startTime: '10:00', endTime: '11:00' });
+    expect(second.status).toBe(200);
+
+    const res = await request(app).put(`/api/schedules/${second.body.id}`).set(auth(token))
+      .send({ startTime: '09:00' });
+    expect(res.status).toBe(409);
+
+    // Failed update must not modify the record
+    const check = await request(app).get(`/api/schedules/${second.body.id}`).set(auth(token));
+    expect(check.body.startTime).toBe('10:00');
+  });
+});

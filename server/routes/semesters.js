@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { drizzleDb } from '../db/index.js';
+import { drizzleDb, db } from '../db/index.js';
 import { semesters } from '../db/schema.js';
 import { eq, and } from 'drizzle-orm';
 import { authMiddleware } from '../middleware/auth.js';
@@ -19,18 +19,31 @@ router.get('/', (req, res) => {
 
 router.post('/', validateCreateSemester, handle, (req, res) => {
   const { name, type, startDate, endDate } = req.body;
-  // Check for overlapping semesters. Half-open comparison: a semester that
-  // starts on the day another ends is contiguous, not overlapping.
-  const existing = drizzleDb.select().from(semesters)
-    .where(eq(semesters.teacherId, req.teacherId)).all();
-  const overlaps = existing.some(s => startDate < s.endDate && endDate > s.startDate);
-  if (overlaps) return res.status(409).json({ error: '该教师已有日期重叠的学期' });
-  const result = drizzleDb.insert(semesters).values({
-    teacherId: req.teacherId, name, type, startDate, endDate,
-  }).run();
-  const newId = Number(result.lastInsertRowid);
-  const created = drizzleDb.select().from(semesters).where(eq(semesters.id, newId)).get();
-  logAudit({ teacherId: req.teacherId, action: 'CREATE', tableName: 'semesters', recordId: newId, after: created });
+  let created;
+  try {
+    // Overlap check + insert must be atomic so concurrent requests (e.g. from a
+    // second server process sharing the SQLite file) cannot both pass the check.
+    db.transaction(() => {
+      // Half-open comparison: a semester that starts on the day another ends is
+      // contiguous, not overlapping.
+      const existing = drizzleDb.select().from(semesters)
+        .where(eq(semesters.teacherId, req.teacherId)).all();
+      const overlaps = existing.some(s => startDate < s.endDate && endDate > s.startDate);
+      if (overlaps) {
+        const err = new Error('overlapping semester');
+        err.status = 409;
+        throw err;
+      }
+      const result = drizzleDb.insert(semesters).values({
+        teacherId: req.teacherId, name, type, startDate, endDate,
+      }).run();
+      created = drizzleDb.select().from(semesters).where(eq(semesters.id, Number(result.lastInsertRowid))).get();
+    })();
+  } catch (e) {
+    if (e.status === 409) return res.status(409).json({ error: '该教师已有日期重叠的学期' });
+    throw e;
+  }
+  logAudit({ teacherId: req.teacherId, action: 'CREATE', tableName: 'semesters', recordId: created.id, after: created });
   clearSemesterCache();
   res.json(created);
 });
@@ -47,12 +60,23 @@ router.put('/:id', validateUpdateSemester, handle, (req, res) => {
   const newStart = safeUpdates.startDate ?? existing.startDate;
   const newEnd = safeUpdates.endDate ?? existing.endDate;
   if (newEnd < newStart) return res.status(400).json({ error: '结束日期须不小于开始日期' });
-  // Check for overlapping semesters (excluding current)
-  const allSemesters = drizzleDb.select().from(semesters)
-    .where(eq(semesters.teacherId, req.teacherId)).all();
-  const overlaps = allSemesters.some(s => s.id !== +id && newStart < s.endDate && newEnd > s.startDate);
-  if (overlaps) return res.status(409).json({ error: '该教师已有日期重叠的学期' });
-  drizzleDb.update(semesters).set(safeUpdates).where(eq(semesters.id, +id)).run();
+  // Check for overlapping semesters (excluding current), atomically with update
+  try {
+    db.transaction(() => {
+      const allSemesters = drizzleDb.select().from(semesters)
+        .where(eq(semesters.teacherId, req.teacherId)).all();
+      const overlaps = allSemesters.some(s => s.id !== +id && newStart < s.endDate && newEnd > s.startDate);
+      if (overlaps) {
+        const err = new Error('overlapping semester');
+        err.status = 409;
+        throw err;
+      }
+      drizzleDb.update(semesters).set(safeUpdates).where(eq(semesters.id, +id)).run();
+    })();
+  } catch (e) {
+    if (e.status === 409) return res.status(409).json({ error: '该教师已有日期重叠的学期' });
+    throw e;
+  }
   const updated = drizzleDb.select().from(semesters).where(eq(semesters.id, +id)).get();
   logAudit({ teacherId: req.teacherId, action: 'UPDATE', tableName: 'semesters', recordId: +id, before: existing, after: safeUpdates });
   clearSemesterCache();

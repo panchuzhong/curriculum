@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { drizzleDb } from '../db/index.js';
+import { drizzleDb, db } from '../db/index.js';
 import { pricingTiers } from '../db/schema.js';
 import { eq, and } from 'drizzle-orm';
 import { authMiddleware } from '../middleware/auth.js';
@@ -18,17 +18,30 @@ router.get('/', (req, res) => {
 
 router.post('/', validateCreateTier, handle, (req, res) => {
   const { minStudents, maxStudents, pricePerStudentPerHour } = req.body;
-  // Check for overlapping ranges
-  const existing = drizzleDb.select().from(pricingTiers)
-    .where(eq(pricingTiers.teacherId, req.teacherId)).all();
-  const overlaps = existing.some(t => minStudents <= t.maxStudents && maxStudents >= t.minStudents);
-  if (overlaps) return res.status(409).json({ error: '已存在人数区间重叠的定价阶梯' });
-  const result = drizzleDb.insert(pricingTiers).values({
-    teacherId: req.teacherId, minStudents, maxStudents, pricePerStudentPerHour,
-  }).run();
-  const newId = Number(result.lastInsertRowid);
-  const created = drizzleDb.select().from(pricingTiers).where(eq(pricingTiers.id, newId)).get();
-  logAudit({ teacherId: req.teacherId, action: 'CREATE', tableName: 'pricing_tiers', recordId: newId, after: created });
+  let created;
+  try {
+    // Overlap check + insert must be atomic so concurrent requests (e.g. from a
+    // second server process sharing the SQLite file) cannot both pass the check.
+    // Ranges are closed: [1,5] and [5,10] both match 5 students, so they overlap.
+    db.transaction(() => {
+      const existing = drizzleDb.select().from(pricingTiers)
+        .where(eq(pricingTiers.teacherId, req.teacherId)).all();
+      const overlaps = existing.some(t => minStudents <= t.maxStudents && maxStudents >= t.minStudents);
+      if (overlaps) {
+        const err = new Error('overlapping pricing tier');
+        err.status = 409;
+        throw err;
+      }
+      const result = drizzleDb.insert(pricingTiers).values({
+        teacherId: req.teacherId, minStudents, maxStudents, pricePerStudentPerHour,
+      }).run();
+      created = drizzleDb.select().from(pricingTiers).where(eq(pricingTiers.id, Number(result.lastInsertRowid))).get();
+    })();
+  } catch (e) {
+    if (e.status === 409) return res.status(409).json({ error: '已存在人数区间重叠的定价阶梯' });
+    throw e;
+  }
+  logAudit({ teacherId: req.teacherId, action: 'CREATE', tableName: 'pricing_tiers', recordId: created.id, after: created });
   res.json(created);
 });
 
@@ -44,12 +57,23 @@ router.put('/:id', validateUpdateTier, handle, (req, res) => {
   const newMin = safeUpdates.minStudents ?? existing.minStudents;
   const newMax = safeUpdates.maxStudents ?? existing.maxStudents;
   if (newMax < newMin) return res.status(400).json({ error: '最大人数须不小于最小人数' });
-  // Check for overlapping ranges (excluding current)
-  const allTiers = drizzleDb.select().from(pricingTiers)
-    .where(eq(pricingTiers.teacherId, req.teacherId)).all();
-  const overlaps = allTiers.some(t => t.id !== +id && newMin <= t.maxStudents && newMax >= t.minStudents);
-  if (overlaps) return res.status(409).json({ error: '已存在人数区间重叠的定价阶梯' });
-  drizzleDb.update(pricingTiers).set(safeUpdates).where(eq(pricingTiers.id, +id)).run();
+  // Check for overlapping ranges (excluding current), atomically with update
+  try {
+    db.transaction(() => {
+      const allTiers = drizzleDb.select().from(pricingTiers)
+        .where(eq(pricingTiers.teacherId, req.teacherId)).all();
+      const overlaps = allTiers.some(t => t.id !== +id && newMin <= t.maxStudents && newMax >= t.minStudents);
+      if (overlaps) {
+        const err = new Error('overlapping pricing tier');
+        err.status = 409;
+        throw err;
+      }
+      drizzleDb.update(pricingTiers).set(safeUpdates).where(eq(pricingTiers.id, +id)).run();
+    })();
+  } catch (e) {
+    if (e.status === 409) return res.status(409).json({ error: '已存在人数区间重叠的定价阶梯' });
+    throw e;
+  }
   const updated = drizzleDb.select().from(pricingTiers).where(eq(pricingTiers.id, +id)).get();
   logAudit({ teacherId: req.teacherId, action: 'UPDATE', tableName: 'pricing_tiers', recordId: +id, before: existing, after: safeUpdates });
   res.json(updated);

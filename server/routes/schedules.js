@@ -548,10 +548,25 @@ router.put('/:id', validateUpdateSchedule, handle, (req, res) => {
   const effectiveStartTime = updates.startTime ?? existing.startTime;
   const effectiveEndTime = updates.endTime ?? existing.endTime;
   if (effectiveStartTime === effectiveEndTime) return res.status(400).json({ error: '排课时长须大于 0 且小于 24 小时' });
-  const dup = drizzleDb.select().from(schedules)
-    .where(and(eq(schedules.classId, effectiveClassId), eq(schedules.date, effectiveDate), eq(schedules.startTime, effectiveStartTime), ne(schedules.id, +id))).get();
-  if (dup) return res.status(409).json({ error: '该班级在此日期的同一时间已有排课' });
-  drizzleDb.update(schedules).set(updates).where(eq(schedules.id, +id)).run();
+  try {
+    // Duplicate check + update must be atomic; a concurrent insert (e.g. from a
+    // second server process) could otherwise slip in between and surface as a 500.
+    db.transaction(() => {
+      const dup = drizzleDb.select().from(schedules)
+        .where(and(eq(schedules.classId, effectiveClassId), eq(schedules.date, effectiveDate), eq(schedules.startTime, effectiveStartTime), ne(schedules.id, +id))).get();
+      if (dup) {
+        const err = new Error('duplicate schedule');
+        err.status = 409;
+        throw err;
+      }
+      drizzleDb.update(schedules).set(updates).where(eq(schedules.id, +id)).run();
+    })();
+  } catch (e) {
+    if (e.status === 409 || e.message?.includes('UNIQUE constraint')) {
+      return res.status(409).json({ error: '该班级在此日期的同一时间已有排课' });
+    }
+    throw e;
+  }
   const updated = getScheduleWithClass(+id, req.teacherId);
   clearReportCache(req.teacherId);
   logAudit({ teacherId: req.teacherId, action: 'UPDATE', tableName: 'schedules', recordId: +id, before: existing, after: updated });

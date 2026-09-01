@@ -10,6 +10,9 @@ if (!existsSync('./data')) mkdirSync('./data', { recursive: true });
 const db = new Database(dbPath);
 db.pragma('journal_mode = WAL');
 db.pragma('foreign_keys = ON');
+// Wait briefly on lock contention instead of failing immediately — matters when
+// multiple server processes share the same SQLite file.
+db.pragma('busy_timeout = 5000');
 
 export const drizzleDb = drizzle(db, { schema });
 export { db };
