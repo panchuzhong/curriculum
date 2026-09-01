@@ -627,7 +627,9 @@ router.get('/summary', (req, res) => {
     const unit = p?.unitPrice ?? cls?.unitPrice ?? 0;
     const cnt = p?.studentCount ?? cls?.studentCount ?? 0;
     const disc = p?.discountAmount ?? cls?.discountAmount ?? 0;
-    byClassMap[s.classId].revenue += (unit * cnt - disc) * (s.durationBilling / 60);
+    // A discount larger than the session gross is a data-entry artifact, not
+    // money owed by the teacher — never let a session contribute negative revenue.
+    byClassMap[s.classId].revenue += Math.max(0, unit * cnt - disc) * (s.durationBilling / 60);
   }
 
   const byClass = Object.entries(byClassMap).map(([cid, agg]) => {
@@ -670,7 +672,7 @@ router.get('/summary', (req, res) => {
     const unit = p?.unitPrice ?? cls?.unitPrice ?? 0;
     const cnt = p?.studentCount ?? cls?.studentCount ?? 0;
     const disc = p?.discountAmount ?? cls?.discountAmount ?? 0;
-    byMonthMap[m].revenue += (unit * cnt - disc) * (s.durationBilling / 60);
+    byMonthMap[m].revenue += Math.max(0, unit * cnt - disc) * (s.durationBilling / 60);
   }
 
   const response = {

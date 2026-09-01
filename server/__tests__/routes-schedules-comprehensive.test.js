@@ -1148,3 +1148,24 @@ describe('GET /api/schedules/free-slots — cross-midnight adversarial', () => {
     expect(res.body.slots).toEqual([{ start: '08:00', end: '22:00' }]);
   });
 });
+
+describe('GET /api/schedules/summary — negative revenue clamp', () => {
+  it('clamps per-session revenue at zero when discount exceeds gross', async () => {
+    const { classes } = await import('../db/schema.js');
+    const r = drizzleDb.insert(classes).values({
+      teacherId, name: '优惠班', grade: '高一', subject: '数学',
+      studentCount: 1, unitPrice: 100, discountAmount: 500,
+    }).run();
+    const cid = Number(r.lastInsertRowid);
+    await request(app).post('/api/schedules').set(auth(token))
+      .send({ classId: cid, date: '2026-05-04', startTime: '09:00', endTime: '10:00' });
+
+    const res = await request(app).get('/api/schedules/summary?start=2026-05-04&end=2026-05-04').set(auth(token));
+    expect(res.status).toBe(200);
+    const row = res.body.byClass.find(b => b.classId === cid);
+    expect(row.revenue).toBe(0);
+    expect(res.body.revenue).toBeGreaterThanOrEqual(0);
+    const monthRow = res.body.byMonth.find(m => m.month === '2026-05');
+    expect(monthRow.revenue).toBeGreaterThanOrEqual(0);
+  });
+});
