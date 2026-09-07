@@ -57,8 +57,10 @@ export default function PricingManager({ classId, onChanged }) {
       const data = {
         studentCount: +form.studentCount,
         unitPrice: +form.unitPrice,
-        discountAmount: form.discountAmount !== '' ? +form.discountAmount : undefined,
-        discountReason: form.discountReason || undefined,
+        // On update an omitted field keeps its old value, so send explicit
+        // empties; on create the server defaults them.
+        discountAmount: form.discountAmount !== '' ? +form.discountAmount : (editId ? 0 : undefined),
+        discountReason: form.discountReason || (editId ? null : undefined),
         effectiveFrom: form.effectiveFrom,
       };
       if (editId) {

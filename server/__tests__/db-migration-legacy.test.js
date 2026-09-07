@@ -59,6 +59,37 @@ describe('legacy database upgrade', () => {
     expect(cols).not.toContain('class_id');
   });
 
+  // idx_schedules_unique was introduced after duplicate rows were already
+  // possible; CREATE UNIQUE INDEX on such a database threw and the server never
+  // started.
+  it('removes duplicate schedule rows before creating the unique index', async () => {
+    tmp = mkdtempSync(join(tmpdir(), 'curr-dup-'));
+    const dbPath = join(tmp, 'legacy.db');
+    seedLegacyDb(dbPath);
+    const db = new Database(dbPath);
+    db.exec(`
+      CREATE TABLE schedules (id INTEGER PRIMARY KEY AUTOINCREMENT, class_id INTEGER NOT NULL,
+        date TEXT NOT NULL, start_time TEXT NOT NULL, end_time TEXT NOT NULL,
+        duration_billing INTEGER NOT NULL, location_name TEXT, location_lat REAL, location_lng REAL,
+        created_at TEXT);
+      INSERT INTO schedules (id, class_id, date, start_time, end_time, duration_billing) VALUES
+        (1, 7, '2026-03-02', '09:00', '10:00', 60),
+        (2, 7, '2026-03-02', '09:00', '10:30', 90),
+        (3, 7, '2026-03-03', '09:00', '10:00', 60);
+    `);
+    db.close();
+
+    process.env.DB_PATH = dbPath;
+    vi.resetModules();
+    const { initDb } = await import('../db/index.js');
+    expect(() => initDb()).not.toThrow();
+
+    const check = new Database(dbPath, { readonly: true });
+    const ids = check.prepare('SELECT id FROM schedules ORDER BY id').all().map(r => r.id);
+    check.close();
+    expect(ids).toEqual([1, 3]);
+  });
+
   it('creates the database directory named by DB_PATH, not a hardcoded ./data', async () => {
     tmp = mkdtempSync(join(tmpdir(), 'curr-dir-'));
     const dbPath = join(tmp, 'nested', 'deeper', 'app.db');

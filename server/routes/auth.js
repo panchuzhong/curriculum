@@ -2,8 +2,7 @@ import { Router } from 'express';
 import bcrypt from 'bcryptjs';
 import { randomUUID } from 'node:crypto';
 import { readFileSync, writeFileSync } from 'fs';
-import { resolve, dirname } from 'path';
-import { fileURLToPath } from 'url';
+import { resolve } from 'path';
 import rateLimit from 'express-rate-limit';
 import { drizzleDb } from '../db/index.js';
 import { teachers } from '../db/schema.js';
@@ -43,12 +42,20 @@ router.post('/register', authLimiter, validateRegister, handle, async (req, res)
   if (existing) return res.status(409).json({ error: 'Username taken' });
 
   const passwordHash = await bcrypt.hash(password, 12);
+  // Registration closes after the first account. Every request that passed the
+  // check above while this one was hashing would also register, so the slot is
+  // claimed here with no await between the re-check and the insert.
+  if (process.env.ALLOW_REGISTRATION !== 'true') {
+    return res.status(403).json({ error: 'Registration is closed' });
+  }
+  process.env.ALLOW_REGISTRATION = 'false';
   const apiKey = randomUUID();
   const subjects = JSON.stringify(DEFAULT_SUBJECTS);
   let result;
   try {
     result = drizzleDb.insert(teachers).values({ username, passwordHash, name, apiKey, subjects }).run();
   } catch (e) {
+    process.env.ALLOW_REGISTRATION = 'true';
     if (e.message?.includes('UNIQUE constraint')) {
       return res.status(409).json({ error: 'Username taken' });
     }
@@ -56,10 +63,10 @@ router.post('/register', authLimiter, validateRegister, handle, async (req, res)
   }
   seedPricingTiers(result.lastInsertRowid);
 
-  // Auto-close registration after first user (persist to .env so it survives restart)
-  process.env.ALLOW_REGISTRATION = 'false';
-  try {
-    const envPath = resolve(dirname(fileURLToPath(import.meta.url)), '../../.env');
+  // Persist the closure to .env so it survives restart. dotenv reads .env from
+  // the working directory, so write the same file; tests must not touch it.
+  if (process.env.NODE_ENV !== 'test') try {
+    const envPath = resolve(process.cwd(), '.env');
     let envContent = readFileSync(envPath, 'utf-8');
     if (envContent.includes('ALLOW_REGISTRATION=')) {
       envContent = envContent.replace(/^ALLOW_REGISTRATION=.*/m, 'ALLOW_REGISTRATION=false');
@@ -108,7 +115,9 @@ router.put('/password', authMiddleware, authLimiter, validateChangePassword, han
   const { oldPassword, newPassword } = req.body;
   const teacher = drizzleDb.select().from(teachers).where(eq(teachers.id, req.teacherId)).get();
   if (!teacher || !(await bcrypt.compare(oldPassword, teacher.passwordHash))) {
-    return res.status(401).json({ error: '当前密码错误' });
+    // 401 makes the client drop its token and redirect to login; this is a
+    // form error the user must see.
+    return res.status(400).json({ error: '当前密码错误' });
   }
   const passwordHash = await bcrypt.hash(newPassword, 12);
   const newPwdVersion = (teacher.pwdVersion ?? 0) + 1;

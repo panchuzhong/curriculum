@@ -4,6 +4,7 @@ import { clearToken, loginUrl } from '../api';
 import { setDarkMode, DarkContext } from '../utils/colors';
 import { getViewDate } from '../utils/viewDate';
 import { getNavTarget as computeNavTarget } from '../utils/navTarget';
+import { shortcutBlocked } from '../utils/keys';
 
 const NAV_LINKS = [
   { to: '/', label: '周课表', color: 'bg-blue-500', icon: 'M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z' },
@@ -19,7 +20,9 @@ const NAV_LINKS = [
 const SCHEDULE_PATHS = ['/', '/monthly', '/yearly'];
 
 function getNavTarget(path) {
-  return computeNavTarget(path, window.location.pathname, getViewDate);
+  // Same breakpoint as useWeekNavigation: mobile shows 2 days from the stored week.
+  const spanDays = window.innerWidth < 768 ? 2 : 7;
+  return computeNavTarget(path, window.location.pathname, getViewDate, spanDays);
 }
 
 export default function Layout({ children }) {
@@ -86,7 +89,7 @@ export default function Layout({ children }) {
     if (isMobile) return;
     const onKey = (e) => {
       if (e.key !== 'ArrowUp' && e.key !== 'ArrowDown') return;
-      if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.tagName === 'SELECT') return;
+      if (shortcutBlocked(e)) return;
       e.preventDefault();
       const currentPath = window.location.pathname || '/';
       const idx = NAV_LINKS.findIndex(l => l.to === currentPath);

@@ -8,13 +8,15 @@ const optionalPhone = (field, msg) =>
 const validBirthDate = value => /^\d{4}$/.test(value) || isValidDate(value);
 
 export const validateCreateClass = [
-  body('name').notEmpty().isLength({ max: 100 }).withMessage('班级名称不能为空'),
+  // isString keeps objects/arrays from reaching the driver as bind values; trim
+  // makes whitespace-only names fail notEmpty.
+  body('name').isString().trim().notEmpty().isLength({ max: 100 }).withMessage('班级名称不能为空'),
   body('grade').isIn(VALID_GRADES).withMessage(`年级须为: ${VALID_GRADES.join('/')}`),
-  body('subject').notEmpty().isLength({ max: 50 }).withMessage('学科不能为空'),
+  body('subject').isString().trim().notEmpty().isLength({ max: 50 }).withMessage('学科不能为空'),
   body('studentCount').isInt({ min: 1 }).withMessage('学生人数须为正整数'),
   body('unitPrice').optional().isFloat({ min: 0 }).withMessage('单价不能为负'),
   body('discountAmount').optional().isFloat({ min: 0 }).withMessage('优惠金额不能为负'),
-  body('isCompetition').optional().isBoolean().withMessage('isCompetition 须为布尔值'),
+  body('isCompetition').optional().isBoolean().toBoolean().withMessage('isCompetition 须为布尔值'),
   body('discountReason').optional({ values: 'null' }).isString().isLength({ max: 500 }).withMessage('优惠原因最多500个字符'),
   body('defaultLocationName').optional({ values: 'null' }).isString().isLength({ max: 200 }).withMessage('默认地点最多200个字符'),
   body('defaultLocationLat').optional({ checkFalsy: true }).isFloat({ min: -90, max: 90 }).withMessage('纬度须为 -90 到 90'),
@@ -22,13 +24,13 @@ export const validateCreateClass = [
 ];
 
 export const validateUpdateClass = [
-  body('name').optional().notEmpty().isLength({ max: 100 }).withMessage('班级名称不能为空'),
+  body('name').optional().isString().trim().notEmpty().isLength({ max: 100 }).withMessage('班级名称不能为空'),
   body('grade').optional().isIn(VALID_GRADES).withMessage(`年级须为: ${VALID_GRADES.join('/')}`),
-  body('subject').optional().notEmpty().isLength({ max: 50 }).withMessage('学科不能为空'),
+  body('subject').optional().isString().trim().notEmpty().isLength({ max: 50 }).withMessage('学科不能为空'),
   body('unitPrice').optional().isFloat({ min: 0 }).withMessage('单价不能为负'),
   body('discountAmount').optional().isFloat({ min: 0 }).withMessage('优惠金额不能为负'),
   body('studentCount').optional().isInt({ min: 1 }).withMessage('学生人数须为正整数'),
-  body('isCompetition').optional().isBoolean().withMessage('isCompetition 须为布尔值'),
+  body('isCompetition').optional().isBoolean().toBoolean().withMessage('isCompetition 须为布尔值'),
   body('discountReason').optional({ values: 'null' }).isString().isLength({ max: 500 }).withMessage('优惠原因最多500个字符'),
   body('defaultLocationName').optional({ values: 'null' }).isString().isLength({ max: 200 }).withMessage('默认地点最多200个字符'),
   body('defaultLocationLat').optional({ checkFalsy: true }).isFloat({ min: -90, max: 90 }).withMessage('纬度须为 -90 到 90'),
@@ -52,7 +54,7 @@ export const validateUpdatePricing = [
 ];
 
 export const validateClassStudent = [
-  body('name').notEmpty().isLength({ max: 100 }).withMessage('学生姓名不能为空'),
+  body('name').isString().trim().notEmpty().isLength({ max: 100 }).withMessage('学生姓名不能为空'),
   body('birthDate').optional({ checkFalsy: true }).custom(value => {
     if (!validBirthDate(value)) throw new Error('出生日期格式须为有效的 YYYY 或 YYYY-MM-DD');
     return true;

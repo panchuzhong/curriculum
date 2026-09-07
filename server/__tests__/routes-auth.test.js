@@ -142,7 +142,7 @@ describe('PUT /api/auth/password', () => {
     const { token } = await makeUser(drizzleDb);
     const res = await request(app).put('/api/auth/password').set(auth(token))
       .send({ oldPassword: 'wrong', newPassword: 'newpass123' });
-    expect(res.status).toBe(401);
+    expect(res.status).toBe(400);
   });
 
   it('rejects short new password', async () => {
@@ -210,5 +210,28 @@ describe('GET /api/health', () => {
     const res = await request(healthApp).get('/api/health');
     expect(res.status).toBe(200);
     expect(res.body.status).toBe('ok');
+  });
+});
+
+describe('registration auto-close race', () => {
+  it('two concurrent registrations admit exactly one account', async () => {
+    process.env.ALLOW_REGISTRATION = 'true';
+    const [a, b] = await Promise.all([
+      request(app).post('/api/auth/register').send({ username: 'racer1', password: 'test1234', name: 'A' }),
+      request(app).post('/api/auth/register').send({ username: 'racer2', password: 'test1234', name: 'B' }),
+    ]);
+    expect([a.status, b.status].sort()).toEqual([200, 403]);
+  });
+});
+
+describe('PUT /api/auth/password with a wrong current password', () => {
+  // 401 is reserved for an invalid session: the client drops the token and
+  // redirects to login on every 401, so the user never saw this message.
+  it('is a 400, not a 401', async () => {
+    const { token } = await makeUser(drizzleDb);
+    const res = await request(app).put('/api/auth/password').set(auth(token))
+      .send({ oldPassword: 'nope1234', newPassword: 'newpass123' });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toBe('当前密码错误');
   });
 });

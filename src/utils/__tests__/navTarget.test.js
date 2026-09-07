@@ -235,8 +235,9 @@ describe('getNavTarget', () => {
     });
 
     it('week → month: ignores a stored month the span cannot reach', () => {
+      // Falls back to the month holding most of the week (Thu 09-03), not March.
       const result = getNavTarget('/monthly', '/', dates({ week: '2026-08-31', month: '2026-2' }));
-      expect(result).toBe('/monthly?year=2026&month=7');
+      expect(result).toBe('/monthly?year=2026&month=8');
     });
 
     it('year → week: keeps a week that starts in the previous year', () => {
@@ -252,6 +253,54 @@ describe('getNavTarget', () => {
     it('week → year: ignores a stored year the span cannot reach', () => {
       const result = getNavTarget('/yearly', '/', dates({ week: '2026-12-28', year: '2030' }));
       expect(result).toBe('/yearly?year=2026');
+    });
+
+    // With no stored month/year to agree with, a straddling week belongs to the
+    // period holding most of its days (its middle day), not its first day: a
+    // fresh load on 2026-09-03 shows 08-31 ~ 09-06, and "this month" is September.
+    it('week → month (no stored month): uses the month holding most of the week', () => {
+      const result = getNavTarget('/monthly', '/', dates({ week: '2026-08-31' }));
+      expect(result).toBe('/monthly?year=2026&month=8');
+    });
+
+    it('week → year (no stored year): uses the year holding most of the week', () => {
+      // Mon 2025-12-29 .. Sun 2026-01-04: four days in 2026, Thursday is Jan 1.
+      expect(getNavTarget('/yearly', '/', dates({ week: '2025-12-29' }))).toBe('/yearly?year=2026');
+      // Mon 2026-12-28 .. Sun 2027-01-03: four days in 2026, Thursday is Dec 31.
+      expect(getNavTarget('/yearly', '/', dates({ week: '2026-12-28' }))).toBe('/yearly?year=2026');
+    });
+
+    it('classes → month falls back through the week the same way', () => {
+      const result = getNavTarget('/monthly', '/classes', dates({ week: '2026-08-31' }));
+      expect(result).toBe('/monthly?year=2026&month=8');
+    });
+  });
+
+  describe('Mobile: the week store is a bare day showing only two days', () => {
+    const span = 2;
+
+    it('month → week: rejects a stored week whose two days never reach the month', () => {
+      // Aug 26–27 shows no September day, although a 7-day span would.
+      const result = getNavTarget('/', '/monthly', dates({ month: '2026-8', week: '2026-08-26' }), span);
+      expect(result).toBe('/?date=2026-09-10');
+    });
+
+    it('month → week: keeps a stored week whose second day reaches the month', () => {
+      const result = getNavTarget('/', '/monthly', dates({ month: '2026-8', week: '2026-08-31' }), span);
+      expect(result).toBe('/?week=2026-08-31');
+    });
+
+    it('year → week: rejects a stored week whose two days stay in the old year', () => {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date('2026-12-31T12:00:00'));
+      const result = getNavTarget('/', '/yearly', dates({ year: '2027', week: '2026-12-27' }), span);
+      // No usable week or month: today's month/day in the target year.
+      expect(result).toBe('/?date=2027-12-31');
+    });
+
+    it('week → month (no stored month): a two-day span belongs to its first day', () => {
+      const result = getNavTarget('/monthly', '/', dates({ week: '2026-08-31' }), span);
+      expect(result).toBe('/monthly?year=2026&month=7');
     });
   });
 });

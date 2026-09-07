@@ -202,7 +202,8 @@ test.describe('报表页面键盘导航', () => {
     const inputs = page.locator('input[type="date"]');
     const startInput = inputs.first();
     await startInput.fill('2026-01-01');
-    // Home
+    // Home is a page shortcut: it must not fire while typing in the date field.
+    await startInput.blur();
     await page.keyboard.press('Home');
     // Both inputs should be today
     const today = `${todayYear()}-${pad(new Date().getMonth() + 1)}-${pad(new Date().getDate())}`;

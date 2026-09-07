@@ -27,7 +27,7 @@ router.get('/help', authMiddleware, (req, res) => {
         'POST /api/auth/register': '注册新教师（需 ALLOW_REGISTRATION=true，注册成功后自动关闭），返回 {token, apiKey}',
         'POST /api/auth/login': '登录（需 username, password），返回 {token}',
         'GET /api/auth/profile': '获取当前教师信息，返回 {id, username, name, apiKey, subjects}；apiKey 为脱敏掩码（前4...后4），完整 key 仅在 POST /api/auth/register 或 PUT /api/auth/api-key 时返回',
-        'PUT /api/auth/password': '修改密码（需 oldPassword 和 newPassword），返回 {ok:true, token}；修改会使所有旧 JWT 失效，token 为保持当前会话的新令牌',
+        'PUT /api/auth/password': '修改密码（需 oldPassword 和 newPassword），返回 {ok:true, token}；oldPassword 错误返回 400；修改会使所有旧 JWT 失效，token 为保持当前会话的新令牌',
         'PUT /api/auth/subjects': '更新学科列表（传 subjects 字符串数组），返回 {subjects}',
         'PUT /api/auth/api-key': '重新生成 API Key，返回 {apiKey: <new-key>}',
       },
@@ -47,8 +47,8 @@ router.get('/help', authMiddleware, (req, res) => {
       classPricing: {
         'GET /api/classes/:classId/pricing': '获取指定班级的定价历史，按生效日期降序排列；返回定价记录数组',
         'POST /api/classes/:classId/pricing': '新增定价版本（需 studentCount, unitPrice, effectiveFrom；可选 discountAmount, discountReason）；effectiveFrom 重复返回 409；同时更新班级表当前定价字段',
-        'PUT /api/classes/:classId/pricing/:pricingId': '修改某条定价记录（变更 effectiveFrom 时查重）；更新后同步班级表当前定价',
-        'DELETE /api/classes/:classId/pricing/:pricingId': '删除定价记录（至少保留一条），删除后同步班级表当前定价，返回 {ok:true}',
+        'PUT /api/classes/:classId/pricing/:pricingId': '修改某条定价记录（记录必须属于 :classId，否则 404；变更 effectiveFrom 时查重）；更新后同步班级表当前定价',
+        'DELETE /api/classes/:classId/pricing/:pricingId': '删除定价记录（记录必须属于 :classId，否则 404；至少保留一条），删除后同步班级表当前定价，返回 {ok:true}',
       },
       students: {
         'GET /api/students': '获取所有学生（含 classIds 数组）；按姓名排序（中文名在前按拼音序，英文名在后按字母序，同名按 ID 倒序即新添加的在前）',
@@ -91,8 +91,8 @@ router.get('/help', authMiddleware, (req, res) => {
       },
       pricingTiers: {
         'GET /api/pricing-tiers': '获取定价阶梯列表',
-        'POST /api/pricing-tiers': '创建定价阶梯，返回完整阶梯对象',
-        'PUT /api/pricing-tiers/:id': '更新定价阶梯，返回完整阶梯对象',
+        'POST /api/pricing-tiers': '创建定价阶梯，返回完整阶梯对象；人数区间与现有阶梯重叠返回 409',
+        'PUT /api/pricing-tiers/:id': '更新定价阶梯，返回完整阶梯对象；人数区间与现有阶梯重叠返回 409',
         'DELETE /api/pricing-tiers/:id': '删除定价阶梯，返回 {ok:true}',
       },
       images: {

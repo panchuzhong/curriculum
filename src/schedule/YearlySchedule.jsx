@@ -9,6 +9,7 @@ import { useToast } from '../components/ToastProvider';
 import BatchScheduleDialog from './BatchScheduleDialog';
 import ExportDialog from './ExportDialog';
 import useScheduleExport from './useScheduleExport';
+import { shortcutBlocked } from '../utils/keys';
 
 const COLLAPSE_THRESHOLD_MOBILE = 4;
 const COLLAPSE_THRESHOLD_DESKTOP = 9;
@@ -94,13 +95,13 @@ export default function YearlySchedule() {
     setViewDate('year', String(ny));
     setViewDate('month', `${ny}-${n.getMonth()}`);
     setViewDate('week', getMonday(todayStr()));
-    setSearchParams({ year: String(ny) });
+    setSearchParams({ year: String(ny) }, { replace: true });
     animDir.current = 0; setYear(ny); setAnimKey(k => k + 1);
   }
 
   useLayoutEffect(() => {
     const onKey = (e) => {
-      if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.tagName === 'SELECT') return;
+      if (shortcutBlocked(e)) return;
       if (e.key === 'Home') { e.preventDefault(); goToThisYear(); return; }
       if (e.key === 'ArrowLeft') { e.preventDefault(); changeYear(-1); }
       if (e.key === 'ArrowRight') { e.preventDefault(); changeYear(1); }
@@ -173,7 +174,7 @@ export default function YearlySchedule() {
     animDir.current = delta;
     const ny = year + delta;
     setViewDate('year', String(ny));
-    setSearchParams({ year: String(ny) });
+    setSearchParams({ year: String(ny) }, { replace: true });
     setYear(y => y + delta);
     setAnimKey(k => k + 1);
   }

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { toMin, duration, findConflictGroups, assignColumns } from '../schedule';
+import { toMin, duration, findConflictGroups, assignColumns, clipBlock, isAutoBilling } from '../schedule';
 
 describe('toMin', () => {
   it('converts HH:mm to minutes', () => {
@@ -159,5 +159,35 @@ describe('assignColumns', () => {
     expect(result[0]._col).toBe(0);
     expect(result[1]._col).toBe(1);
     expect(result[2]._col).toBe(1);
+  });
+});
+
+describe('clipBlock', () => {
+  it('keeps a block inside the grid as is', () => {
+    expect(clipBlock(100, 60, 1000)).toEqual({ top: 100, height: 60 });
+  });
+
+  it('shortens a block that starts above the grid by the hidden part', () => {
+    // 07:00-09:00 on a grid starting at 08:00 must show one hour, not two.
+    expect(clipBlock(-60, 120, 1000)).toEqual({ top: 0, height: 60 });
+  });
+
+  it('drops a block that ends above the grid instead of drawing a phantom', () => {
+    expect(clipBlock(-180, 60, 1000)).toBeNull();
+  });
+
+  it('cuts a block at the grid bottom', () => {
+    expect(clipBlock(980, 60, 1000)).toEqual({ top: 980, height: 20 });
+  });
+});
+
+describe('isAutoBilling', () => {
+  it('is true when the stored minutes equal the span', () => {
+    expect(isAutoBilling({ startTime: '08:00', endTime: '10:00', durationBilling: 120 })).toBe(true);
+    expect(isAutoBilling({ startTime: '23:00', endTime: '01:00', durationBilling: 120 })).toBe(true);
+  });
+
+  it('is false for a manual override', () => {
+    expect(isAutoBilling({ startTime: '08:00', endTime: '10:00', durationBilling: 90 })).toBe(false);
   });
 });

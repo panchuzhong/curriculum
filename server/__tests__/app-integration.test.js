@@ -2,7 +2,7 @@
 // route mounting included), unlike route-helpers.js which mounts one router at
 // a time. Runs in a temp cwd so DB files and restore snapshots stay isolated.
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
-import { mkdtempSync, rmSync } from 'fs';
+import { mkdtempSync, rmSync, existsSync } from 'fs';
 import { tmpdir } from 'os';
 import { join, resolve } from 'path';
 import request from 'supertest';
@@ -69,6 +69,25 @@ describe('real app integration', () => {
     const res = await request(app).get('/api/health');
     expect(res.status).toBe(200);
     expect(res.body).toEqual({ status: 'ok' });
+  });
+
+  it('does not parse a restore body before authentication', async () => {
+    // Malformed JSON would be a 400 if the 50MB parser ran ahead of auth.
+    const res = await request(app).post('/api/backup/restore')
+      .set('Content-Type', 'application/json').send('{not json');
+    expect(res.status).toBe(401);
+  });
+
+  it('registering does not write ALLOW_REGISTRATION into a .env file under test', () => {
+    expect(existsSync(join(tmp, '.env'))).toBe(false);
+  });
+
+  it('a PUT with no body is a 400, not a 500 (Express 5 leaves req.body undefined)', async () => {
+    const created = await request(app).post('/api/semesters').set(authHeader(token))
+      .send({ name: '2026春季', type: 'spring', startDate: '2026-02-23', endDate: '2026-07-05' });
+    expect(created.status).toBe(200);
+    const res = await request(app).put(`/api/semesters/${created.body.id}`).set(authHeader(token));
+    expect(res.status).toBe(400);
   });
 });
 

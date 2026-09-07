@@ -295,3 +295,27 @@ describe('GET /api/classes/locations/suggest', () => {
     expect(res.body).toEqual([]);
   });
 });
+
+describe('input coercion and type guards', () => {
+  it('isCompetition:"false" is stored as false', async () => {
+    const res = await request(app).post('/api/classes').set(auth(token))
+      .send({ name: '竞赛班', grade: '高一', subject: '数学', studentCount: 5, isCompetition: 'false' });
+    expect(res.status).toBe(200);
+    expect(res.body.isCompetition).toBe(false);
+    const upd = await request(app).put(`/api/classes/${res.body.id}`).set(auth(token)).send({ isCompetition: '0' });
+    expect(upd.status).toBe(200);
+    expect(upd.body.isCompetition).toBe(false);
+  });
+
+  it('rejects an object where a string is expected instead of failing at the driver', async () => {
+    const res = await request(app).post('/api/classes').set(auth(token))
+      .send({ name: '数学一班', grade: '高一', subject: { a: 1 }, studentCount: 5 });
+    expect(res.status).toBe(400);
+  });
+
+  it('rejects a whitespace-only name', async () => {
+    const res = await request(app).post('/api/classes').set(auth(token))
+      .send({ name: '   ', grade: '高一', subject: '数学', studentCount: 5 });
+    expect(res.status).toBe(400);
+  });
+});

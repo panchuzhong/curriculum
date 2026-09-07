@@ -36,7 +36,7 @@ export default function HolidayManager() {
   const workdays = yearHolidays.filter(h => h.type === 'workday');
 
   async function addHoliday() {
-    if (!form.date || saving) return;
+    if (!form.date || !form.name.trim() || saving) return;
     setSaving(true);
     try {
       await api.createHoliday(form);
@@ -97,7 +97,7 @@ export default function HolidayManager() {
           className="px-3 py-1 bg-blue-600 text-white rounded text-sm disabled:opacity-50">
           {importing ? '导入中...' : `导入${year}年默认数据`}
         </button>
-        <button onClick={() => { setShowAdd(true); setForm({ date: `${year}-`, type: 'holiday', name: '' }); }}
+        <button onClick={() => { setShowAdd(true); setForm({ date: '', type: 'holiday', name: '' }); }}
           className="px-3 py-1 bg-green-600 text-white rounded text-sm">手动添加</button>
       </div>
 

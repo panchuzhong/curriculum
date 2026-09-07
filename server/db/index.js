@@ -249,6 +249,17 @@ export function initDb() {
     }
   }
 
+  // idx_schedules_unique postdates duplicate detection, so a database written
+  // before it can hold identical (class_id, date, start_time) rows; CREATE
+  // UNIQUE INDEX then throws and the server never starts. Keep the oldest row.
+  const hasUniqueIdx = db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'index' AND name = 'idx_schedules_unique'").get();
+  if (!hasUniqueIdx) {
+    const { changes } = db.prepare(
+      'DELETE FROM schedules WHERE id NOT IN (SELECT MIN(id) FROM schedules GROUP BY class_id, date, start_time)'
+    ).run();
+    if (changes > 0) console.warn(`Removed ${changes} duplicate schedule row(s) before creating idx_schedules_unique`);
+  }
+
   // Indexes
   db.exec(`
     CREATE INDEX IF NOT EXISTS idx_schedules_date ON schedules(date);

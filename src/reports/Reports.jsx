@@ -4,6 +4,7 @@ import { getClassColor, DarkContext } from '../utils/colors';
 import { SUBJECT_HUES } from '../utils/constants';
 import { todayStr, getMonday, addDays, getMonthRange, getYearRange } from '../utils/date';
 import { useToast } from '../components/ToastProvider';
+import { shortcutBlocked } from '../utils/keys';
 
 function groupBy(arr, fn) {
   const map = {};
@@ -15,6 +16,9 @@ function groupBy(arr, fn) {
   return map;
 }
 
+// Unrounded server floats (800 × 35/60 = 466.666…) must not print three decimals.
+const fmtNum = (n) => n.toLocaleString(undefined, { maximumFractionDigits: 2 });
+
 function StatCard({ label, value, unit, accent, icon }) {
   return (
     <div className="flex-1 rounded-xl overflow-hidden bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 shadow-sm">
@@ -23,7 +27,7 @@ function StatCard({ label, value, unit, accent, icon }) {
         <div className="min-w-0">
           <div className="text-xs sm:text-sm text-gray-500 dark:text-gray-400">{label}</div>
           <div className="text-base sm:text-2xl font-bold mt-0.5 sm:mt-1 truncate" style={{ color: accent }}>
-            {typeof value === 'number' ? value.toLocaleString() : value}
+            {typeof value === 'number' ? fmtNum(value) : value}
             {unit && <span className="text-xs sm:text-sm font-normal ml-1 text-gray-500 dark:text-gray-400">{unit}</span>}
           </div>
         </div>
@@ -115,6 +119,7 @@ export default function Reports() {
 
   useLayoutEffect(() => {
     const onKey = (e) => {
+      if (shortcutBlocked(e)) return;
       if (e.key === 'Home') {
         e.preventDefault();
         if (tab === 'week') { loadWeek(getMonday(todayStr())); }
@@ -123,7 +128,6 @@ export default function Reports() {
         else { setCustomStart(todayStr()); setCustomEnd(todayStr()); }
         return;
       }
-      if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.tagName === 'SELECT') return;
       if (tab === 'week' && period) {
         if (e.key === 'ArrowLeft') { e.preventDefault(); loadWeek(addDays(period.start, -7)); }
         if (e.key === 'ArrowRight') { e.preventDefault(); loadWeek(addDays(period.start, 7)); }
@@ -288,7 +292,7 @@ export default function Reports() {
       <div className="grid grid-cols-3 gap-2 sm:gap-4 mb-3 sm:mb-6">
         <StatCard label="排课次数" value={totalCount} unit="次" accent="#3b82f6" icon="📅" />
         <StatCard label="教学时长" value={totalHours} unit="小时" accent="#8b5cf6" icon="⏱" />
-        <StatCard label="预估收入" value={`¥${totalRevenue.toLocaleString()}`} accent="#22c55e" icon="💰" />
+        <StatCard label="预估收入" value={`¥${fmtNum(totalRevenue)}`} accent="#22c55e" icon="💰" />
       </div>
 
       {totalCount === 0 ? (
@@ -310,7 +314,7 @@ export default function Reports() {
             <BarChart
               data={subjectData.map(d => ({
                 ...d,
-                display: `${d.value}次 / ${d.hours.toFixed(1)}h / ¥${d.revenue.toLocaleString()}`,
+                display: `${d.value}次 / ${d.hours.toFixed(1)}h / ¥${fmtNum(d.revenue)}`,
               }))}
               maxVal={Math.max(...subjectData.map(d => d.value))}
             />
@@ -322,7 +326,7 @@ export default function Reports() {
             <BarChart
               data={gradeData.map(d => ({
                 ...d,
-                display: `${d.value}次 / ${d.hours.toFixed(1)}h / ¥${d.revenue.toLocaleString()}`,
+                display: `${d.value}次 / ${d.hours.toFixed(1)}h / ¥${fmtNum(d.revenue)}`,
               }))}
               maxVal={Math.max(...gradeData.map(d => d.value))}
             />
@@ -335,7 +339,7 @@ export default function Reports() {
               <BarChart
                 data={monthData.map(d => ({
                   ...d,
-                  display: `${d.value}次 / ¥${d.revenue.toLocaleString()}`,
+                  display: `${d.value}次 / ¥${fmtNum(d.revenue)}`,
                 }))}
                 maxVal={Math.max(...monthData.map(d => d.value))}
               />
@@ -364,14 +368,14 @@ export default function Reports() {
                       </td>
                       <td className="text-right p-2">{d.value} 次</td>
                       <td className="text-right p-2">{d.hours.toFixed(1)} 小时</td>
-                      <td className="text-right p-2 text-green-600 dark:text-green-400">¥{d.revenue.toLocaleString()}</td>
+                      <td className="text-right p-2 text-green-600 dark:text-green-400">¥{fmtNum(d.revenue)}</td>
                     </tr>
                   ))}
                   <tr className="font-bold">
                     <td className="p-2">合计</td>
                     <td className="text-right p-2">{totalCount} 次</td>
                     <td className="text-right p-2">{totalHours.toFixed(1)} 小时</td>
-                    <td className="text-right p-2 text-green-600 dark:text-green-400">¥{totalRevenue.toLocaleString()}</td>
+                    <td className="text-right p-2 text-green-600 dark:text-green-400">¥{fmtNum(totalRevenue)}</td>
                   </tr>
                 </tbody>
               </table>

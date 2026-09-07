@@ -11,6 +11,7 @@ import { useToast } from '../components/ToastProvider';
 import BatchScheduleDialog from './BatchScheduleDialog';
 import ExportDialog from './ExportDialog';
 import useScheduleExport from './useScheduleExport';
+import { shortcutBlocked } from '../utils/keys';
 
 function getMonthDates(year, month) {
   const first = new Date(year, month, 1);
@@ -67,14 +68,14 @@ export default function MonthlySchedule() {
     const ny = n.getFullYear(), nm = n.getMonth();
     setViewDate('month', `${ny}-${nm}`);
     setViewDate('week', getMonday(todayStr()));
-    setSearchParams({ year: String(ny), month: String(nm) });
+    setSearchParams({ year: String(ny), month: String(nm) }, { replace: true });
     setYear(ny); setMonth(nm);
     animDir.current = 0; setAnimKey(k => k + 1);
   }
 
   useLayoutEffect(() => {
     const onKey = (e) => {
-      if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.tagName === 'SELECT') return;
+      if (shortcutBlocked(e)) return;
       if (e.key === 'Home') { e.preventDefault(); goToThisMonth(); return; }
       if (e.key === 'ArrowLeft') { e.preventDefault(); prevMonth(); }
       if (e.key === 'ArrowRight') { e.preventDefault(); nextMonth(); }
@@ -99,7 +100,7 @@ export default function MonthlySchedule() {
     const nm = month === 0 ? 11 : month - 1;
     const ny = month === 0 ? year - 1 : year;
     setViewDate('month', `${ny}-${nm}`);
-    setSearchParams({ year: String(ny), month: String(nm) });
+    setSearchParams({ year: String(ny), month: String(nm) }, { replace: true });
     if (month === 0) { setYear(y => y - 1); setMonth(11); }
     else setMonth(m => m - 1);
     setAnimKey(k => k + 1);
@@ -110,7 +111,7 @@ export default function MonthlySchedule() {
     const nm = month === 11 ? 0 : month + 1;
     const ny = month === 11 ? year + 1 : year;
     setViewDate('month', `${ny}-${nm}`);
-    setSearchParams({ year: String(ny), month: String(nm) });
+    setSearchParams({ year: String(ny), month: String(nm) }, { replace: true });
     if (month === 11) { setYear(y => y + 1); setMonth(0); }
     else setMonth(m => m + 1);
     setAnimKey(k => k + 1);

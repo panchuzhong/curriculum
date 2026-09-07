@@ -230,3 +230,24 @@ describe('PUT /api/students/:id preserves links to soft-deleted classes', () => 
     expect(res.body.classIds).toEqual([]);
   });
 });
+
+describe('classIds given as numeric strings', () => {
+  it('links on create and keeps links on update', async () => {
+    const { classes } = await import('../db/schema.js');
+    const teacherId = drizzleDb.select().from((await import('../db/schema.js')).teachers).get().id;
+    const r = drizzleDb.insert(classes).values({
+      teacherId, name: '数学班', grade: '高一', subject: '数学', studentCount: 5, unitPrice: 100,
+    }).run();
+    const classId = Number(r.lastInsertRowid);
+
+    const created = await request(app).post('/api/students').set(auth(token))
+      .send({ name: '张三', classIds: [String(classId)] });
+    expect(created.status).toBe(200);
+    expect(created.body.classIds).toEqual([classId]);
+
+    const updated = await request(app).put(`/api/students/${created.body.id}`).set(auth(token))
+      .send({ name: '张三丰', classIds: [String(classId)] });
+    expect(updated.status).toBe(200);
+    expect(updated.body.classIds).toEqual([classId]);
+  });
+});

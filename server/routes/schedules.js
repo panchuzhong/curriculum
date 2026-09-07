@@ -153,9 +153,12 @@ router.post('/', validateCreateSchedule, handle, (req, res) => {
   try {
     result = drizzleDb.insert(schedules).values({
       classId, date, startTime, endTime: storedEndTime, durationBilling: billing,
-      locationName: locationName ?? cls.defaultLocationName,
-      locationLat: locationLat ?? cls.defaultLocationLat,
-      locationLng: locationLng ?? cls.defaultLocationLng,
+      // The class default is one place, so it is inherited whole or not at all:
+      // a caller naming a different place must not receive the default's
+      // coordinates, and an explicit null means "no location".
+      ...(locationName === undefined
+        ? { locationName: cls.defaultLocationName, locationLat: cls.defaultLocationLat, locationLng: cls.defaultLocationLng }
+        : { locationName, locationLat: locationLat ?? null, locationLng: locationLng ?? null }),
     }).run();
   } catch (e) {
     if (e.message?.includes('UNIQUE constraint')) {
@@ -302,6 +305,11 @@ router.put('/batch', validateBatchUpdate, handle, (req, res) => {
   }
   if (safeUpdates.locationLat != null) safeUpdates.locationLat = Number(safeUpdates.locationLat);
   if (safeUpdates.locationLng != null) safeUpdates.locationLng = Number(safeUpdates.locationLng);
+  // Same rule as the single-item update: clearing the name clears its coordinates.
+  if ('locationName' in safeUpdates && safeUpdates.locationName == null) {
+    if (!('locationLat' in safeUpdates)) safeUpdates.locationLat = null;
+    if (!('locationLng' in safeUpdates)) safeUpdates.locationLng = null;
+  }
 
   if (safeUpdates.startTime !== undefined && !isValidTime(safeUpdates.startTime)) {
     return res.status(400).json({ error: '开始时间须为有效的 HH:MM (00:00-23:59)' });

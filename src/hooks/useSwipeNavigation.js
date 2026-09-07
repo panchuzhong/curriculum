@@ -63,7 +63,13 @@ export default function useSwipeNavigation({
     let inhV;
 
     function onStart(e) {
-      if (e.touches.length !== 1) return;
+      if (e.touches.length !== 1) {
+        // Two fingers landed together: forget the previous gesture so the
+        // coming touchend cannot replay its samples, and hold where we are.
+        if (!rafId) offsetCells = readCSS();
+        locked = false; cancelled = true;
+        return;
+      }
       if (rafId) { cancelAnimationFrame(rafId); rafId = null; }
       inhV = velocity;                       // inherit from interrupted momentum
       offsetCells = readCSS();               // sync with actual DOM position
@@ -124,9 +130,10 @@ export default function useSwipeNavigation({
     }
 
     function onEnd() {
+      if (rafId) return;                    // momentum in flight; not our gesture
       if (!locked) { velocity = 0; settle(); return; }
-
-      const v0 = calcVelocity();
+      // A gesture broken off by a second finger keeps its drag but no momentum.
+      const v0 = cancelled ? 0 : calcVelocity();
 
       // Low velocity → snap to nearest cell
       if (Math.abs(v0) < 0.0003) {

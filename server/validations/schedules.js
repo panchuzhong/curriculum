@@ -18,19 +18,20 @@ export const validateBatchCreate = [
   body('endTime').custom(v => { if (!isValidScheduleEndTime(v)) throw new Error('结束时间须为有效的 HH:MM (00:00-47:59)'); return true; }),
   body('dates').optional().isArray({ max: 365 }).withMessage('dates 须为数组,最多 365 项'),
   body('dates.*').optional().custom(v => { if (!isValidDate(v)) throw new Error('日期格式须为有效的 YYYY-MM-DD'); return true; }),
-  body('weekday').optional().isInt({ min: 0, max: 6 }).withMessage('weekday 须为0-6'),
+  body('weekday').optional().isInt({ min: 0, max: 6 }).toInt().withMessage('weekday 须为0-6'),
   body('semesterId').optional().isInt({ min: 1 }).withMessage('semesterId 须为正整数'),
   body('durationBilling').optional().isInt({ min: 0 }).withMessage('durationBilling 须为非负整数'),
-  body('preview').optional().isBoolean().withMessage('preview 须为布尔值'),
-  body('crossSemester').optional().isBoolean().withMessage('crossSemester 须为布尔值'),
+  // Flags are read by truthiness, so the string "false" must become false.
+  body('preview').optional().isBoolean().toBoolean().withMessage('preview 须为布尔值'),
+  body('crossSemester').optional().isBoolean().toBoolean().withMessage('crossSemester 须为布尔值'),
 ];
 
 export const validateBatchUpdate = [
   body('classId').isInt({ min: 1 }).withMessage('classId 须为正整数'),
   body('fromDate').optional().custom(v => { if (!isValidDate(v)) throw new Error('fromDate 格式须为有效的 YYYY-MM-DD'); return true; }),
   body('toDate').optional().custom(v => { if (!isValidDate(v)) throw new Error('toDate 格式须为有效的 YYYY-MM-DD'); return true; }),
-  body('weekday').optional().isInt({ min: 0, max: 6 }).withMessage('weekday 须为0-6'),
-  body('semesterOnly').optional().isBoolean().withMessage('semesterOnly 须为布尔值'),
+  body('weekday').optional().isInt({ min: 0, max: 6 }).toInt().withMessage('weekday 须为0-6'),
+  body('semesterOnly').optional().isBoolean().toBoolean().withMessage('semesterOnly 须为布尔值'),
   body('updates').isObject().withMessage('updates 须为对象'),
   body('updates.startTime').optional().custom(v => { if (!isValidTime(v)) throw new Error('开始时间须为有效的 HH:MM (00:00-23:59)'); return true; }),
   body('updates.endTime').optional().custom(v => { if (!isValidScheduleEndTime(v)) throw new Error('结束时间须为有效的 HH:MM (00:00-47:59)'); return true; }),
@@ -47,8 +48,8 @@ export const validateBatchDelete = [
   body('start').optional().custom(v => { if (!isValidDate(v)) throw new Error('start 格式须为有效的 YYYY-MM-DD'); return true; }),
   body('end').optional().custom(v => { if (!isValidDate(v)) throw new Error('end 格式须为有效的 YYYY-MM-DD'); return true; }),
   body('fromDate').optional().custom(v => { if (!isValidDate(v)) throw new Error('fromDate 格式须为有效的 YYYY-MM-DD'); return true; }),
-  body('semesterOnly').optional().isBoolean().withMessage('semesterOnly 须为布尔值'),
-  body('dryRun').optional().isBoolean().withMessage('dryRun 须为布尔值'),
+  body('semesterOnly').optional().isBoolean().toBoolean().withMessage('semesterOnly 须为布尔值'),
+  body('dryRun').optional().isBoolean().toBoolean().withMessage('dryRun 须为布尔值'),
 ];
 
 export const validateUpdateSchedule = [

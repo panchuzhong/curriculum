@@ -1187,3 +1187,77 @@ describe('PUT /api/schedules/:id — duplicate conflict returns 409', () => {
     expect(check.body.startTime).toBe('10:00');
   });
 });
+
+// ── Validator coercion: JSON strings for ints/booleans (agent/API clients) ──
+
+describe('validator coercion of string-typed fields', () => {
+  it('semester+weekday mode accepts weekday as a numeric string', async () => {
+    const { semesters } = await import('../db/schema.js');
+    const y = new Date().getFullYear();
+    const r = drizzleDb.insert(semesters).values({
+      teacherId, name: '当前期', type: 'spring', startDate: `${y}-01-01`, endDate: `${y}-12-31`,
+    }).run();
+    const res = await request(app).post('/api/schedules/batch').set(auth(token))
+      .send({ classId, semesterId: Number(r.lastInsertRowid), weekday: '1', startTime: '09:00', endTime: '10:00' });
+    expect(res.status).toBe(200);
+    expect(res.body.count).toBeGreaterThanOrEqual(1);
+  });
+
+  it('dryRun:"false" really deletes', async () => {
+    const r1 = await request(app).post('/api/schedules').set(auth(token))
+      .send({ classId, date: '2026-06-03', startTime: '10:00', endTime: '11:00' });
+    const res = await request(app).delete('/api/schedules/batch').set(auth(token))
+      .send({ ids: [r1.body.id], dryRun: 'false' });
+    expect(res.status).toBe(200);
+    const check = await request(app).get(`/api/schedules/${r1.body.id}`).set(auth(token));
+    expect(check.status).toBe(404);
+  });
+
+  it('preview:"false" really creates', async () => {
+    const { schedules } = await import('../db/schema.js');
+    const res = await request(app).post('/api/schedules/batch').set(auth(token))
+      .send({ classId, dates: ['2026-06-08'], startTime: '09:00', endTime: '10:00', preview: 'false' });
+    expect(res.status).toBe(200);
+    expect(drizzleDb.select().from(schedules).where(eq(schedules.classId, classId)).all()).toHaveLength(1);
+  });
+});
+
+// ── Location name and coordinates travel together ──
+
+describe('location coordinates follow the location name', () => {
+  it('POST with a new name but no coordinates does not inherit the class default coordinates', async () => {
+    const { classes } = await import('../db/schema.js');
+    drizzleDb.update(classes).set({ defaultLocationName: '校区A', defaultLocationLat: 30.1, defaultLocationLng: 120.1 })
+      .where(eq(classes.id, classId)).run();
+    const res = await request(app).post('/api/schedules').set(auth(token))
+      .send({ classId, date: '2026-05-04', startTime: '09:00', endTime: '10:00', locationName: '学生家' });
+    expect(res.status).toBe(200);
+    expect(res.body.locationName).toBe('学生家');
+    expect(res.body.locationLat).toBeNull();
+    expect(res.body.locationLng).toBeNull();
+  });
+
+  it('POST with locationName:null stores no location even when the class has a default', async () => {
+    const { classes } = await import('../db/schema.js');
+    drizzleDb.update(classes).set({ defaultLocationName: '校区A', defaultLocationLat: 30.1, defaultLocationLng: 120.1 })
+      .where(eq(classes.id, classId)).run();
+    const res = await request(app).post('/api/schedules').set(auth(token))
+      .send({ classId, date: '2026-05-05', startTime: '09:00', endTime: '10:00', locationName: null });
+    expect(res.status).toBe(200);
+    expect(res.body.locationName).toBeNull();
+    expect(res.body.locationLat).toBeNull();
+  });
+
+  it('batch PUT clearing the name also clears stale coordinates', async () => {
+    const { schedules } = await import('../db/schema.js');
+    await request(app).post('/api/schedules').set(auth(token))
+      .send({ classId, date: '2026-05-06', startTime: '09:00', endTime: '10:00', locationName: '校区A', locationLat: 30.1, locationLng: 120.1 });
+    const res = await request(app).put('/api/schedules/batch').set(auth(token))
+      .send({ classId, fromDate: '2026-05-01', toDate: '2026-05-31', semesterOnly: false, updates: { locationName: null } });
+    expect(res.status).toBe(200);
+    const row = drizzleDb.select().from(schedules).where(eq(schedules.classId, classId)).get();
+    expect(row.locationName).toBeNull();
+    expect(row.locationLat).toBeNull();
+    expect(row.locationLng).toBeNull();
+  });
+});

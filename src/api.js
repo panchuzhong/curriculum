@@ -10,6 +10,7 @@ export function getToken() {
 }
 
 export function setToken(token) {
+  clearScheduleCache();
   localStorage.setItem('token', token);
   window.dispatchEvent?.(new Event('token-changed'));
 }

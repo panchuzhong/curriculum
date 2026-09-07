@@ -46,3 +46,18 @@ export function assignColumns(group) {
     return { ...s, _col: col };
   });
 }
+
+// A block is positioned from the grid's first visible hour, so a class that
+// starts earlier has a negative top: the hidden part must come off its height,
+// and a block that ends above the grid is not drawn at all.
+export function clipBlock(topPx, heightPx, totalHeight) {
+  const top = Math.max(0, topPx);
+  const height = Math.min(heightPx + Math.min(0, topPx), totalHeight - top);
+  return height > 0 ? { top, height } : null;
+}
+
+// durationBilling is always stored, so an edit form cannot tell "auto" from
+// "manual" by null; the stored value matches the span exactly when it was auto.
+export function isAutoBilling({ startTime, endTime, durationBilling }) {
+  return durationBilling == null || durationBilling === duration(startTime, endTime);
+}

@@ -143,3 +143,15 @@ describe('Audit logging', () => {
     );
   });
 });
+
+describe('numeric strings for tier bounds', () => {
+  it('PUT compares min/max numerically, not lexicographically', async () => {
+    const created = await request(app).post('/api/pricing-tiers').set(auth(token))
+      .send({ minStudents: 1, maxStudents: 3, pricePerStudentPerHour: 120 });
+    const res = await request(app).put(`/api/pricing-tiers/${created.body.id}`).set(auth(token))
+      .send({ minStudents: '9', maxStudents: '10' });
+    expect(res.status).toBe(200);
+    expect(res.body.minStudents).toBe(9);
+    expect(res.body.maxStudents).toBe(10);
+  });
+});

@@ -5,6 +5,7 @@ import { useToast } from '../components/ToastProvider';
 import { useConfirm } from '../components/ConfirmDialog';
 import { useDialogFocusTrap } from '../hooks/useDialogFocusTrap';
 import { useBackdropClose } from '../hooks/useBackdropClose';
+import { isAutoBilling } from '../utils/schedule';
 
 function getDefaultEndTime(start) {
   if (!start) return '10:00';
@@ -55,7 +56,7 @@ export default function ScheduleDialog({ date, startTime, schedule, onClose, onS
         date: schedule.date,
         startTime: schedule.startTime,
         endTime: schedule.endTime,
-        durationBilling: schedule.durationBilling ?? '',
+        durationBilling: isAutoBilling(schedule) ? '' : schedule.durationBilling,
         locationName: schedule.locationName || '',
       });
     }

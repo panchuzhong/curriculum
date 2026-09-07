@@ -103,8 +103,8 @@ test.describe('设置操作', () => {
     await pwForm.locator('input[type="password"]').nth(1).fill('test5678');
     await pwForm.locator('input[type="password"]').nth(2).fill('test5678');
     await page.getByRole('button', { name: '修改密码' }).click();
-    // Server returns 401, client treats it as session expired → redirect to login
-    await page.waitForURL('**/login');
+    await expect(page.getByText('当前密码错误')).toBeVisible();
+    await expect(page).toHaveURL(/\/settings/);
   });
 
   test('添加自定义学科', async ({ authenticatedPage: page }) => {

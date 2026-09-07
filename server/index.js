@@ -18,11 +18,15 @@ import geocodeRoutes from './routes/geocode.js';
 
 const app = express();
 
-// Backup restore payloads may be up to 50MB. This parser must be mounted
-// BEFORE the global 1MB parser: body-parser marks the body as already parsed
-// (req._body), so the stricter global limit never applies to this path.
-app.use('/api/backup/restore', express.json({ limit: '50mb' }));
-app.use(express.json({ limit: '1mb' }));
+// Backup restore payloads may be up to 50MB. That parser lives in backup.js
+// behind its authMiddleware, so an anonymous client never gets a large body
+// parsed; the global 1MB parser must skip the path or it would reject first.
+const jsonParser = express.json({ limit: '1mb' });
+app.use((req, res, next) => (req.path === '/api/backup/restore' ? next() : jsonParser(req, res, next)));
+// Express 5 leaves req.body undefined when no JSON body was sent; the update
+// handlers iterate it (Object.entries), so a bodiless PUT must see {} and get
+// the intended 400 instead of a TypeError 500.
+app.use((req, _res, next) => { if (req.body === undefined) req.body = {}; next(); });
 
 // Security headers
 app.use((req, res, next) => {

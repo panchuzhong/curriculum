@@ -9,23 +9,25 @@ const birthDate = () => body('birthDate').optional({ checkFalsy: true }).custom(
 });
 
 export const validateCreateStudent = [
-  body('name').notEmpty().isLength({ max: 100 }).withMessage('姓名不能为空'),
+  body('name').isString().trim().notEmpty().isLength({ max: 100 }).withMessage('姓名不能为空'),
   birthDate(),
   body('phone').optional({ checkFalsy: true }).isLength({ max: 20 }).matches(PHONE_RE).withMessage('手机号格式不正确'),
   body('parentPhone').optional({ checkFalsy: true }).isLength({ max: 20 }).matches(PHONE_RE).withMessage('家长手机号格式不正确'),
   body('parentName').optional({ checkFalsy: true }).isString().isLength({ max: 100 }).withMessage('家长姓名最多100个字符'),
   body('note').optional({ checkFalsy: true }).isString().isLength({ max: 2000 }).withMessage('备注最多2000个字符'),
   body('classIds').optional().isArray({ max: 500 }).withMessage('classIds 须为数组且最多500项'),
-  body('classIds.*').optional().isInt({ min: 1 }).withMessage('classIds 元素须为正整数'),
+  // toInt: the route matches ids against a Set of numbers, so "3" would be dropped.
+  body('classIds.*').optional().isInt({ min: 1 }).toInt().withMessage('classIds 元素须为正整数'),
 ];
 
 export const validateUpdateStudent = [
-  body('name').optional().notEmpty().isLength({ max: 100 }).withMessage('姓名不能为空'),
+  body('name').optional().isString().trim().notEmpty().isLength({ max: 100 }).withMessage('姓名不能为空'),
   birthDate(),
   body('phone').optional({ checkFalsy: true }).isLength({ max: 20 }).matches(PHONE_RE).withMessage('手机号格式不正确'),
   body('parentPhone').optional({ checkFalsy: true }).isLength({ max: 20 }).matches(PHONE_RE).withMessage('家长手机号格式不正确'),
   body('parentName').optional({ checkFalsy: true }).isString().isLength({ max: 100 }).withMessage('家长姓名最多100个字符'),
   body('note').optional({ checkFalsy: true }).isString().isLength({ max: 2000 }).withMessage('备注最多2000个字符'),
   body('classIds').optional().isArray({ max: 500 }).withMessage('classIds 须为数组且最多500项'),
-  body('classIds.*').optional().isInt({ min: 1 }).withMessage('classIds 元素须为正整数'),
+  // toInt: the route matches ids against a Set of numbers, so "3" would be dropped.
+  body('classIds.*').optional().isInt({ min: 1 }).toInt().withMessage('classIds 元素须为正整数'),
 ];

@@ -1,6 +1,6 @@
 import { useContext, memo } from 'react';
 import { getClassColor, getTextColor, DarkContext } from '../utils/colors';
-import { toMin, duration } from '../utils/schedule';
+import { toMin, duration, clipBlock } from '../utils/schedule';
 
 export default memo(function ScheduleBlock({ item, hasConflict, totalCols, rowHeight, topGapHeight, firstLabelMin, totalHeight, onScheduleClick, schedLpRef, wasRecentTouch }) {
   const dark = useContext(DarkContext);
@@ -12,8 +12,8 @@ export default memo(function ScheduleBlock({ item, hasConflict, totalCols, rowHe
   const leftPct = item._col * widthPct;
   const h = Math.max(heightPx, rowHeight - 1);
   const isShort = h < rowHeight * 1.5;
-  const clippedTop = Math.max(0, topPx);
-  const clippedHeight = Math.min(h, totalHeight - clippedTop);
+  const clip = clipBlock(topPx, h, totalHeight);
+  const { top: clippedTop, height: clippedHeight } = clip ?? { top: 0, height: 0 };
 
   const widthPenalty = totalCols > 2 ? 2 : totalCols > 1 ? 1 : 0;
   const fontSize = isShort
@@ -21,6 +21,8 @@ export default memo(function ScheduleBlock({ item, hasConflict, totalCols, rowHe
     : Math.max(10, Math.min(16, Math.floor(clippedHeight / 3)) - widthPenalty);
   const lineH = fontSize * 1.3;
   const maxNameLines = isShort ? 1 : Math.max(1, Math.floor((clippedHeight - lineH * 2) / lineH));
+
+  if (!clip) return null;
 
   return (
     <div

@@ -7,6 +7,7 @@ import ExportDialog from './ExportDialog';
 import useWeekNavigation from './useWeekNavigation';
 import useScheduleExport from './useScheduleExport';
 import WeekNavBar from './WeekNavBar';
+import { shortcutBlocked } from '../utils/keys';
 
 export default function WeeklySchedule() {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -33,7 +34,7 @@ export default function WeeklySchedule() {
 
   useLayoutEffect(() => {
     const onKey = (e) => {
-      if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.tagName === 'SELECT') return;
+      if (shortcutBlocked(e)) return;
       if (e.key === 'Home') { e.preventDefault(); goToThisWeek(); return; }
       if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
       e.preventDefault();
