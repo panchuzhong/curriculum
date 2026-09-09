@@ -1,7 +1,7 @@
 import { useState, useEffect, useLayoutEffect, useRef } from 'react';
 import { flushSync } from 'react-dom';
 import { api } from '../api';
-import { parseDateStr, todayStr, getMonday, addDays } from '../utils/date';
+import { parseDateStr, fmt, todayStr, getMonday, addDays } from '../utils/date';
 import { setViewDate } from '../utils/viewDate';
 import useSwipeNavigation from '../hooks/useSwipeNavigation';
 import { useToast } from '../components/ToastProvider';
@@ -28,6 +28,10 @@ function getOrientation() {
   return { mobile: window.innerWidth < 768 };
 }
 
+function dateParam(value) {
+  return /^\d{4}-\d{2}-\d{2}$/.test(value) && fmt(parseDateStr(value)) === value ? value : null;
+}
+
 export default function useWeekNavigation({ searchParams, setSearchParams }) {
   const toast = useToast();
   const [orient, setOrient] = useState(getOrientation);
@@ -40,8 +44,8 @@ export default function useWeekNavigation({ searchParams, setSearchParams }) {
   const isMobile = orient.mobile;
   const visibleDays = isMobile ? 2 : 7;
 
-  const initialWeek = searchParams.get('week') || (() => {
-    const selectedDate = searchParams.get('date');
+  const initialWeek = dateParam(searchParams.get('week')) || (() => {
+    const selectedDate = dateParam(searchParams.get('date'));
     const { mobile } = getOrientation();
     if (selectedDate) return mobile ? selectedDate : getMonday(selectedDate);
     return mobile ? todayStr() : getMonday(todayStr());
@@ -122,6 +126,7 @@ export default function useWeekNavigation({ searchParams, setSearchParams }) {
 
   // Instant buffer swap: update dates centered on newCenter, snap offset to 0
   function navigateToWeek(newCenter) {
+    if (!mountedRef.current) return;
     setViewDate('week', newCenter);
     setSearchParams({ week: newCenter }, { replace: true });
     centerRef.current = newCenter;

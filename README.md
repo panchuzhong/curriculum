@@ -167,9 +167,10 @@ vim .env        # 修改 JWT_SECRET
 
 ```bash
 sudo mkdir -p /opt/curriculum-scheduler
-sudo cp -r curriculum-scheduler-v*/* /opt/curriculum-scheduler/
+sudo cp -r curriculum-scheduler-v*/. /opt/curriculum-scheduler/
 sudo vim /opt/curriculum-scheduler/.env
-sudo cp curriculum-scheduler.service /etc/systemd/system/
+sudo npm ci --omit=dev --prefix /opt/curriculum-scheduler
+sudo cp /opt/curriculum-scheduler/curriculum-scheduler.service /etc/systemd/system/
 sudo systemctl daemon-reload
 sudo systemctl enable curriculum-scheduler
 sudo systemctl start curriculum-scheduler
@@ -185,6 +186,8 @@ sudo systemctl start curriculum-scheduler
 - **API Key**：在设置页面获取，通过 `X-API-Key: <key>` 传递，适合 AI Agent 长期使用
 
 ### 输入校验
+
+注册和修改密码要求至少 8 个字符，且不超过 72 个 UTF-8 字节（汉字通常占 3 字节）。现有密码的登录方式保持兼容；历史上超过此限制的密码应重新设置，以避免 bcrypt 忽略超出部分。
 
 所有写接口均使用 express-validator 校验输入，校验失败返回 `400 {error: "提示信息"}`。详细规则见 `GET /api/agent/help` 的 `validationRules` 字段。
 
@@ -525,9 +528,9 @@ new_curriculum/
 
 ## 数据备份
 
-**文件层备份：**
+**SQLite 在线备份（包含 WAL 中已提交的数据）：**
 ```bash
-cp data/data.db data/data.db.backup.$(date +%Y%m%d)
+sqlite3 data/data.db ".backup 'data/data.db.backup.$(date +%Y%m%d)'"
 ```
 
 **API 备份（含还原）：**

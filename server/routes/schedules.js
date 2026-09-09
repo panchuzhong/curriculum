@@ -671,8 +671,8 @@ router.get('/summary', (req, res) => {
     return res.send(toCSV(rows));
   }
 
-  const bySubjectMap = {};
-  const byGradeMap = {};
+  const bySubjectMap = Object.create(null);
+  const byGradeMap = Object.create(null);
   for (const b of byClass) {
     if (!bySubjectMap[b.subject]) bySubjectMap[b.subject] = { subject: b.subject, count: 0, hours: 0, revenue: 0 };
     bySubjectMap[b.subject].count += b.count;

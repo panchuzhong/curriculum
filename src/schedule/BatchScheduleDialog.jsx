@@ -54,8 +54,10 @@ export default function BatchScheduleDialog({ onClose, onSaved }) {
   const [rangeStep, setRangeStep] = useState(1);
   const [previewCount, setPreviewCount] = useState(null);
   const [previewHint, setPreviewHint] = useState('');
+  const previewGeneration = useRef(0);
 
   function resetPreview() {
+    previewGeneration.current++;
     setPreviewCount(null);
     setPreviewHint('');
   }
@@ -129,6 +131,7 @@ export default function BatchScheduleDialog({ onClose, onSaved }) {
     if (!form.classId) return;
     const range = getDeleteRange();
     if (!range) return;
+    const generation = ++previewGeneration.current;
     try {
       // Use the same dryRun code path as the actual delete so the preview
       // matches what will really be removed (incl. semester filtering).
@@ -138,11 +141,14 @@ export default function BatchScheduleDialog({ onClose, onSaved }) {
         end: range.end,
         dryRun: true,
       });
+      if (generation !== previewGeneration.current) return;
       setPreviewCount(res.count);
       setPreviewHint(res.semesterFiltered
         ? `另有 ${res.semesterFiltered} 条因不在当前学期内不会删除（可设置 semesterOnly=false）`
         : '');
-    } catch (e) { toast(e.message || '查询失败'); }
+    } catch (e) {
+      if (generation === previewGeneration.current) toast(e.message || '查询失败');
+    }
   }
 
   async function handleSubmit() {
@@ -155,7 +161,7 @@ export default function BatchScheduleDialog({ onClose, onSaved }) {
           classId: +form.classId,
           startTime: form.startTime,
           endTime: form.endTime,
-          durationBilling: form.durationBilling ? +form.durationBilling : undefined,
+          durationBilling: form.durationBilling !== '' ? +form.durationBilling : undefined,
           crossSemester: crossSemester || undefined,
         };
         if (mode === 'semester') {
@@ -168,7 +174,7 @@ export default function BatchScheduleDialog({ onClose, onSaved }) {
           body.dates = dates;
         }
         const res = await api.batchSchedules(body);
-        setResult({ op: 'create', count: res.count });
+        setResult({ op: 'create', count: res.count, holidayDataMissing: res.holidayDataMissing });
       } else {
         // delete mode
         const range = getDeleteRange();
@@ -429,6 +435,11 @@ export default function BatchScheduleDialog({ onClose, onSaved }) {
               ? <p className="text-lg mb-4">成功排课 {result.count} 次</p>
               : <p className="text-lg mb-4">已删除 {result.count} 条排课</p>
             }
+            {result.holidayDataMissing?.length > 0 && (
+              <p className="mb-4 text-sm text-amber-700 dark:text-amber-300">
+                {result.holidayDataMissing.join('、')} 年没有节假日数据，本次排课未跳过节假日。
+              </p>
+            )}
             <button onClick={onSaved}
               className="px-6 py-2 bg-blue-600 text-white rounded hover:bg-blue-700">完成</button>
           </div>

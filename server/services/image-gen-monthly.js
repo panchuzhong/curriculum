@@ -145,7 +145,7 @@ function renderMonthHtml(schedulesWithClasses, year, month, { theme, checkIsHoli
           const ring = hasConflict ? 'box-shadow:0 0 0 1px #ef4444;z-index:1;' : '';
           const overtimeRing = isOvertime ? 'border-left:3px solid #f59e0b;border-right:3px solid #f59e0b;' : '';
           const borderRad = isEarly && isLate ? '0' : isEarly ? '0 0 4px 4px' : isLate ? '4px 4px 0 0' : '4px';
-          barsHtml += `<div style="position:absolute;left:${barLeft}px;top:${barTop}px;width:${barW}px;height:${barH}px;background:${bg};color:${fg};border-radius:${borderRad};display:flex;align-items:center;padding:0 ${isOvertime ? 6 : 4}px;font-size:${fontSize}px;overflow:hidden;white-space:nowrap;${ring}${overtimeRing}" title="${star}${name} ${item.startTime}-${item.endTime}${hasConflict ? ' [冲突]' : ''}${isOvertime ? ' [非正常时段]' : ''}">${star}${name}</div>`;
+          barsHtml += `<div style="position:absolute;left:${barLeft}px;top:${barTop}px;width:${barW}px;height:${barH}px;background:${bg};color:${fg};border-radius:${borderRad};display:flex;align-items:center;padding:0 ${isOvertime ? 6 : 4}px;font-size:${fontSize}px;overflow:hidden;white-space:nowrap;${ring}${overtimeRing}" title="${star}${name} ${escapeHtml(item.startTime)}-${escapeHtml(item.endTime)}${hasConflict ? ' [冲突]' : ''}${isOvertime ? ' [非正常时段]' : ''}">${star}${name}</div>`;
         }
       }
     }

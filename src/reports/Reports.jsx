@@ -7,7 +7,7 @@ import { useToast } from '../components/ToastProvider';
 import { shortcutBlocked } from '../utils/keys';
 
 function groupBy(arr, fn) {
-  const map = {};
+  const map = Object.create(null);
   arr.forEach(item => {
     const key = fn(item);
     if (!map[key]) map[key] = [];
@@ -166,7 +166,7 @@ export default function Reports() {
       .map(([label, items]) => {
         const subject = items[0].subject;
         const comp = items[0].isCompetition;
-        const hue = SUBJECT_HUES[subject] || { h: 0, s: 0 };
+        const hue = Object.hasOwn(SUBJECT_HUES, subject) ? SUBJECT_HUES[subject] : { h: 0, s: 0 };
         return {
           label,
           value: items.reduce((s, b) => s + b.count, 0),

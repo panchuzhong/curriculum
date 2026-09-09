@@ -93,8 +93,8 @@ const migrations = [
       // Backfill: one initial record per class using current pricing
       db.exec(`
         INSERT OR IGNORE INTO class_pricing (class_id, student_count, unit_price, discount_amount, discount_reason, effective_from)
-        SELECT id, student_count, unit_price, COALESCE(discount_amount, 0), discount_reason, COALESCE(created_at, '2000-01-01')
-        FROM classes
+        SELECT id, student_count, unit_price, COALESCE(discount_amount, 0), discount_reason, substr(COALESCE(created_at, '2000-01-01'), 1, 10)
+        FROM classes WHERE NOT EXISTS (SELECT 1 FROM class_pricing WHERE class_id = classes.id)
       `);
     },
   },
@@ -212,16 +212,13 @@ export function initDb() {
   );
   const hasClassPricing = db.prepare(`SELECT name FROM sqlite_master WHERE type='table' AND name='class_pricing'`).get();
 
-  // Existing database (migrations table empty but tables already exist):
-  // mark all current migrations as applied since the old code handled them
-  if (applied.size === 0 && hasClassPricing) {
-    const hasTeachers = db.prepare(`SELECT name FROM sqlite_master WHERE type='table' AND name='teachers'`).get();
-    if (hasTeachers) {
-      for (const m of migrations) {
-        db.prepare(`INSERT INTO _migrations (version, name) VALUES (?, ?)`).run(m.version, m.name);
-        applied.add(m.version);
-      }
-    }
+  // An untracked legacy database must run the idempotent migrations: having
+  // class_pricing proves nothing about newer columns such as pwd_version.
+  // Repair ledgers written by the previous blanket "all applied" shortcut.
+  const teacherCols = db.prepare('PRAGMA table_info(teachers)').all();
+  if (applied.has(4) && !teacherCols.some(c => c.name === 'pwd_version')) {
+    db.prepare('DELETE FROM _migrations WHERE version = 4').run();
+    applied.delete(4);
   }
   if (applied.has(3) && !hasClassPricing) {
     db.prepare(`DELETE FROM _migrations WHERE version = 3`).run();

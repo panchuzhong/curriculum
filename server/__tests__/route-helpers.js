@@ -1,19 +1,24 @@
 // Must set JWT_SECRET before any import that triggers auth.js module-level check
 process.env.JWT_SECRET = 'test-secret-key-that-is-at-least-32-chars-long';
 
-import { vi } from 'vitest';
+import { vi, afterAll } from 'vitest';
+import { mkdtempSync, rmSync } from 'fs';
+import { join } from 'path';
+import { tmpdir } from 'os';
 import express from 'express';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 
 const container = { drizzleDb: null, db: null };
+const snapshotDir = mkdtempSync(join(tmpdir(), 'curriculum-route-test-'));
+afterAll(() => rmSync(snapshotDir, { recursive: true, force: true }));
 
 vi.mock('../db/index.js', () => ({
   get drizzleDb() { return container.drizzleDb; },
   get db() { return container.db; },
   initDb: vi.fn(),
   // backup.js writes pre-restore snapshots beside the database file.
-  dbDir: './data',
+  get dbDir() { return snapshotDir; },
 }));
 vi.mock('../db/seed.js', () => ({
   seedPricingTiers: vi.fn(),

@@ -187,8 +187,8 @@ export async function generateScheduleImage(schedulesWithClasses, startDate, end
         const starHtml = item.class.isCompetition ? '<span style="color:#f59e0b">★ </span>' : '';
         blocksHtml += `<div style="position:absolute;top:${clippedTop}px;left:${left}px;width:${width}px;height:${clippedH}px;background:${bg};color:${fg};border-radius:6px;box-shadow:${hasConflict ? 'inset 0 0 0 2px #ef4444' : 'none'};overflow:hidden;z-index:10;${isShort ? `display:flex;align-items:center;gap:4px;padding:0 6px` : 'padding:4px'}">
           ${isShort
-            ? `<div style="font-size:${fs}px;line-height:1.25;${nameStyle};flex:1;min-width:0">${starHtml}${name}</div><div style="font-size:${timeFs}px;opacity:0.6;white-space:nowrap;flex-shrink:0">${item.startTime}-${item.endTime}</div>`
-            : `<div style="font-size:${fs}px;line-height:${lh}px;${nameStyle}">${starHtml}${name}</div><div style="font-size:${timeFs}px;line-height:${lh}px;opacity:0.65">${item.startTime}-${item.endTime}</div>${safeLoc ? `<div style="font-size:${locFs}px;opacity:0.55;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">📍${safeLoc}</div>` : ''}`
+            ? `<div style="font-size:${fs}px;line-height:1.25;${nameStyle};flex:1;min-width:0">${starHtml}${name}</div><div style="font-size:${timeFs}px;opacity:0.6;white-space:nowrap;flex-shrink:0">${escapeHtml(item.startTime)}-${escapeHtml(item.endTime)}</div>`
+            : `<div style="font-size:${fs}px;line-height:${lh}px;${nameStyle}">${starHtml}${name}</div><div style="font-size:${timeFs}px;line-height:${lh}px;opacity:0.65">${escapeHtml(item.startTime)}-${escapeHtml(item.endTime)}</div>${safeLoc ? `<div style="font-size:${locFs}px;opacity:0.55;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">📍${safeLoc}</div>` : ''}`
           }
         </div>`;
       });

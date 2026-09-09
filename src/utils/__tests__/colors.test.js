@@ -2,6 +2,11 @@ import { describe, it, expect } from 'vitest';
 import { getClassColor, getTextColor, getSubjectColor, getCategoryColor, setDarkMode } from '../colors';
 
 describe('getClassColor', () => {
+  it.each(['__proto__', 'constructor', 'toString'])('renders a valid color for custom subject %s', subject => {
+    expect(getClassColor({ subject, grade: '高一' }, false)).toMatch(/^hsl\(\d+, \d+%, \d+%\)$/);
+    expect(getSubjectColor(subject)).toMatch(/^hsl\(\d+, \d+%, 50%\)$/);
+  });
+
   it('returns hsl string for known subject+grade', () => {
     const color = getClassColor({ subject: '数学', grade: '高一' });
     expect(color).toMatch(/^hsl\(\d+, \d+%, \d+%\)$/);

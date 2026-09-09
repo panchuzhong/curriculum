@@ -43,6 +43,10 @@ export default function ExportDialog({ view = 'week', defaultStart, defaultEnd, 
   const [yEndYear, setYEndYear] = useState(defaultYear ?? curYear);
 
   const [exporting, setExporting] = useState(false);
+  const yearOptions = [...new Set([
+    ...Array.from({ length: view === 'year' ? 8 : 5 }, (_, i) => curYear - (view === 'year' ? 3 : 2) + i),
+    defaultYear ?? curYear,
+  ])].sort((a, b) => a - b);
 
   // ── Compute date range from month/year selections ──
   function monthRangeToDates() {
@@ -182,7 +186,7 @@ export default function ExportDialog({ view = 'week', defaultStart, defaultEnd, 
                   <label className="block text-sm text-gray-500 dark:text-gray-400 mb-1.5">开始</label>
                   <div className="flex gap-2">
                     <select className={sel} value={startYear} onChange={e => setStartYear(+e.target.value)}>
-                      {Array.from({ length: 5 }, (_, i) => curYear - 2 + i).map(y => (
+                      {yearOptions.map(y => (
                         <option key={y} value={y}>{y}年</option>
                       ))}
                     </select>
@@ -195,7 +199,7 @@ export default function ExportDialog({ view = 'week', defaultStart, defaultEnd, 
                   <label className="block text-sm text-gray-500 dark:text-gray-400 mb-1.5">结束</label>
                   <div className="flex gap-2">
                     <select className={sel} value={endYear} onChange={e => setEndYear(+e.target.value)}>
-                      {Array.from({ length: 5 }, (_, i) => curYear - 2 + i).map(y => (
+                      {yearOptions.map(y => (
                         <option key={y} value={y}>{y}年</option>
                       ))}
                     </select>
@@ -243,7 +247,7 @@ export default function ExportDialog({ view = 'week', defaultStart, defaultEnd, 
                 <div>
                   <label className="block text-sm text-gray-500 dark:text-gray-400 mb-1.5">开始</label>
                   <select className={sel + ' w-full'} value={yStartYear} onChange={e => setYStartYear(+e.target.value)}>
-                    {Array.from({ length: 8 }, (_, i) => curYear - 3 + i).map(y => (
+                    {yearOptions.map(y => (
                       <option key={y} value={y}>{y}年</option>
                     ))}
                   </select>
@@ -251,7 +255,7 @@ export default function ExportDialog({ view = 'week', defaultStart, defaultEnd, 
                 <div>
                   <label className="block text-sm text-gray-500 dark:text-gray-400 mb-1.5">结束</label>
                   <select className={sel + ' w-full'} value={yEndYear} onChange={e => setYEndYear(+e.target.value)}>
-                    {Array.from({ length: 8 }, (_, i) => curYear - 3 + i).map(y => (
+                    {yearOptions.map(y => (
                       <option key={y} value={y}>{y}年</option>
                     ))}
                   </select>

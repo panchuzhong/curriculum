@@ -35,6 +35,38 @@ function seedLegacyDb(path) {
 }
 
 describe('legacy database upgrade', () => {
+  it.each([false, true])('repairs a missing pwd_version column even with an existing pricing table (recorded=%s)', async (recorded) => {
+    tmp = mkdtempSync(join(tmpdir(), 'curr-password-mig-'));
+    process.env.DB_PATH = join(tmp, 'legacy.db');
+    vi.resetModules();
+    const { initDb, db } = await import('../db/index.js');
+    try {
+      initDb();
+      db.exec(`INSERT INTO teachers (username, password_hash, name) VALUES ('legacy', 'hash', 'Teacher');
+        INSERT INTO classes (teacher_id, name, grade, subject, student_count, unit_price, created_at)
+          VALUES (1, 'Priced', '高一', '数学', 2, 100, '2026-01-01 09:30:00'),
+                 (1, 'Unpriced', '高一', '数学', 2, 100, '2026-02-01 09:30:00');
+        INSERT INTO class_pricing (class_id, student_count, unit_price, effective_from)
+          VALUES (1, 3, 150, '2026-03-01');
+        ALTER TABLE teachers DROP COLUMN pwd_version;`);
+      if (!recorded) db.exec('DELETE FROM _migrations');
+
+      initDb();
+      expect(db.prepare('SELECT pwd_version FROM teachers').get()).toEqual({ pwd_version: 0 });
+      expect(db.prepare('SELECT version FROM _migrations ORDER BY version').all().map(r => r.version)).toEqual([1, 2, 3, 4]);
+      expect(db.prepare('SELECT student_count, unit_price, effective_from FROM class_pricing WHERE class_id = 1').all())
+        .toEqual([{ student_count: 3, unit_price: 150, effective_from: '2026-03-01' }]);
+      if (!recorded) {
+        expect(db.prepare('SELECT effective_from FROM class_pricing WHERE class_id = 2').get())
+          .toEqual({ effective_from: '2026-02-01' });
+      }
+      expect(() => initDb()).not.toThrow();
+      expect(db.pragma('foreign_key_check')).toEqual([]);
+    } finally {
+      db.close();
+    }
+  });
+
   // PRAGMA foreign_keys = ON makes SQLite's implicit DELETE during DROP TABLE
   // violate class_students.student_id, so migration v2 threw and initDb() never
   // returned — the server could not start against any pre-junction database.

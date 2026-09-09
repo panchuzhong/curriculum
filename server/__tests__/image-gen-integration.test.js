@@ -1,6 +1,7 @@
-import { describe, it, expect, afterAll } from 'vitest';
+import { describe, it, expect, afterAll, vi } from 'vitest';
 import { generateScheduleImage } from '../services/image-gen.js';
-import { closeBrowser } from '../services/browser.js';
+import { generateMonthlyImage } from '../services/image-gen-monthly.js';
+import { closeBrowser, getBrowser } from '../services/browser.js';
 
 afterAll(async () => {
   await closeBrowser();
@@ -34,6 +35,34 @@ function makeSchedule(overrides = {}) {
 }
 
 describe('generateScheduleImage (Puppeteer integration)', () => {
+  it.each(['weekly', 'monthly'])('escapes restored time values in %s images', async view => {
+    const browser = await getBrowser();
+    const newPage = browser.newPage.bind(browser);
+    const messages = [];
+    const spy = vi.spyOn(browser, 'newPage').mockImplementation(async () => {
+      const page = await newPage();
+      page.on('console', message => messages.push(message.text()));
+      return page;
+    });
+    try {
+      const schedules = [{ ...makeSchedule({
+        endTime: '11:00"><script>console.log("audit-render-executed")</script>',
+      }), class: makeClass() }];
+      if (view === 'weekly') await generateScheduleImage(schedules, '2026-05-11', '2026-05-17');
+      else await generateMonthlyImage(schedules, 2026, 4);
+      expect(messages).not.toContain('audit-render-executed');
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it('renders a half-scale PNG at half the full-scale dimensions', async () => {
+    const full = await generateScheduleImage([], '2026-05-11', '2026-05-17', { scale: 1 });
+    const half = await generateScheduleImage([], '2026-05-11', '2026-05-17', { scale: 0.5 });
+    expect(half.readUInt32BE(16)).toBe(Math.round(full.readUInt32BE(16) / 2));
+    expect(half.readUInt32BE(20)).toBe(Math.round(full.readUInt32BE(20) / 2));
+  });
+
   it('returns a valid PNG buffer for a week with schedules', async () => {
     const cls = makeClass();
     const scheds = [

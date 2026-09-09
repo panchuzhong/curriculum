@@ -161,6 +161,7 @@ test.describe('扩展时段格子', () => {
     await expect(dialog).toBeVisible();
     // 修复前：桌面端把 "24:00" 传给弹窗，time input 无法渲染（值为空），保存会被服务端拒绝
     await expect(dialog.locator('input[type="time"]').first()).toHaveValue('00:00');
+    await expect(dialog.locator('input[type="date"]')).toHaveValue(toDateString(addDays(getCurrentMonday(), 3)));
   });
 });
 

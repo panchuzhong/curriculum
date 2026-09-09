@@ -6,7 +6,7 @@ import { resolve } from 'path';
 import rateLimit from 'express-rate-limit';
 import { drizzleDb } from '../db/index.js';
 import { teachers } from '../db/schema.js';
-import { eq } from 'drizzle-orm';
+import { eq, and } from 'drizzle-orm';
 import { signToken, authMiddleware } from '../middleware/auth.js';
 import { seedPricingTiers } from '../db/seed.js';
 import { logAudit } from '../services/audit.js';
@@ -121,7 +121,11 @@ router.put('/password', authMiddleware, authLimiter, validateChangePassword, han
   }
   const passwordHash = await bcrypt.hash(newPassword, 12);
   const newPwdVersion = (teacher.pwdVersion ?? 0) + 1;
-  drizzleDb.update(teachers).set({ passwordHash, pwdVersion: newPwdVersion }).where(eq(teachers.id, req.teacherId)).run();
+  // Hashing yields to other requests. Only replace the credentials we actually
+  // verified; otherwise concurrent changes can share a revocation version.
+  const result = drizzleDb.update(teachers).set({ passwordHash, pwdVersion: newPwdVersion })
+    .where(and(eq(teachers.id, req.teacherId), eq(teachers.passwordHash, teacher.passwordHash), eq(teachers.pwdVersion, teacher.pwdVersion))).run();
+  if (result.changes === 0) return res.status(409).json({ error: '密码已被修改，请使用当前密码重试' });
   logAudit({ teacherId: req.teacherId, action: 'UPDATE', tableName: 'teachers', recordId: req.teacherId, after: { passwordChanged: true } });
   // Return a fresh token so the current session survives revoking old ones
   res.json({ ok: true, token: signToken(req.teacherId, newPwdVersion) });

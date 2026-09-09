@@ -1,4 +1,5 @@
 import { useRef } from 'react';
+import { addDays } from '../utils/date';
 
 export default function useGridTouch({ gridStateRef, onCellClick }) {
   const dayBodyEls = useRef({});
@@ -23,7 +24,7 @@ export default function useGridTouch({ gridStateRef, onCellClick }) {
       const m = snapped % 60;
       const timeStr = `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
       navigator.vibrate?.(30);
-      onCellClick?.(date, timeStr);
+      onCellClick?.(addDays(date, Math.floor(snapped / (24 * 60))), timeStr);
       lpRef.current = null;
     }, 450);
     lpRef.current = { timer, date, startX, startY };

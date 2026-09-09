@@ -6,6 +6,8 @@ export default defineConfig({
   base: process.env.BASE || '/',
   plugins: [react()],
   test: {
+    // Some service imports open the DB; tests needing files choose a temporary path.
+    env: { DB_PATH: ':memory:' },
     exclude: ['tests/**', 'node_modules/**'],
   },
   server: {

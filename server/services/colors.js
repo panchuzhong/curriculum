@@ -11,7 +11,7 @@ const SUBJECT_HUES = {
 };
 
 function subjectHue(name) {
-  const preset = SUBJECT_HUES[name];
+  const preset = Object.hasOwn(SUBJECT_HUES, name) ? SUBJECT_HUES[name] : null;
   if (preset) return preset;
   let hash = 0;
   for (let i = 0; i < name.length; i++) hash = ((hash << 5) - hash + name.charCodeAt(i)) | 0;

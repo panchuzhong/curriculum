@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import request from 'supertest';
 import express from 'express';
+import bcrypt from 'bcryptjs';
 import { setupApp, makeUser, auth } from './route-helpers.js';
 
 let app, drizzleDb;
@@ -11,6 +12,31 @@ beforeEach(async () => {
 });
 
 describe('POST /api/auth/register', () => {
+  it.each(['x'.repeat(73), '密'.repeat(25)])('rejects passwords exceeding bcrypt’s byte limit', async password => {
+    const res = await request(app).post('/api/auth/register')
+      .send({ username: 'testuser', password, name: 'Test' });
+    expect(res.status).toBe(400);
+  });
+
+  it('accepts a password at the 72-byte boundary', async () => {
+    const password = '密'.repeat(24);
+    const res = await request(app).post('/api/auth/register')
+      .send({ username: 'testuser', password, name: 'Test' });
+    expect(res.status).toBe(200);
+    expect((await request(app).post('/api/auth/login').send({ username: 'testuser', password })).status).toBe(200);
+  });
+
+  it.each([
+    { username: ['testuser'] },
+    { password: 12345678 },
+    { password: ['test1234'] },
+    { name: ['Test'] },
+  ])('rejects non-string registration fields: %j', async fields => {
+    const res = await request(app).post('/api/auth/register')
+      .send({ username: 'testuser', password: 'test1234', name: 'Test', ...fields });
+    expect(res.status).toBe(400);
+  });
+
   it('registers and returns token + apiKey', async () => {
     const res = await request(app).post('/api/auth/register')
       .send({ username: 'testuser', password: 'test1234', name: 'Test' });
@@ -61,6 +87,14 @@ describe('POST /api/auth/login', () => {
       .send({ username: 'testuser', password: 'test1234', name: 'Test' });
   });
 
+  it.each([{ username: ['testuser'] }, { password: 12345678 }, { password: ['test1234'] }])(
+    'rejects non-string login fields: %j', async fields => {
+      const res = await request(app).post('/api/auth/login')
+        .send({ username: 'testuser', password: 'test1234', ...fields });
+      expect(res.status).toBe(400);
+    }
+  );
+
   it('logs in with correct credentials', async () => {
     const res = await request(app).post('/api/auth/login')
       .send({ username: 'testuser', password: 'test1234' });
@@ -96,6 +130,48 @@ describe('GET /api/auth/profile', () => {
 });
 
 describe('PUT /api/auth/password', () => {
+  it('rejects a new password that bcrypt would truncate', async () => {
+    const { token } = await makeUser(drizzleDb);
+    const res = await request(app).put('/api/auth/password').set(auth(token))
+      .send({ oldPassword: 'pass123', newPassword: '密'.repeat(25) });
+    expect(res.status).toBe(400);
+    expect((await request(app).get('/api/auth/profile').set(auth(token))).status).toBe(200);
+  });
+
+  it.each([{ oldPassword: ['pass123'] }, { newPassword: 12345678 }])(
+    'rejects non-string password-change fields: %j', async fields => {
+      const { token } = await makeUser(drizzleDb);
+      const res = await request(app).put('/api/auth/password').set(auth(token))
+        .send({ oldPassword: 'pass123', newPassword: 'test1234', ...fields });
+      expect(res.status).toBe(400);
+    }
+  );
+
+  it('allows only one concurrent password change using the same old credentials', async () => {
+    const { token } = await makeUser(drizzleDb);
+    const realHash = bcrypt.hash;
+    let release;
+    const bothHashing = new Promise(resolve => { release = resolve; });
+    let hashing = 0;
+    const spy = vi.spyOn(bcrypt, 'hash').mockImplementation(async (...args) => {
+      if (++hashing === 2) release();
+      await bothHashing;
+      return realHash(...args);
+    });
+    try {
+      const results = await Promise.all(['newpass111', 'newpass222'].map(newPassword =>
+        request(app).put('/api/auth/password').set(auth(token))
+          .send({ oldPassword: 'pass123', newPassword })
+      ));
+      expect(results.map(r => r.status).sort()).toEqual([200, 409]);
+      const winner = results.find(r => r.status === 200);
+      expect((await request(app).get('/api/auth/profile').set(auth(winner.body.token))).status).toBe(200);
+      expect((await request(app).get('/api/auth/profile').set(auth(token))).status).toBe(401);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
   it('changes password', async () => {
     const { token } = await makeUser(drizzleDb);
     const res = await request(app).put('/api/auth/password').set(auth(token))

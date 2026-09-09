@@ -1,20 +1,10 @@
 import { describe, it, expect } from 'vitest';
+import { toHours, toHoursAbs } from '../../src/utils/date.js';
+import { toCSV } from '../services/schedule-helpers.js';
 
-// Inline the date utils for unit testing (same logic as src/utils/date.js)
-function toHoursAbs(durationBilling) {
-  if (durationBilling == null) return 0;
-  return Math.abs(durationBilling) / 60;
-}
-
-function toHours(durationBilling) {
-  return durationBilling / 60;
-}
-
-// Inline CSV escaping (same as useScheduleExport.js)
+// Exercise a single cell through the production exporter, excluding its BOM.
 function escapeCSV(value) {
-  const str = String(value);
-  const safe = /^[=+\-@\t\r]/.test(str) ? "'" + str : str;
-  return `"${safe.replace(/"/g, '""')}"`;
+  return toCSV([[value]]).slice(1);
 }
 
 describe('toHoursAbs', () => {

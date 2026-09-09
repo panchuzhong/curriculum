@@ -300,9 +300,9 @@ router.get('/help', authMiddleware, (req, res) => {
     ],
     validationRules: {
       auth: {
-        register: { username: '3-20位字母数字', password: '8-128位', name: '必填，最多100字符' },
+        register: { username: '3-20位字母数字', password: '至少8个字符且最多72个 UTF-8 字节', name: '必填，最多100字符' },
         login: { username: '必填', password: '必填' },
-        changePassword: { oldPassword: '必填', newPassword: '至少8位' },
+        changePassword: { oldPassword: '必填', newPassword: '至少8个字符且最多72个 UTF-8 字节' },
         updateSubjects: { subjects: '字符串数组，最多100项，每项1-20字符' },
       },
       classes: {

@@ -13,7 +13,7 @@ export function isDarkTheme(theme) {
 const MAX_DEVICE_PIXELS = 1.2e8;
 export function fitDeviceScaleFactor(requested, cssWidth, cssHeight) {
   const fit = Math.floor(Math.sqrt(MAX_DEVICE_PIXELS / (cssWidth * cssHeight)) * 2) / 2;
-  return Math.max(1, Math.min(requested, fit));
+  return Math.min(requested, Math.max(1, fit));
 }
 
 export async function withBrowserPage(html, viewport, clipFn) {

@@ -111,7 +111,7 @@ if [ "$CMD" = "register" ]; then
     exit 1
   fi
   if [ "${#PASS}" -lt 8 ] || [ "${#PASS}" -gt 128 ]; then
-    echo "Error: password must be 8-128 characters."
+    echo "Error: password must be at least 8 characters and at most 72 UTF-8 bytes."
     exit 1
   fi
 
@@ -125,7 +125,7 @@ if [ "$CMD" = "register" ]; then
     exit 1
   fi
 
-  HASH=$(node -e "const bcrypt=require('bcryptjs');bcrypt.hash(process.argv[1],12).then(h=>console.log(h))" "$PASS")
+  HASH=$(cd "$PROJECT_ROOT" && node -e "const bcrypt=require('bcryptjs');if(bcrypt.truncates(process.argv[1])){console.error('Error: password must be at most 72 UTF-8 bytes.');process.exit(1)}bcrypt.hash(process.argv[1],12).then(h=>console.log(h))" "$PASS")
   API_KEY=$(node -e "console.log(require('node:crypto').randomUUID())")
   SUBJECTS='["数学","物理","化学","英语","语文","生物","历史","地理","政治"]'
 
@@ -167,7 +167,7 @@ if [ "$CMD" = "reset-pw" ]; then
     exit 1
   fi
   if [ "${#PASS}" -lt 8 ] || [ "${#PASS}" -gt 128 ]; then
-    echo "Error: password must be 8-128 characters."
+    echo "Error: password must be at least 8 characters and at most 72 UTF-8 bytes."
     exit 1
   fi
 
@@ -178,7 +178,7 @@ if [ "$CMD" = "reset-pw" ]; then
     exit 1
   fi
 
-  HASH=$(node -e "const bcrypt=require('bcryptjs');bcrypt.hash(process.argv[1],12).then(h=>console.log(h))" "$PASS")
+  HASH=$(cd "$PROJECT_ROOT" && node -e "const bcrypt=require('bcryptjs');if(bcrypt.truncates(process.argv[1])){console.error('Error: password must be at most 72 UTF-8 bytes.');process.exit(1)}bcrypt.hash(process.argv[1],12).then(h=>console.log(h))" "$PASS")
   SQL_HASH="${HASH//\'/\'\'}"
   sqlite3 -bail "$DB" "UPDATE teachers SET password_hash = '${SQL_HASH}', pwd_version = COALESCE(pwd_version, 0) + 1 WHERE id = $TID;"
   echo "Password updated for teacher id=$TID."

@@ -30,6 +30,29 @@ beforeEach(async () => {
 
 // ── Conflict detection ──
 
+describe('custom subject summaries', () => {
+  it.each(['__proto__', 'constructor', 'toString'])('counts the subject %s without touching inherited objects', async subject => {
+    const { classes } = await import('../db/schema.js');
+    drizzleDb.update(classes).set({ subject }).where(eq(classes.id, classId)).run();
+    await request(app).post('/api/schedules').set(auth(token))
+      .send({ classId, date: '2026-05-04', startTime: '09:00', endTime: '10:00' });
+    const inherited = ({})[subject];
+    const keys = ['count', 'hours', 'revenue'];
+    const before = keys.map(k => Object.getOwnPropertyDescriptor(inherited, k));
+    try {
+      const res = await request(app).get('/api/schedules/summary?start=2026-05-04&end=2026-05-04').set(auth(token));
+      expect(res.status).toBe(200);
+      expect(res.body.bySubject).toEqual([{ subject, count: 1, hours: 1, revenue: 500 }]);
+      expect(keys.map(k => Object.getOwnPropertyDescriptor(inherited, k))).toEqual(before);
+    } finally {
+      keys.forEach((key, i) => {
+        if (before[i]) Object.defineProperty(inherited, key, before[i]);
+        else delete inherited[key];
+      });
+    }
+  });
+});
+
 describe('Schedule conflict detection', () => {
   it('returns warnings when creating overlapping schedules', async () => {
     const { classes } = await import('../db/schema.js');

@@ -178,7 +178,7 @@ export default function ScheduleGrid({ dates, schedules, visibleDays = 7, weekSt
                   {/* Hour cells — hours >= 24 (extended rows) wrap to next-day times like the touch path */}
                   {displayHours.map((hour, idx) => (
                     <div key={hour}
-                      onClick={() => { if (!wasRecentTouch()) onCellClick?.(date, `${String(hour % 24).padStart(2, '0')}:00`); }}
+                      onClick={() => { if (!wasRecentTouch()) onCellClick?.(addDays(date, Math.floor(hour / 24)), `${String(hour % 24).padStart(2, '0')}:00`); }}
                       className="border-t border-gray-100 dark:border-gray-800 cursor-pointer hover:bg-gray-100/50 dark:hover:bg-gray-800/30 transition-colors"
                       style={{ height: idx === numDisplayHours - 1 ? lastRowHeight : rowHeight }}
                     />
