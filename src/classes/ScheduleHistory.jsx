@@ -89,21 +89,21 @@ export default function ScheduleHistory({ classId }) {
           <table className="w-full text-sm">
             <thead>
               <tr className="text-gray-500 dark:text-gray-400 border-b border-gray-200 dark:border-gray-600">
-                <th className="text-left py-2 font-medium">日期</th>
-                <th className="text-left py-2 font-medium">星期</th>
-                <th className="text-left py-2 font-medium">时间</th>
-                <th className="text-right py-2 font-medium">时长</th>
-                <th className="text-left py-2 font-medium">地点</th>
+                <th className="text-left p-2 font-medium">日期</th>
+                <th className="text-left p-2 font-medium">星期</th>
+                <th className="text-left p-2 font-medium">时间</th>
+                <th className="text-right p-2 font-medium">时长</th>
+                <th className="text-left p-2 font-medium">地点</th>
               </tr>
             </thead>
             <tbody>
               {rows.map(s => (
                 <tr key={s.id} className="border-b border-gray-100 dark:border-gray-700">
-                  <td className="py-2">{s.date}</td>
-                  <td className="py-2">{weekdayOf(s.date)}</td>
-                  <td className="py-2">{`${s.startTime}-${s.endTime}`}</td>
-                  <td className="text-right py-2">{`${toHours(s.durationBilling).toFixed(1)}h`}</td>
-                  <td className="py-2">{s.locationName || ''}</td>
+                  <td className="p-2">{s.date}</td>
+                  <td className="p-2">{weekdayOf(s.date)}</td>
+                  <td className="p-2">{`${s.startTime}-${s.endTime}`}</td>
+                  <td className="text-right p-2">{`${toHours(s.durationBilling).toFixed(1)}h`}</td>
+                  <td className="p-2">{s.locationName || ''}</td>
                 </tr>
               ))}
             </tbody>

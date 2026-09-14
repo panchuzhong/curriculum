@@ -122,23 +122,23 @@ export default function PricingManager({ classId, onChanged }) {
         <table className="w-full text-sm">
           <thead>
             <tr className="text-gray-500 dark:text-gray-400 border-b border-gray-200 dark:border-gray-600">
-              <th className="text-left py-2 font-medium">生效日期</th>
-              <th className="text-right py-2 font-medium">人数</th>
-              <th className="text-right py-2 font-medium">单价</th>
-              <th className="text-right py-2 font-medium">优惠金额</th>
-              <th className="text-left py-2 font-medium">原因</th>
-              <th className="text-right py-2 font-medium">操作</th>
+              <th className="text-left p-2 font-medium">生效日期</th>
+              <th className="text-right p-2 font-medium">人数</th>
+              <th className="text-right p-2 font-medium">单价</th>
+              <th className="text-right p-2 font-medium">优惠金额</th>
+              <th className="text-left p-2 font-medium">原因</th>
+              <th className="text-right p-2 font-medium">操作</th>
             </tr>
           </thead>
           <tbody>
             {records.map((r, i) => (
               <tr key={r.id} className="border-b border-gray-100 dark:border-gray-700">
-                <td className="py-2">{r.effectiveFrom}{i === 0 ? <span className="text-blue-600 dark:text-blue-400 font-medium ml-1">当前</span> : ''}</td>
-                <td className="text-right py-2">{r.studentCount}</td>
-                <td className="text-right py-2">¥{r.unitPrice}</td>
-                <td className="text-right py-2">¥{r.discountAmount || 0}</td>
-                <td className="py-2 text-gray-500 dark:text-gray-400">{r.discountReason || <span className="text-gray-400">—</span>}</td>
-                <td className="text-right py-2">
+                <td className="p-2">{r.effectiveFrom}{i === 0 ? <span className="text-blue-600 dark:text-blue-400 font-medium ml-1">当前</span> : ''}</td>
+                <td className="text-right p-2">{r.studentCount}</td>
+                <td className="text-right p-2">¥{r.unitPrice}</td>
+                <td className="text-right p-2">¥{r.discountAmount || 0}</td>
+                <td className="p-2 text-gray-500 dark:text-gray-400">{r.discountReason || <span className="text-gray-400">—</span>}</td>
+                <td className="text-right p-2">
                   <button onClick={() => openEdit(r)} className="text-blue-600 dark:text-blue-400 hover:underline mr-3">编辑</button>
                   {records.length > 1 && (
                     <button onClick={() => handleDelete(r)} className="text-red-500 hover:underline">删除</button>
