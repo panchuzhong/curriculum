@@ -22,7 +22,10 @@ const app = express();
 // behind its authMiddleware, so an anonymous client never gets a large body
 // parsed; the global 1MB parser must skip the path or it would reject first.
 const jsonParser = express.json({ limit: '1mb' });
-app.use((req, res, next) => (req.path === '/api/backup/restore' ? next() : jsonParser(req, res, next)));
+// Strict routing is off, so "/api/backup/restore/" reaches the route too; the
+// exemption must ignore trailing slashes or that spelling hits the 1MB parser.
+const isRestorePath = (path) => path.replace(/\/+$/, '') === '/api/backup/restore';
+app.use((req, res, next) => (isRestorePath(req.path) ? next() : jsonParser(req, res, next)));
 // Express 5 leaves req.body undefined when no JSON body was sent; the update
 // handlers iterate it (Object.entries), so a bodiless PUT must see {} and get
 // the intended 400 instead of a TypeError 500.

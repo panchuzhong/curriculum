@@ -14,14 +14,18 @@ export function seedPricingTiers(teacherId) {
   const existing = drizzleDb.select().from(pricingTiers)
     .where(eq(pricingTiers.teacherId, teacherId)).all();
   if (existing.length > 0) return;
-  for (const tier of DEFAULT_TIERS) {
-    drizzleDb.insert(pricingTiers).values({
-      teacherId,
-      minStudents: tier.minStudents,
-      maxStudents: tier.maxStudents,
-      pricePerStudentPerHour: tier.price,
-    }).run();
-  }
+  // All-or-nothing: a partial default set would both misprice lessons and,
+  // thanks to the guard above, never be repaired by a later seed run.
+  drizzleDb.transaction((tx) => {
+    for (const tier of DEFAULT_TIERS) {
+      tx.insert(pricingTiers).values({
+        teacherId,
+        minStudents: tier.minStudents,
+        maxStudents: tier.maxStudents,
+        pricePerStudentPerHour: tier.price,
+      }).run();
+    }
+  });
 }
 
 export function getDefaultPrice(teacherId, studentCount) {

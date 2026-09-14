@@ -23,6 +23,12 @@ const GRADE_LIGHTNESS = {
   '高一': 52, '高二': 46, '高三': 42, '大学': 38,
 };
 
+// Own-property lookups: an inherited key (grade "constructor") returns a
+// function, which is not nullish and poisons the lightness math with NaN.
+function gradeLightness(grade) {
+  return Object.hasOwn(GRADE_LIGHTNESS, grade) ? GRADE_LIGHTNESS[grade] : 50;
+}
+
 function mappedLightness(baseL, dark) {
   const t = (baseL - 38) / 32;
   return dark ? 35 + t * 23 : 33 + t * 45;
@@ -35,7 +41,7 @@ function satMod(baseL, dark) {
 
 export function getColor(cls, dark) {
   const hue = subjectHue(cls.subject);
-  const baseL = GRADE_LIGHTNESS[cls.grade] ?? 50;
+  const baseL = gradeLightness(cls.grade);
   const l = mappedLightness(baseL, dark);
   const s = Math.round(hue.s * satMod(baseL, dark));
   return `hsl(${hue.h}, ${s}%, ${Math.round(l)}%)`;
@@ -43,7 +49,7 @@ export function getColor(cls, dark) {
 
 export function getTextColor(cls, dark) {
   if (dark) return 'rgba(255,255,255,0.92)';
-  const baseL = GRADE_LIGHTNESS[cls.grade] ?? 50;
+  const baseL = gradeLightness(cls.grade);
   return mappedLightness(baseL, false) < 55 ? '#ffffff' : '#1a1a1a';
 }
 
@@ -59,7 +65,7 @@ export function getCategoryColor(category, dark) {
   if (!subject) return null;
   const hue = subjectHue(subject);
   const repGrade = gradeLevel ? (GRADE_REPRESENTATIVE[gradeLevel] ?? '高二') : '高二';
-  const baseL = GRADE_LIGHTNESS[repGrade] ?? 50;
+  const baseL = gradeLightness(repGrade);
   const l = mappedLightness(baseL, dark);
   const s = Math.round(hue.s * satMod(baseL, dark));
   return `hsl(${hue.h}, ${s}%, ${Math.round(l)}%)`;

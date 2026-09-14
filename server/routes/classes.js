@@ -343,27 +343,34 @@ pricingRouter.delete('/:pricingId', (req, res) => {
     .where(and(eq(classes.id, record.classId), eq(classes.teacherId, req.teacherId), eq(classes.deleted, false))).get();
   if (!cls) return res.status(404).json({ error: 'Class not found' });
 
-  const count = drizzleDb.select({ id: classPricing.id }).from(classPricing)
-    .where(eq(classPricing.classId, record.classId)).all();
-  if (count.length <= 1) return res.status(400).json({ error: '至少保留一条定价记录' });
+  try {
+    db.transaction(() => {
+      // Inside the transaction: two concurrent deletes of the last two records
+      // would both pass a pre-transaction count check and leave no pricing history.
+      const count = drizzleDb.select({ id: classPricing.id }).from(classPricing)
+        .where(eq(classPricing.classId, record.classId)).all();
+      if (count.length <= 1) throw new Error('KEEP_AT_LEAST_ONE');
 
-  db.transaction(() => {
-    drizzleDb.delete(classPricing).where(eq(classPricing.id, pricingId)).run();
+      drizzleDb.delete(classPricing).where(eq(classPricing.id, pricingId)).run();
 
-    // Sync latest to classes table
-    const latest = drizzleDb.select().from(classPricing)
-      .where(eq(classPricing.classId, record.classId))
-      .orderBy(desc(classPricing.effectiveFrom))
-      .get();
-    if (latest) {
-      drizzleDb.update(classes).set({
-        studentCount: latest.studentCount,
-        unitPrice: latest.unitPrice,
-        discountAmount: latest.discountAmount,
-        discountReason: latest.discountReason,
-      }).where(eq(classes.id, record.classId)).run();
-    }
-  })();
+      // Sync latest to classes table
+      const latest = drizzleDb.select().from(classPricing)
+        .where(eq(classPricing.classId, record.classId))
+        .orderBy(desc(classPricing.effectiveFrom))
+        .get();
+      if (latest) {
+        drizzleDb.update(classes).set({
+          studentCount: latest.studentCount,
+          unitPrice: latest.unitPrice,
+          discountAmount: latest.discountAmount,
+          discountReason: latest.discountReason,
+        }).where(eq(classes.id, record.classId)).run();
+      }
+    })();
+  } catch (e) {
+    if (e.message === 'KEEP_AT_LEAST_ONE') return res.status(400).json({ error: '至少保留一条定价记录' });
+    throw e;
+  }
 
   clearReportCache(req.teacherId);
   logAudit({ teacherId: req.teacherId, action: 'DELETE', tableName: 'class_pricing', recordId: pricingId, before: record });

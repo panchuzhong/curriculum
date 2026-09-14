@@ -201,7 +201,7 @@ export async function generateScheduleImage(schedulesWithClasses, startDate, end
   body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: ${c.bg}; color: ${c.text}; margin: 0; padding: 0; -webkit-font-smoothing: antialiased; }
   h1 { text-align: center; font-size: 15px; margin: 12px 0; font-weight: 600; }
 </style></head><body>
-  <h1>${startDate} ~ ${endDate}</h1>
+  <h1>${escapeHtml(String(startDate))} ~ ${escapeHtml(String(endDate))}</h1>
   ${headerHtml}
   <div style="position:relative;width:${totalW}px;height:${totalH + 1}px">
     ${gridHtml}

@@ -1,4 +1,4 @@
-import { test, expect, ensureTestUser, toDateString } from './auth';
+import { test, expect, ensureTestUser, toDateString, getCurrentMonday } from './auth';
 import type { Route } from '@playwright/test';
 import Database from 'better-sqlite3';
 
@@ -136,30 +136,26 @@ test.describe('年课表', () => {
 test.describe('月/年课表交互', () => {
   test.use({ baseURL: 'http://127.0.0.1:5174' });
 
-  test('月视图点击排课条目查看详情', async ({ authenticatedPage: page }) => {
+  test('月视图点击日期格跳转周课表', async ({ authenticatedPage: page }) => {
     await page.goto('/monthly');
-    const items = page.locator('[class*="cursor-pointer"]');
-    if (await items.first().isVisible()) {
-      await items.first().click();
-      // A popup or detail view should appear
-      await page.waitForTimeout(500);
-      // Verify something appeared (could be a tooltip or dialog)
-      const popup = page.locator('[class*="popup"], [class*="tooltip"], [role="dialog"]');
-      // Even if no popup, the click should not error
-    }
+    // 种子数据本周一 09:00 有课，当前月视图必含本周一；点击格子应带日期跳周课表
+    const monday = toDateString(getCurrentMonday());
+    // role=generic 的 aria-label 不参与可访问名计算，用属性定位器
+    const cell = page.locator(`[aria-label="查看${monday}课表"]`);
+    await expect(cell).toBeVisible();
+    await cell.click();
+    await expect(page).toHaveURL(new RegExp(`date=${monday}`));
   });
 
-  test('年视图年度统计显示数字', async ({ authenticatedPage: page }) => {
+  test('年视图年度统计显示实际数字', async ({ authenticatedPage: page }) => {
     await page.goto('/yearly');
-    await page.waitForTimeout(1000);
-    // The year summary should contain numeric values
-    const main = page.locator('main');
-    const numberElements = main.getByText(/\d+课/);
-    // Verify at least some numbers are displayed
-    if (await numberElements.first().isVisible()) {
-      const text = await numberElements.first().textContent();
-      expect(text).toMatch(/\d+/);
-    }
+    // 年度统计行：{hours}h · {days}天 · {count}次；种子数据至少 5 节
+    // （数学班 3 + 英语班 2），其余用例可能追加更多，只验证下界
+    const summary = page.getByText(/h · \d+天 · \d+次/);
+    await expect(summary).toBeVisible();
+    const text = await summary.textContent();
+    const count = Number(text?.match(/(\d+)次/)?.[1]);
+    expect(count).toBeGreaterThanOrEqual(5);
   });
 });
 

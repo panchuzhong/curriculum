@@ -45,7 +45,12 @@ router.post('/register', authLimiter, validateRegister, handle, async (req, res)
   // Registration closes after the first account. Every request that passed the
   // check above while this one was hashing would also register, so the slot is
   // claimed here with no await between the re-check and the insert.
-  if (process.env.ALLOW_REGISTRATION !== 'true') {
+  // The env flag alone is not durable: deployments that set ALLOW_REGISTRATION
+  // in the process environment (systemd Environment=, docker -e) restore it on
+  // every restart, and dotenv does not override an already-set variable. An
+  // occupied teachers table is the real single-user invariant.
+  if (process.env.ALLOW_REGISTRATION !== 'true'
+    || drizzleDb.select({ id: teachers.id }).from(teachers).limit(1).get()) {
     return res.status(403).json({ error: 'Registration is closed' });
   }
   process.env.ALLOW_REGISTRATION = 'false';
@@ -97,7 +102,8 @@ router.get('/profile', authMiddleware, (req, res) => {
   res.json({ id: teacher.id, username: teacher.username, name: teacher.name, apiKey, subjects });
 });
 
-router.put('/subjects', authMiddleware, validateUpdateSubjects, handle, (req, res) => {
+// Mounted before the global /api write limiter, so this subtree needs its own.
+router.put('/subjects', authMiddleware, authLimiter, validateUpdateSubjects, handle, (req, res) => {
   const { subjects } = req.body;
   drizzleDb.update(teachers).set({ subjects: JSON.stringify(subjects) }).where(eq(teachers.id, req.teacherId)).run();
   logAudit({ teacherId: req.teacherId, action: 'UPDATE', tableName: 'teachers', recordId: req.teacherId, after: { subjects } });

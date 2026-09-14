@@ -155,6 +155,10 @@ export default function useWeekNavigation({ searchParams, setSearchParams }) {
       navLockRef.current = true;
       await animateToOffset(toOffset(BUFFER + days));
       navLockRef.current = false;
+      // A touch that landed during the animation has taken over the grid; its
+      // settle callback navigates from wherever the swipe ends, and committing
+      // our pre-computed target on top of it would yank the grid back.
+      if (isInteractingRef.current) return;
     }
 
     navigateToWeek(newWeekStart);

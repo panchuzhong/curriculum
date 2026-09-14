@@ -52,7 +52,19 @@ function NowLine({ rowHeight, topGapHeight, firstLabelMin }) {
 }
 
 export default function ScheduleGrid({ dates, schedules, visibleDays = 7, weekStart, onScheduleClick, onCellClick }) {
-  const today = todayStr();
+  // A bare todayStr() captured per render goes stale across midnight: NowLine
+  // self-updates each minute, but this component does not re-render, so
+  // yesterday's column would keep the highlight until the next fetch. Poll on
+  // the same cadence; the identical-string setState lets React skip re-renders
+  // so the grid only actually re-renders when the day rolls over.
+  const [today, setToday] = useState(todayStr);
+  useEffect(() => {
+    const timer = setInterval(() => {
+      const t = todayStr();
+      setToday(prev => (prev === t ? prev : t));
+    }, 60000);
+    return () => clearInterval(timer);
+  }, []);
   const timeBodyRef = useRef(null);
   const [rowHeight, setRowHeight] = useState(MIN_ROW_HEIGHT);
   const [, setHolidayRevision] = useState(0);

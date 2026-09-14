@@ -8,6 +8,15 @@ cd "$PROJECT_DIR"
 echo "=== 课表管理系统 构建打包 ==="
 echo ""
 
+# The template ships as the starting .env; the old fallback copied the
+# developer's real .env — live JWT_SECRET and AMAP_KEY — into the tarball.
+# Check before anything destructive: below, rm -rf release destroys the
+# previous tarball and npm ci/build burn minutes before this used to fire.
+if [ ! -f .env.example ]; then
+  echo "ERROR: .env.example is missing; refusing to build a release." >&2
+  exit 1
+fi
+
 # Clean
 echo "[1/4] 清理旧构建..."
 rm -rf dist
@@ -33,13 +42,6 @@ cp -r server "$RELEASE_DIR/"
 rm -rf "$RELEASE_DIR/server/__tests__"
 cp -r scripts "$RELEASE_DIR/"
 cp package.json package-lock.json "$RELEASE_DIR/"
-# Ship the template as the starting .env. The old fallback copied the
-# developer's real .env — live JWT_SECRET and AMAP_KEY — straight into the
-# distributed tarball whenever the template was missing. Fail loudly instead.
-if [ ! -f .env.example ]; then
-  echo "ERROR: .env.example is missing; refusing to build a release." >&2
-  exit 1
-fi
 cp .env.example "$RELEASE_DIR/.env"
 cp README.md "$RELEASE_DIR/"
 

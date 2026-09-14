@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { toMin, calcDurationBilling, resolveRange, toCSV, detectConflictGroups, detectDatedConflictGroups, schedulesOverlap } from '../services/schedule-helpers.js';
 
 // ── toMin ──
@@ -240,5 +240,37 @@ describe('toCSV — edge cases', () => {
   it('returns only BOM for empty array', () => {
     const csv = toCSV([]);
     expect(csv).toBe('﻿');
+  });
+});
+
+// ── getTeacherSemesters cache ──
+
+describe('getTeacherSemesters cache', () => {
+  it('expires after 60s so edits from another process are eventually visible', async () => {
+    vi.useFakeTimers();
+    const { createTestDb } = await import('./setup.js');
+    const t = createTestDb();
+    const { teachers, semesters } = await import('../db/schema.js');
+    const { getTeacherSemesters, clearSemesterCache } = await import('../services/schedule-helpers.js');
+    try {
+      t.drizzleDb.insert(teachers).values({ username: 'cache-t', passwordHash: 'h', name: 'T' }).run();
+      t.drizzleDb.insert(semesters)
+        .values({ teacherId: 1, name: '春', type: 'spring', startDate: '2026-02-01', endDate: '2026-06-30' }).run();
+
+      expect(getTeacherSemesters(t.drizzleDb, 1)).toHaveLength(1);
+
+      // Another process sharing the file deletes the semester; this process's
+      // explicit invalidation never fires. Before the TTL the entry lived
+      // forever, so batch scheduling kept using the deleted boundaries.
+      t.drizzleDb.delete(semesters).run();
+      expect(getTeacherSemesters(t.drizzleDb, 1)).toHaveLength(1); // still cached
+
+      vi.advanceTimersByTime(60_001);
+      expect(getTeacherSemesters(t.drizzleDb, 1)).toHaveLength(0); // refreshed
+    } finally {
+      clearSemesterCache();
+      t.db.close();
+      vi.useRealTimers();
+    }
   });
 });

@@ -21,12 +21,23 @@ db.pragma('busy_timeout = 5000');
 export const drizzleDb = drizzle(db, { schema });
 export { db };
 
+// Adding an existing column is the expected "already applied" case; every
+// other failure (busy, full disk) must abort the migration instead of being
+// recorded as applied.
+function addColumn(db, table, column) {
+  try {
+    db.exec(`ALTER TABLE ${table} ADD COLUMN ${column}`);
+  } catch (e) {
+    if (!/duplicate column/i.test(e.message)) throw e;
+  }
+}
+
 const migrations = [
   {
     version: 1,
     name: 'add_teacher_subjects',
     up(db) {
-      try { db.exec(`ALTER TABLE teachers ADD COLUMN subjects TEXT`); } catch {}
+      addColumn(db, 'teachers', 'subjects TEXT');
     },
   },
   {
@@ -67,9 +78,9 @@ const migrations = [
         }
         db.exec(`DROP TABLE students; ALTER TABLE students_new RENAME TO students;`);
       } else {
-        for (const col of ['teacher_id', 'birth_date', 'parent_name']) {
-          try { db.exec(`ALTER TABLE students ADD COLUMN ${col === 'teacher_id' ? 'teacher_id INTEGER' : col === 'birth_date' ? 'birth_date TEXT' : 'parent_name TEXT'}`); } catch {}
-        }
+        addColumn(db, 'students', 'teacher_id INTEGER');
+        addColumn(db, 'students', 'birth_date TEXT');
+        addColumn(db, 'students', 'parent_name TEXT');
       }
     },
   },
@@ -102,7 +113,7 @@ const migrations = [
     version: 4,
     name: 'add_teacher_pwd_version',
     up(db) {
-      try { db.exec(`ALTER TABLE teachers ADD COLUMN pwd_version INTEGER NOT NULL DEFAULT 0`); } catch {}
+      addColumn(db, 'teachers', 'pwd_version INTEGER NOT NULL DEFAULT 0');
     },
   },
 ];
@@ -214,15 +225,37 @@ export function initDb() {
 
   // An untracked legacy database must run the idempotent migrations: having
   // class_pricing proves nothing about newer columns such as pwd_version.
-  // Repair ledgers written by the previous blanket "all applied" shortcut.
+  // Repair ledgers written by the previous blanket "all applied" shortcut —
+  // and ALTERs whose failure the old blanket catch{} recorded as applied.
   const teacherCols = db.prepare('PRAGMA table_info(teachers)').all();
   if (applied.has(4) && !teacherCols.some(c => c.name === 'pwd_version')) {
     db.prepare('DELETE FROM _migrations WHERE version = 4').run();
     applied.delete(4);
   }
+  if (applied.has(1) && !teacherCols.some(c => c.name === 'subjects')) {
+    db.prepare('DELETE FROM _migrations WHERE version = 1').run();
+    applied.delete(1);
+  }
+  if (applied.has(2)) {
+    const studentCols = db.prepare('PRAGMA table_info(students)').all();
+    const hasMigrated = ['teacher_id', 'birth_date', 'parent_name'].every(c => studentCols.some(s => s.name === c));
+    if (!hasMigrated) {
+      db.prepare('DELETE FROM _migrations WHERE version = 2').run();
+      applied.delete(2);
+    }
+  }
   if (applied.has(3) && !hasClassPricing) {
     db.prepare(`DELETE FROM _migrations WHERE version = 3`).run();
     applied.delete(3);
+  }
+
+  // Fix legacy createdAt that stored literal "CURRENT_TIMESTAMP" string. Must
+  // run before migration v3: its backfill derives effective_from from the
+  // first 10 chars, which for the literal string is the garbage 'CURRENT_TI'
+  // (sorts after every ISO date, so the record never matches a lesson date).
+  // All tables above already exist by this point.
+  for (const table of ['classes', 'students', 'schedules', 'pricing_tiers', 'semesters']) {
+    db.exec(`UPDATE ${table} SET created_at = datetime('now') WHERE created_at = 'CURRENT_TIMESTAMP'`);
   }
 
   const pending = migrations.filter(m => !applied.has(m.version));
@@ -272,9 +305,4 @@ export function initDb() {
     CREATE INDEX IF NOT EXISTS idx_class_students_studentId ON class_students(student_id);
     CREATE INDEX IF NOT EXISTS idx_audit_log_teacherId ON audit_log(teacher_id);
   `);
-
-  // Fix legacy createdAt that stored literal "CURRENT_TIMESTAMP" string
-  for (const table of ['classes', 'students', 'schedules', 'pricing_tiers', 'semesters']) {
-    db.exec(`UPDATE ${table} SET created_at = datetime('now') WHERE created_at = 'CURRENT_TIMESTAMP'`);
-  }
 }

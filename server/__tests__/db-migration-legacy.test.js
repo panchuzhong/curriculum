@@ -132,4 +132,59 @@ describe('legacy database upgrade', () => {
     // to surface as SQLITE_CANTOPEN while ./data was created in the cwd instead.
     await expect(import('../db/index.js')).resolves.toBeDefined();
   });
+
+  // The pre-fix migrations swallowed every ALTER error, so a transient failure
+  // (busy lock, full disk) was recorded as applied and the column stayed
+  // missing forever — only pwd_version had a repair. Same repair for v1/v2.
+  it('repairs subjects and student columns whose migration was falsely recorded', async () => {
+    tmp = mkdtempSync(join(tmpdir(), 'curr-col-repair-'));
+    process.env.DB_PATH = join(tmp, 'legacy.db');
+    vi.resetModules();
+    const { initDb, db } = await import('../db/index.js');
+    try {
+      initDb();
+      db.exec(`
+        ALTER TABLE teachers DROP COLUMN subjects;
+        ALTER TABLE students DROP COLUMN birth_date;
+        ALTER TABLE students DROP COLUMN parent_name;`);
+
+      initDb();
+      const teacherCols = db.prepare('PRAGMA table_info(teachers)').all().map(c => c.name);
+      const studentCols = db.prepare('PRAGMA table_info(students)').all().map(c => c.name);
+      expect(teacherCols).toContain('subjects');
+      expect(studentCols).toContain('birth_date');
+      expect(studentCols).toContain('parent_name');
+      expect(db.prepare('SELECT version FROM _migrations ORDER BY version').all().map(r => r.version))
+        .toEqual([1, 2, 3, 4]);
+    } finally {
+      db.close();
+    }
+  });
+
+  // A pre-v1.6.1 legacy database stores the literal 'CURRENT_TIMESTAMP' in
+  // created_at. The v3 backfill derives effective_from from its first 10
+  // chars, which used to yield 'CURRENT_TI' — a string that sorts after every
+  // ISO date, so the initial pricing record never matched a lesson date.
+  it('repairs literal CURRENT_TIMESTAMP created_at before the v3 backfill runs', async () => {
+    tmp = mkdtempSync(join(tmpdir(), 'curr-ts-repair-'));
+    const dbPath = join(tmp, 'legacy.db');
+    seedLegacyDb(dbPath);
+    const seed = new Database(dbPath);
+    // class_pricing.student_count is NOT NULL and the backfill is INSERT OR
+    // IGNORE, so a legacy class without pricing values gets no record at all.
+    seed.exec(`UPDATE classes SET created_at = 'CURRENT_TIMESTAMP', student_count = 3, unit_price = 100`);
+    seed.close();
+
+    process.env.DB_PATH = dbPath;
+    vi.resetModules();
+    const { initDb, db } = await import('../db/index.js');
+    try {
+      initDb();
+      const rows = db.prepare('SELECT effective_from FROM class_pricing').all();
+      expect(rows.length).toBeGreaterThan(0);
+      expect(rows.every(r => /^\d{4}-\d{2}-\d{2}$/.test(r.effective_from))).toBe(true);
+    } finally {
+      db.close();
+    }
+  });
 });

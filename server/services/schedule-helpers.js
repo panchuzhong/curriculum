@@ -169,7 +169,10 @@ export function buildPricingLookup(allPricing) {
     (byClass[p.classId] ??= []).push(p);
   }
   for (const arr of Object.values(byClass)) {
-    arr.sort((a, b) => a.effectiveFrom.localeCompare(b.effectiveFrom));
+    // matchPricing below compares code units (<=), so order the same way:
+    // locale collation can disagree for non-ISO strings (e.g. a restore that
+    // smuggled in garbage effectiveFrom), which would make the scan break early.
+    arr.sort((a, b) => (a.effectiveFrom < b.effectiveFrom ? -1 : a.effectiveFrom > b.effectiveFrom ? 1 : 0));
   }
   return function matchPricing(classId, date) {
     const records = byClass[classId];
@@ -184,11 +187,16 @@ export function buildPricingLookup(allPricing) {
 }
 
 const _semesterCache = new Map();
+// Invalidation from this process is explicit (clearSemesterCache), but other
+// processes sharing the SQLite file never trigger it. The report cache bounds
+// that staleness with a TTL; this cache had none, so semester edits made by
+// another process were never seen. TTL mirrors the report cache's 60s.
+const SEMESTER_CACHE_TTL_MS = 60_000;
 export function getTeacherSemesters(db, teacherId) {
   const cached = _semesterCache.get(teacherId);
-  if (cached) return cached;
+  if (cached && Date.now() - cached.at < SEMESTER_CACHE_TTL_MS) return cached.value;
   const result = db.select().from(semesters).where(eq(semesters.teacherId, teacherId)).all();
-  _semesterCache.set(teacherId, result);
+  _semesterCache.set(teacherId, { value: result, at: Date.now() });
   return result;
 }
 export function clearSemesterCache() { _semesterCache.clear(); }

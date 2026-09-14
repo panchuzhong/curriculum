@@ -108,6 +108,20 @@ export default function Layout({ children }) {
     return w >= 768 && w < 1280 ? 'sidebarWidthTablet' : 'sidebarWidthDesktop';
   }
 
+  // Active drag's document listeners, so an unmount mid-drag can take them off
+  // (normally only onUp/onEnd remove them) and cancel the debounce write.
+  const resizeHandlersRef = useRef(null);
+  useEffect(() => () => {
+    const h = resizeHandlersRef.current;
+    if (h) {
+      document.removeEventListener('mousemove', h.move);
+      document.removeEventListener('mouseup', h.up);
+      document.removeEventListener('touchmove', h.move);
+      document.removeEventListener('touchend', h.end);
+    }
+    if (resizeDebounceRef.current) clearTimeout(resizeDebounceRef.current);
+  }, []);
+
   function startResize(e) {
     e.preventDefault();
     setResizing(true);
@@ -129,7 +143,9 @@ export default function Layout({ children }) {
       if (resizeDebounceRef.current) { clearTimeout(resizeDebounceRef.current); localStorage.setItem(key, lastWidthRef.current); }
       document.removeEventListener('mousemove', onMove);
       document.removeEventListener('mouseup', onUp);
+      resizeHandlersRef.current = null;
     }
+    resizeHandlersRef.current = { move: onMove, up: onUp, end: null };
     document.addEventListener('mousemove', onMove);
     document.addEventListener('mouseup', onUp);
   }
@@ -157,7 +173,9 @@ export default function Layout({ children }) {
       if (resizeDebounceRef.current) { clearTimeout(resizeDebounceRef.current); localStorage.setItem(key, lastWidthRef.current); }
       document.removeEventListener('touchmove', onMove);
       document.removeEventListener('touchend', onEnd);
+      resizeHandlersRef.current = null;
     }
+    resizeHandlersRef.current = { move: onMove, up: null, end: onEnd };
     setResizing(true);
     document.addEventListener('touchmove', onMove, { passive: false });
     document.addEventListener('touchend', onEnd);

@@ -106,34 +106,30 @@ test.describe('报表数据验证', () => {
 
   test('汇总统计卡片显示实际数字', async ({ authenticatedPage: page }) => {
     await page.goto('/reports');
-    // The stat cards should show numbers (not empty)
-    const main = page.locator('main');
-    // Find elements that contain digits in the stat card area
-    await page.waitForTimeout(1000); // Wait for data to load
-    const revenueText = await main.getByText(/[\d,]+/).first().textContent();
-    expect(revenueText).toBeTruthy();
+    // 本周种子数据非空（数学班两节+英语班），三张卡片的数值区都必须渲染出数字，
+    // expect 轮询替代固定等待
+    const card = (label: string) =>
+      page.locator('main .text-gray-500').filter({ hasText: label }).locator('..');
+    await expect(card('排课次数')).toContainText(/\d/);
+    await expect(card('教学时长')).toContainText(/\d/);
+    await expect(card('预估收入')).toContainText(/\d/);
   });
 
   test('切换班级筛选改变数据', async ({ authenticatedPage: page }) => {
     await page.goto('/reports');
-    const combobox = page.getByRole('combobox');
-    const options = await combobox.locator('option').count();
-    if (options > 1) {
-      await combobox.selectOption({ index: 1 });
-      // Verify the page updates (not stale)
-      await page.waitForTimeout(500);
-      await expect(page.getByRole('heading', { name: '统计报表' })).toBeVisible();
-    }
+    // 未筛选时两个种子班都在按班级统计表里；筛选到数学班后英语班行应消失
+    const table = page.getByRole('table');
+    await expect(table.getByRole('cell', { name: 'E2E英语班' })).toBeVisible();
+    await page.getByRole('combobox').selectOption({ label: 'E2E数学班' });
+    await expect(table.getByRole('cell', { name: 'E2E英语班' })).toHaveCount(0);
+    await expect(table.getByRole('cell', { name: 'E2E数学班' })).toBeVisible();
   });
 
   test('切换到月报后按班级统计表格有数据行', async ({ authenticatedPage: page }) => {
     await page.goto('/reports');
     await page.getByRole('button', { name: '月报' }).click();
-    await page.waitForTimeout(1000);
-    const rows = page.getByRole('table').getByRole('row');
-    // Should have at least header + 1 data row
-    const count = await rows.count();
-    expect(count).toBeGreaterThanOrEqual(2);
+    // 轮询等待数据行出现（表头之外至少一行），替代固定 sleep
+    await expect(page.getByRole('table').getByRole('row').nth(1)).toBeVisible();
   });
 });
 
@@ -271,5 +267,18 @@ test.describe('报表班级筛选联动', () => {
     const before = await range.textContent();
     await page.getByRole('combobox').selectOption({ label: 'E2E数学班' });
     await expect(range).toHaveText(before!);
+  });
+});
+
+test.describe('自定义区间倒挂提示', () => {
+  test.use({ baseURL: 'http://127.0.0.1:5174' });
+
+  test('开始日期晚于结束日期时显示提示而非静默旧数据', async ({ authenticatedPage: page }) => {
+    await page.goto('/reports');
+    await page.getByRole('button', { name: '自定义' }).click();
+    const inputs = page.locator('input[type="date"]');
+    await inputs.first().fill('2026-05-01');
+    await inputs.nth(1).fill('2026-01-01');
+    await expect(page.getByText('开始日期晚于结束日期')).toBeVisible();
   });
 });

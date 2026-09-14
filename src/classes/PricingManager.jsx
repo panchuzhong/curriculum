@@ -125,7 +125,7 @@ export default function PricingManager({ classId, onChanged }) {
               <th className="text-left py-2 font-medium">生效日期</th>
               <th className="text-right py-2 font-medium">人数</th>
               <th className="text-right py-2 font-medium">单价</th>
-              <th className="text-right py-2 font-medium">优惠</th>
+              <th className="text-right py-2 font-medium">优惠金额</th>
               <th className="text-left py-2 font-medium">原因</th>
               <th className="text-right py-2 font-medium">操作</th>
             </tr>
@@ -136,7 +136,7 @@ export default function PricingManager({ classId, onChanged }) {
                 <td className="py-2">{r.effectiveFrom}{i === 0 ? <span className="text-blue-600 dark:text-blue-400 font-medium ml-1">当前</span> : ''}</td>
                 <td className="text-right py-2">{r.studentCount}</td>
                 <td className="text-right py-2">¥{r.unitPrice}</td>
-                <td className="text-right py-2">{r.discountAmount > 0 ? `¥${r.discountAmount}` : <span className="text-gray-400">—</span>}</td>
+                <td className="text-right py-2">¥{r.discountAmount || 0}</td>
                 <td className="py-2 text-gray-500 dark:text-gray-400">{r.discountReason || <span className="text-gray-400">—</span>}</td>
                 <td className="text-right py-2">
                   <button onClick={() => openEdit(r)} className="text-blue-600 dark:text-blue-400 hover:underline mr-3">编辑</button>

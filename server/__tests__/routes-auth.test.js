@@ -79,6 +79,18 @@ describe('POST /api/auth/register', () => {
       .send({ username: 'newuser', password: 'test1234', name: 'New' });
     expect(res.status).toBe(403);
   });
+
+  // Deployment styles the README itself documents (systemd Environment=,
+  // docker -e, `ALLOW_REGISTRATION=true node server/index.js`) inject the flag
+  // into the process env, so the .env rewrite is inert there and every restart
+  // re-opens registration. The occupied teachers table is the real invariant.
+  it('stays closed after a restart-style env reset: an occupied teachers table wins over the env flag', async () => {
+    await makeUser(drizzleDb, 'first');
+    process.env.ALLOW_REGISTRATION = 'true';
+    const res = await request(app).post('/api/auth/register')
+      .send({ username: 'second', password: 'test1234', name: 'Second' });
+    expect(res.status).toBe(403);
+  });
 });
 
 describe('POST /api/auth/login', () => {

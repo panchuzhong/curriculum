@@ -284,6 +284,11 @@ export default function Reports() {
             <span className="text-gray-400">~</span>
             <input type="date" lang="zh-CN" value={customEnd} onChange={e => setCustomEnd(e.target.value)}
               className="px-2 py-1 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded text-xs sm:text-sm" />
+            {/* 倒挂时不发请求，下面卡片仍是上一个有效区间的数据；不给提示的话
+                这些数字看起来就像当前区间的结果。 */}
+            {customStart && customEnd && customStart > customEnd && (
+              <span className="text-xs text-red-500">开始日期晚于结束日期，图表为上一有效区间的数据</span>
+            )}
           </div>
         )}
       </div>

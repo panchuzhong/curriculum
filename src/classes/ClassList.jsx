@@ -5,6 +5,7 @@ import { useToast } from '../components/ToastProvider';
 import { useConfirm } from '../components/ConfirmDialog';
 import ClassForm from './ClassForm';
 import PricingManager from './PricingManager';
+import ScheduleHistory from './ScheduleHistory';
 
 export default function ClassList() {
   const dark = useContext(DarkContext);
@@ -13,7 +14,7 @@ export default function ClassList() {
   const [classes, setClasses] = useState([]);
   const [loading, setLoading] = useState(true);
   const [expandedId, setExpandedId] = useState(null);
-  const [activeTab, setActiveTab] = useState('info'); // 'info' | 'pricing'
+  const [activeTab, setActiveTab] = useState('info'); // 'info' | 'pricing' | 'schedules'
   const [showNew, setShowNew] = useState(false);
   const [saving, setSaving] = useState(false);
 
@@ -123,6 +124,10 @@ export default function ClassList() {
                     className={`px-4 py-1.5 rounded-md text-sm font-medium transition-colors ${activeTab === 'pricing' ? 'bg-white dark:bg-gray-600 text-gray-900 dark:text-gray-100 shadow-sm' : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'}`}>
                     定价历史
                   </button>
+                  <button onClick={() => setActiveTab('schedules')}
+                    className={`px-4 py-1.5 rounded-md text-sm font-medium transition-colors ${activeTab === 'schedules' ? 'bg-white dark:bg-gray-600 text-gray-900 dark:text-gray-100 shadow-sm' : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'}`}>
+                    排课历史
+                  </button>
                 </div>
 
                 {/* Tab: 基本信息 */}
@@ -142,6 +147,13 @@ export default function ClassList() {
                 {activeTab === 'pricing' && (
                   <div className="px-4 pb-4">
                     <PricingManager classId={cls.id} onChanged={refreshClasses} />
+                  </div>
+                )}
+
+                {/* Tab: 排课历史 */}
+                {activeTab === 'schedules' && (
+                  <div className="px-4 pb-4">
+                    <ScheduleHistory classId={cls.id} />
                   </div>
                 )}
               </div>

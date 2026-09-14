@@ -79,11 +79,13 @@ test.describe('周课表', () => {
     await expect(main.getByText(/\d{4}-\d{2}-\d{2} ~ \d{4}-\d{2}-\d{2}/)).not.toHaveText(before!);
   });
 
-  test('切换到下一周', async ({ authenticatedPage: page }) => {
+  test('切换到下一周并验证日期变化', async ({ authenticatedPage: page }) => {
+    const main = page.locator('main');
+    const rangeText = main.getByText(/\d{4}-\d{2}-\d{2} ~ \d{4}-\d{2}-\d{2}/);
+    await expect(rangeText).toBeVisible();
+    const before = await rangeText.textContent();
     await page.getByRole('button', { name: '下一周' }).click();
-    await page.waitForSelector(scheduleCard, { timeout: 10000 });
-    const count = await page.locator(scheduleCard).count();
-    expect(count).toBeGreaterThanOrEqual(0);
+    await expect(rangeText).not.toHaveText(before!);
   });
 
   test('点击本周回到当前周', async ({ authenticatedPage: page }) => {

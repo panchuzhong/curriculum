@@ -58,6 +58,15 @@ describe('real app integration', () => {
     expect(res.status).toBe(413);
   });
 
+  // Strict routing is off, so the trailing-slash spelling reaches the route;
+  // the 50MB exemption used to compare exact paths only and this got a 413.
+  it('honors the 50MB restore exemption with a trailing slash', async () => {
+    const res = await request(app).post('/api/backup/restore/')
+      .set(authHeader(token))
+      .send({ version: 1, padding: 'x'.repeat(1100 * 1024) });
+    expect(res.status).not.toBe(413);
+  });
+
   it('returns JSON 404 for unknown API paths (never the SPA fallback)', async () => {
     const res = await request(app).get('/api/definitely-not-a-route');
     expect(res.status).toBe(404);

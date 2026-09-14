@@ -210,6 +210,13 @@ router.post('/batch', validateBatchCreate, handle, (req, res) => {
     const current = new Date(semesterStart + 'T00:00:00');
     const end = new Date(semester.endDate + 'T00:00:00');
 
+    // Semester dates carry no span cap, and the walk below is synchronous:
+    // a typo'd millennium-long semester would block the event loop for seconds.
+    // Real semesters are well under two years.
+    if (end - current > 550 * 24 * 3600 * 1000) {
+      return res.status(400).json({ error: '学期跨度过长，请检查学期起止日期' });
+    }
+
     // Fetch user-defined holidays + workdays for this teacher.
     // workday entries override built-in/user holidays (调休: 上班日).
     const userHolidays = drizzleDb.select({ date: holidays.date, type: holidays.type })

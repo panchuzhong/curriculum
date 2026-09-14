@@ -34,15 +34,23 @@ router.get('/:year', (req, res) => {
 router.post('/', validateCreateHoliday, handle, (req, res) => {
   const { date, type, name } = req.body;
 
-  // Check for duplicate
-  const existing = drizzleDb.select().from(holidays)
-    .where(and(eq(holidays.teacherId, req.teacherId), eq(holidays.date, date))).get();
-  if (existing) return res.status(409).json({ error: '该日期已有记录' });
-
-  const result = drizzleDb.insert(holidays).values({
-    teacherId: req.teacherId, date, type, name,
-  }).run();
-  const newId = Number(result.lastInsertRowid);
+  let newId;
+  try {
+    // IMMEDIATE takes the write lock up front, so the duplicate check and the
+    // insert serialize even against another process sharing the database file.
+    newId = db.transaction(() => {
+      const existing = drizzleDb.select().from(holidays)
+        .where(and(eq(holidays.teacherId, req.teacherId), eq(holidays.date, date))).get();
+      if (existing) throw new Error('DUPLICATE_DATE');
+      const result = drizzleDb.insert(holidays).values({
+        teacherId: req.teacherId, date, type, name,
+      }).run();
+      return Number(result.lastInsertRowid);
+    }).immediate();
+  } catch (e) {
+    if (e.message === 'DUPLICATE_DATE') return res.status(409).json({ error: '该日期已有记录' });
+    throw e;
+  }
   const created = drizzleDb.select().from(holidays).where(eq(holidays.id, newId)).get();
   logAudit({ teacherId: req.teacherId, action: 'CREATE', tableName: 'holidays', recordId: newId, after: created });
   res.json(created);
@@ -59,14 +67,21 @@ router.put('/:id', validateUpdateHoliday, handle, (req, res) => {
   const safeUpdates = Object.fromEntries(Object.entries(req.body).filter(([k]) => allowed.includes(k)));
   if (Object.keys(safeUpdates).length === 0) return res.status(400).json({ error: 'No valid fields' });
 
-  // Check for duplicate date when changing date
-  if (safeUpdates.date && safeUpdates.date !== existing.date) {
-    const dup = drizzleDb.select().from(holidays)
-      .where(and(eq(holidays.teacherId, req.teacherId), eq(holidays.date, safeUpdates.date))).get();
-    if (dup) return res.status(409).json({ error: '该日期已有记录' });
+  // Dup check and update in one IMMEDIATE transaction (same cross-process
+  // reasoning as the create route).
+  try {
+    db.transaction(() => {
+      if (safeUpdates.date && safeUpdates.date !== existing.date) {
+        const dup = drizzleDb.select().from(holidays)
+          .where(and(eq(holidays.teacherId, req.teacherId), eq(holidays.date, safeUpdates.date))).get();
+        if (dup) throw new Error('DUPLICATE_DATE');
+      }
+      drizzleDb.update(holidays).set(safeUpdates).where(eq(holidays.id, +id)).run();
+    }).immediate();
+  } catch (e) {
+    if (e.message === 'DUPLICATE_DATE') return res.status(409).json({ error: '该日期已有记录' });
+    throw e;
   }
-
-  drizzleDb.update(holidays).set(safeUpdates).where(eq(holidays.id, +id)).run();
   const updated = drizzleDb.select().from(holidays).where(eq(holidays.id, +id)).get();
   logAudit({ teacherId: req.teacherId, action: 'UPDATE', tableName: 'holidays', recordId: +id, before: existing, after: updated });
   res.json(updated);

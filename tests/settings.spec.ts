@@ -111,31 +111,42 @@ test.describe('设置操作', () => {
     await page.goto('/settings');
     const subjectName = `E2E学科_${Date.now()}`;
     const input = page.getByPlaceholder('自定义学科名称');
-    if (await input.isVisible()) {
-      await input.fill(subjectName);
-      // Scope to the subject area to avoid matching other "添加" buttons
-      await input.locator('..').getByRole('button', { name: '添加' }).click();
-      await page.getByRole('button', { name: '保存学科设置' }).click();
-      await expect(page.getByText(subjectName)).toBeVisible();
-    }
+    await expect(input).toBeVisible();
+    await input.fill(subjectName);
+    // Scope to the subject area to avoid matching other "添加" buttons
+    await input.locator('..').getByRole('button', { name: '添加' }).click();
+    await page.getByRole('button', { name: '保存学科设置' }).click();
+    await expect(page.getByText(subjectName)).toBeVisible();
+    // 清理：删掉本次新增，避免共享教师账号的学科列表随每次运行膨胀
+    const row = page.locator('div.space-y-1 > div').filter({ hasText: subjectName });
+    await row.getByRole('button', { name: '删除' }).click();
+    await page.getByRole('button', { name: '保存学科设置' }).click();
+    await expect(page.getByText(subjectName)).toHaveCount(0);
   });
 
   test('手动添加节假日', async ({ authenticatedPage: page }) => {
     await page.goto('/settings');
-    await page.getByRole('button', { name: '手动添加' }).click();
-    const dateInput = page.locator('input[type="date"]').first();
-    if (await dateInput.isVisible()) {
-      await dateInput.fill('2028-01-01');
-      const nameInput = page.getByPlaceholder('名称（如：春节）');
-      if (await nameInput.isVisible()) {
-        await nameInput.fill('E2E测试假期');
-      }
-      // Click the add/submit button in the holiday form
-      const addBtn = page.locator('form').getByRole('button', { name: '添加' });
-      if (await addBtn.isVisible()) {
-        await addBtn.click();
-      }
+    // 管理器只显示所选年份（默认今年）的记录，测试日期必须落在今年才能出现在列表里
+    const testDate = `${new Date().getFullYear()}-06-15`;
+    // 上次运行若在添加后中断会残留同日期行，先清掉避免 409
+    const stale = page.locator('div.max-h-60 > div').filter({ hasText: testDate });
+    if (await stale.count() > 0) {
+      await stale.first().getByRole('button', { name: '删除' }).click();
+      await expect(page.getByText(testDate)).toHaveCount(0);
     }
+
+    await page.getByRole('button', { name: '手动添加' }).click();
+    await page.locator('input[type="date"]').first().fill(testDate);
+    await page.getByPlaceholder('名称（如：春节）').fill('E2E测试假期');
+    // 添加区是 div 而非 form；从名称输入框的父级圈定作用域，避开学科区的同名按钮
+    await page.getByPlaceholder('名称（如：春节）').locator('..').getByRole('button', { name: '添加' }).click();
+    // 添加成功后表单收起、列表出现该日期
+    await expect(page.getByText(testDate)).toBeVisible();
+    await expect(page.getByText('E2E测试假期')).toBeVisible();
+    // 清理，不再向持久库积累数据
+    await page.locator('div.max-h-60 > div').filter({ hasText: testDate })
+      .getByRole('button', { name: '删除' }).click();
+    await expect(page.getByText(testDate)).toHaveCount(0);
   });
 });
 
