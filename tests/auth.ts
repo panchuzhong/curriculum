@@ -21,7 +21,7 @@ const DEFAULT_TIERS = [
 
 const E2E_DB_PATH = process.env.DB_PATH || './data/e2e.db';
 let preparedTeacherId: number | null = null;
-let prunedStaleSemesters = false;
+let prunedStaleRows = false;
 
 function getJwtSecret() {
   if (process.env.JWT_SECRET) return process.env.JWT_SECRET;
@@ -130,10 +130,29 @@ function ensureSeedData(db: Database.Database, teacherId: number) {
   // rename this very seed row, so each run left two more behind. They pile up
   // into several semesters covering the same dates, which makes "which semester
   // is current" ambiguous. Prune once per worker, before any test runs.
-  if (!prunedStaleSemesters) {
+  //
+  // The student and class CRUD tests leak the same way: each run leaves behind
+  // a `E2E学生_<ts>` / `E2E编辑源_<ts>` / `E2E编辑后_<ts>` student and a
+  // `E2E测试班_<ts>` class. Those names all start with the seed names, so after a
+  // few runs the substring locator in 「按班级筛选学生」 matches several rows at
+  // once and the test fails on a database that nothing is actually wrong with.
+  //
+  // Only E2E-prefixed rows are deleted. DB_PATH is overridable (playwright.config
+  // defaults it with `??=`), and a bare `name <> seed` condition would wipe the
+  // real teacher's roster if the suite were ever pointed at another database.
+  if (!prunedStaleRows) {
     db.prepare('DELETE FROM semesters WHERE teacher_id = ? AND name <> ?')
       .run(teacherId, 'E2E春季学期');
-    prunedStaleSemesters = true;
+    db.prepare(`DELETE FROM class_students WHERE student_id IN
+      (SELECT id FROM students WHERE teacher_id = ? AND name LIKE 'E2E%' AND name <> ?)`)
+      .run(teacherId, 'E2E学生');
+    db.prepare("DELETE FROM students WHERE teacher_id = ? AND name LIKE 'E2E%' AND name <> ?")
+      .run(teacherId, 'E2E学生');
+    // 一次性班级只带一条自动生成的定价，没有排课也没有学生关联（先删定价再删班级）。
+    const junkClasses = "SELECT id FROM classes WHERE teacher_id = ? AND name LIKE 'E2E测试班%'";
+    db.prepare(`DELETE FROM class_pricing WHERE class_id IN (${junkClasses})`).run(teacherId);
+    db.prepare(`DELETE FROM classes WHERE id IN (${junkClasses})`).run(teacherId);
+    prunedStaleRows = true;
   }
 
   // Anchor the seeded semester to the run date, and re-anchor it on every run.

@@ -72,3 +72,35 @@ test('a pending weekly animation cannot navigate back after switching views', as
   await page.waitForTimeout(400);
   await expect(page).toHaveURL(/\/monthly/);
 });
+
+// 年份段不会在第 4 位后自动跳段：年份打到一半（0002）就点「生成日期」，下面的
+// 循环会从那一年一天天走到结束日期 —— 七十多万个日期、8MB 字符串，全塞进输入框。
+// min/max 拦不住，浏览器对越界值只标 invalid，value 照样给出来。
+test('an out-of-range start date cannot flood the date list', async ({ authenticatedPage: page }) => {
+  await page.getByRole('button', { name: '批量操作' }).click();
+  const dialog = page.getByRole('dialog', { name: '批量排课' });
+  await dialog.getByRole('button', { name: '指定日期' }).click();
+  const dates = dialog.locator('input[type="date"]');
+  await dates.nth(1).fill('2026-09-30');
+  await dates.first().fill('0002-01-01');
+  await dialog.getByRole('button', { name: '生成日期' }).click();
+
+  await expect(page.getByText(/日期需在/).first()).toBeVisible();
+  expect((await dialog.locator('textarea').inputValue()).length).toBeLessThan(200);
+});
+
+// 上下限之内也可能是几十年的跨度：1900-01-01 ~ 2999-12-31 逐日就是 40 万个日期，
+// 先在主线程拼出几 MB 的字符串，再被服务端「dates 最多 365 项」整单打回。
+test('an in-range decades-long span cannot build a 400k-date list', async ({ authenticatedPage: page }) => {
+  await page.getByRole('button', { name: '批量操作' }).click();
+  const dialog = page.getByRole('dialog', { name: '批量排课' });
+  await dialog.getByRole('button', { name: '指定日期' }).click();
+  const dates = dialog.locator('input[type="date"]');
+  // 先填结束日期，避免开始日期一改就把结束日期顺延成 +9 天
+  await dates.nth(1).fill('2999-12-31');
+  await dates.first().fill('1900-01-01');
+  await dialog.getByRole('button', { name: '生成日期' }).click();
+
+  await expect(page.getByText(/一次最多生成 365 个日期/).first()).toBeVisible();
+  expect((await dialog.locator('textarea').inputValue()).length).toBeLessThan(200);
+});

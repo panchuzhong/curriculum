@@ -1,8 +1,8 @@
 import { useState, useEffect, useLayoutEffect, useContext, useCallback, useMemo, useRef } from 'react';
 import { api } from '../api';
 import { getClassColor, DarkContext } from '../utils/colors';
-import { SUBJECT_HUES } from '../utils/constants';
-import { todayStr, getMonday, addDays, getMonthRange, getYearRange } from '../utils/date';
+import { SUBJECT_HUES, DATE_MIN, DATE_MAX } from '../utils/constants';
+import { todayStr, getMonday, addDays, getMonthRange, getYearRange, isUsableDate } from '../utils/date';
 import { useToast } from '../components/ToastProvider';
 import { shortcutBlocked } from '../utils/keys';
 
@@ -98,7 +98,9 @@ export default function Reports() {
       end = customEnd;
     }
 
-    if (!start || !end || start > end) return;
+    // 原生年份段多打一位会把年份左移（2026 → 0261）：位数正确、比大小也"正常"，
+    // 区间却变成 0261 至今，卡片会显示一个看似合理的全历史聚合。用不了的日期不发请求。
+    if (!start || !end || !isUsableDate(start) || !isUsableDate(end) || start > end) return;
     setPeriod({ start, end });
     const gen = ++fetchGenRef.current;
     // Filter server-side so every dimension (including byMonth) follows the
@@ -217,6 +219,13 @@ export default function Reports() {
     return { totalCount, totalHours, totalRevenue, subjectData, gradeData, classData, monthData };
   }, [summary, filterClassId, classMap, dark]);
 
+  // 自定义区间被拒时的说明：填了但用不了（含年份段被原生控件左移的情况），或倒挂。
+  const customRangeHint = customStart && customEnd
+    ? (!isUsableDate(customStart) || !isUsableDate(customEnd)
+      ? '日期无效，图表为上一有效区间的数据'
+      : customStart > customEnd ? '开始日期晚于结束日期，图表为上一有效区间的数据' : null)
+    : null;
+
   if (!period) return null;
 
   return (
@@ -279,15 +288,15 @@ export default function Reports() {
         )}
         {tab === 'custom' && (
           <div className="flex items-center gap-1 sm:gap-2">
-            <input type="date" lang="zh-CN" value={customStart} onChange={e => setCustomStart(e.target.value)}
+            <input type="date" lang="zh-CN" min={DATE_MIN} max={DATE_MAX} value={customStart} onChange={e => setCustomStart(e.target.value)}
               className="px-2 py-1 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded text-xs sm:text-sm" />
             <span className="text-gray-400">~</span>
-            <input type="date" lang="zh-CN" value={customEnd} onChange={e => setCustomEnd(e.target.value)}
+            <input type="date" lang="zh-CN" min={DATE_MIN} max={DATE_MAX} value={customEnd} onChange={e => setCustomEnd(e.target.value)}
               className="px-2 py-1 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded text-xs sm:text-sm" />
-            {/* 倒挂时不发请求，下面卡片仍是上一个有效区间的数据；不给提示的话
+            {/* 区间被拒时不发请求，下面卡片仍是上一个有效区间的数据；不给提示的话
                 这些数字看起来就像当前区间的结果。 */}
-            {customStart && customEnd && customStart > customEnd && (
-              <span className="text-xs text-red-500">开始日期晚于结束日期，图表为上一有效区间的数据</span>
+            {customRangeHint && (
+              <span className="text-xs text-red-500">{customRangeHint}</span>
             )}
           </div>
         )}

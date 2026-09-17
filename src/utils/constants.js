@@ -18,3 +18,10 @@ export const SUBJECT_HUES = {
 };
 
 export const WEEKDAYS = ['周一', '周二', '周三', '周四', '周五', '周六', '周日'];
+
+// 日期输入框的上下限。原生控件的年份段不会在第 4 位后自动跳段，没有 max 时
+// 直接键入整个日期会得到 5 位以上的年份（HTML 规范允许），这种值和 YYYY-MM-DD
+// 比大小会静默算错，交给 new Date() 则直接是 Invalid Date。范围取得足够宽，
+// 只为把年份段封在 4 位；越界与否另见 isUsableDate。
+export const DATE_MIN = '1900-01-01';
+export const DATE_MAX = '2999-12-31';

@@ -1,5 +1,6 @@
 import { useState, useRef } from 'react';
 import { todayStr, getMonday, addDays, parseDateStr } from '../utils/date';
+import { DATE_MIN, DATE_MAX } from '../utils/constants';
 import { useDialogFocusTrap } from '../hooks/useDialogFocusTrap';
 import { useBackdropClose } from '../hooks/useBackdropClose';
 
@@ -127,13 +128,13 @@ export default function ExportDialog({ view = 'week', defaultStart, defaultEnd, 
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm text-gray-500 dark:text-gray-400 mb-1">开始日期</label>
-                  <input type="date" lang="zh-CN"
+                  <input type="date" lang="zh-CN" min={DATE_MIN} max={DATE_MAX}
                     className="w-full p-3 text-base bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg"
                     value={start} onChange={e => setStart(e.target.value)} />
                 </div>
                 <div>
                   <label className="block text-sm text-gray-500 dark:text-gray-400 mb-1">结束日期</label>
-                  <input type="date" lang="zh-CN"
+                  <input type="date" lang="zh-CN" min={DATE_MIN} max={DATE_MAX}
                     className="w-full p-3 text-base bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg"
                     value={end} onChange={e => setEnd(e.target.value)} />
                 </div>

@@ -281,4 +281,37 @@ test.describe('自定义区间倒挂提示', () => {
     await inputs.nth(1).fill('2026-01-01');
     await expect(page.getByText('开始日期晚于结束日期')).toBeVisible();
   });
+
+  // 年份段不会在第 4 位后自动跳段，没有 max 时「2026」会被打成「20261」。
+  // 这里的区间是拿字符串比大小的，位数一多就会误判成倒挂、停在上一个区间的数据上。
+  test('年份段多打一位也不会产生位数不对的年份', async ({ authenticatedPage: page }) => {
+    await page.goto('/reports');
+    await page.getByRole('button', { name: '自定义' }).click();
+    const start = page.locator('input[type="date"]').first();
+    await start.click();
+    await page.keyboard.type('20261');
+
+    expect(await start.inputValue()).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+  });
+
+  // 加上 max 之后原生控件不再留下 5 位年份，而是把年份段左移：在「2026」后面再打
+  // 一位得到的是「0261」。它位数正确、也小于结束日期，倒挂判断拦不住 —— 改前会照发
+  // 一个 0261 年至今的请求，卡片显示一个看起来合理的全历史聚合。
+  test('年份被左移成越界值时给出提示并停发请求', async ({ authenticatedPage: page }) => {
+    const summaryUrls: string[] = [];
+    await page.route('**/api/schedules/summary**', route => {
+      summaryUrls.push(route.request().url());
+      return route.continue();
+    });
+    await page.goto('/reports');
+    await page.getByRole('button', { name: '自定义' }).click();
+    const start = page.locator('input[type="date"]').first();
+    await start.click();
+    await page.keyboard.type('20261');
+
+    // 年份滑到了 1900 之前（不是 5 位年份，但同样不可用）
+    expect(await start.inputValue()).toMatch(/^[01]\d{3}-\d{2}-\d{2}$/);
+    await expect(page.getByText('日期无效')).toBeVisible();
+    expect(summaryUrls.filter(u => /start=[01]\d{3}-/.test(u))).toEqual([]);
+  });
 });

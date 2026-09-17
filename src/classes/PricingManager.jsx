@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { api } from '../api';
+import { DATE_MIN, DATE_MAX } from '../utils/constants';
 import { useToast } from '../components/ToastProvider';
 import { useConfirm } from '../components/ConfirmDialog';
 
@@ -121,12 +122,16 @@ export default function PricingManager({ classId, onChanged }) {
       <div className="overflow-x-auto">
         <table className="w-full text-sm">
           <thead>
+            {/* w-full 的表格把多出来的宽度加在右对齐列文字的左边，所以「右对齐列 →
+                左对齐列」这个交界处的间距永远只有两侧 padding 之和，得给原因列补一段
+                左缩进。只在 ≥640px 生效：窄屏各列交界本来就在同一量级（十几到四十几
+                像素），单独给一列加 40px 反而成了新的异常，何况窄屏宽度本来就紧张。 */}
             <tr className="text-gray-500 dark:text-gray-400 border-b border-gray-200 dark:border-gray-600">
               <th className="text-left p-2 font-medium">生效日期</th>
               <th className="text-right p-2 font-medium">人数</th>
               <th className="text-right p-2 font-medium">单价</th>
               <th className="text-right p-2 font-medium">优惠金额</th>
-              <th className="text-left p-2 font-medium">原因</th>
+              <th className="text-left p-2 sm:pl-10 font-medium">原因</th>
               <th className="text-right p-2 font-medium">操作</th>
             </tr>
           </thead>
@@ -137,7 +142,7 @@ export default function PricingManager({ classId, onChanged }) {
                 <td className="text-right p-2">{r.studentCount}</td>
                 <td className="text-right p-2">¥{r.unitPrice}</td>
                 <td className="text-right p-2">¥{r.discountAmount || 0}</td>
-                <td className="p-2 text-gray-500 dark:text-gray-400">{r.discountReason || <span className="text-gray-400">—</span>}</td>
+                <td className="p-2 sm:pl-10 text-gray-500 dark:text-gray-400">{r.discountReason || <span className="text-gray-400">—</span>}</td>
                 <td className="text-right p-2">
                   <button onClick={() => openEdit(r)} className="text-blue-600 dark:text-blue-400 hover:underline mr-3">编辑</button>
                   {records.length > 1 && (
@@ -156,7 +161,7 @@ export default function PricingManager({ classId, onChanged }) {
           <div className="grid grid-cols-2 gap-2 mb-2">
             <div>
               <label className="block text-sm text-gray-500 dark:text-gray-400 mb-1">生效日期</label>
-              <input type="date" lang="zh-CN" className={inp} value={form.effectiveFrom}
+              <input type="date" lang="zh-CN" min={DATE_MIN} max={DATE_MAX} className={inp} value={form.effectiveFrom}
                 onChange={e => setForm({ ...form, effectiveFrom: e.target.value })} />
             </div>
             <div>

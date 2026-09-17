@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { parseDateStr, fmt, todayStr, getMonday, addDays, getMonthRange, getYearRange, toHours, toHoursAbs, intParam } from '../date';
+import { parseDateStr, fmt, todayStr, getMonday, addDays, getMonthRange, getYearRange, toHours, toHoursAbs, intParam, isUsableDate } from '../date';
 
 describe('parseDateStr', () => {
   it('parses YYYY-MM-DD to Date at midnight', () => {
@@ -120,5 +120,42 @@ describe('intParam', () => {
   it('accepts valid values, including 0', () => {
     expect(intParam('2027', 2026, { min: 1000, max: 9999 })).toBe(2027);
     expect(intParam('0', 5, { min: 0, max: 11 })).toBe(0);
+  });
+});
+
+// 原生日期输入框的年份段不会在第 4 位后自动跳段，min/max 也只是把越界值标成
+// invalid，值照样传出来。这类值比大小会静默算错，交给 new Date() 是 Invalid Date，
+// 当循环边界还会一天天跑上几十万次。
+describe('isUsableDate', () => {
+  it('接受定长且在上下限之内的日期', () => {
+    expect(isUsableDate('2026-09-17')).toBe(true);
+    expect(isUsableDate('1900-01-01')).toBe(true);
+    expect(isUsableDate('2999-12-31')).toBe(true);
+  });
+
+  it('拒绝位数不对的年份', () => {
+    expect(isUsableDate('20261-08-26')).toBe(false);
+    expect(isUsableDate('261-08-26')).toBe(false);
+  });
+
+  it('拒绝上下限之外的日期', () => {
+    expect(isUsableDate('0002-01-01')).toBe(false);
+    expect(isUsableDate('1899-12-31')).toBe(false);
+    expect(isUsableDate('3000-01-01')).toBe(false);
+  });
+
+  it('拒绝位数正确但日历上不存在的日期', () => {
+    expect(isUsableDate('2026-13-01')).toBe(false);
+    expect(isUsableDate('2026-02-31')).toBe(false);
+    expect(isUsableDate('2026-02-29')).toBe(false);
+    expect(isUsableDate('2026-00-10')).toBe(false);
+    // 闰年 2 月 29 日是真日期，不能连带拒掉
+    expect(isUsableDate('2024-02-29')).toBe(true);
+  });
+
+  it('拒绝空值和非日期', () => {
+    expect(isUsableDate('')).toBe(false);
+    expect(isUsableDate(undefined)).toBe(false);
+    expect(isUsableDate('2026-09')).toBe(false);
   });
 });

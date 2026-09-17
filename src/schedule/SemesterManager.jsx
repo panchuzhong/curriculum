@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { api } from '../api';
+import { DATE_MIN, DATE_MAX } from '../utils/constants';
 import { useToast } from '../components/ToastProvider';
 import { useConfirm } from '../components/ConfirmDialog';
 
@@ -134,12 +135,12 @@ export default function SemesterManager() {
             </div>
             <div>
               <label className="block text-sm text-gray-500 dark:text-gray-400 mb-1">开始日期</label>
-              <input type="date" lang="zh-CN" className="w-full p-2 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded"
+              <input type="date" lang="zh-CN" min={DATE_MIN} max={DATE_MAX} className="w-full p-2 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded"
                 value={form.startDate} onChange={e => setForm({...form, startDate: e.target.value})} />
             </div>
             <div>
               <label className="block text-sm text-gray-500 dark:text-gray-400 mb-1">结束日期</label>
-              <input type="date" lang="zh-CN" className="w-full p-2 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded"
+              <input type="date" lang="zh-CN" min={DATE_MIN} max={DATE_MAX} className="w-full p-2 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded"
                 value={form.endDate} onChange={e => setForm({...form, endDate: e.target.value})} />
             </div>
           </div>

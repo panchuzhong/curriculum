@@ -87,6 +87,7 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 - React views in `src/schedule/` for week/month/year schedules
 - Cross-view navigation: `src/utils/viewDate.js` (per-view store), `src/utils/navTarget.js` (tested pure function)
 - Class detail tabs in `src/classes/ClassList.jsx`: 基本信息 / 定价历史 / 排课历史; the schedule-history default date range comes from `src/utils/semesterRange.js` (tested pure function)
+- Date inputs: every `<input type="date">` carries `min={DATE_MIN} max={DATE_MAX}` from `src/utils/constants.js` — the native year segment never auto-advances and accepts 5+ digit years without a `max`; `src/utils/__tests__/dateInputs.test.js` fails if a new one is added without them
 - Keyboard shortcuts: ArrowUp/Down (cycle sidebar nav links), Home (go to current week/month/year), ArrowLeft/Right (navigate periods), Ctrl+Arrow (jump by visible days in weekly view)
 - Animation: CSS custom properties `--day-offset`/`--day-transition` on grid element
 

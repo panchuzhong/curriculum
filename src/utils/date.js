@@ -1,3 +1,5 @@
+import { DATE_MIN, DATE_MAX } from './constants';
+
 export function parseDateStr(dateStr) {
   return new Date(dateStr + 'T00:00:00');
 }
@@ -53,4 +55,16 @@ export function intParam(value, fallback, { min, max } = {}) {
   if (min != null && n < min) return fallback;
   if (max != null && n > max) return fallback;
   return n;
+}
+
+// 日期输入框给出的值不一定能用：年份段不会在第 4 位后自动跳段，能打出 5 位以上的
+// 年份；min/max 也只是把越界值标成 invalid，value 照样传出来。位数不对的值比大小
+// 会静默算错，交给 new Date() 是 Invalid Date，当循环边界还会一天天跑上几十万次。
+export function isUsableDate(value) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value) || value < DATE_MIN || value > DATE_MAX) return false;
+  // 还要拦 2026-02-31 这类位数正确、日历上却不存在的值：它们比大小看着正常，
+  // 交给 new Date() 同样是 Invalid Date。DATE_MIN 之上不会触发 0-99 映射到 19xx。
+  const [y, m, d] = value.split('-').map(Number);
+  const parsed = new Date(y, m - 1, d);
+  return parsed.getFullYear() === y && parsed.getMonth() === m - 1 && parsed.getDate() === d;
 }

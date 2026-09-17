@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { api } from '../api';
 import { BUILT_IN_HOLIDAYS as HOLIDAY_DATES, BUILT_IN_WORKDAYS as WORKDAY_DATES, HOLIDAY_NAMES, refreshHolidays } from '../utils/holidays';
+import { DATE_MIN, DATE_MAX } from '../utils/constants';
 import { useToast } from '../components/ToastProvider';
 
 // Derive import records from the same fallback data rendered by calendars, so
@@ -103,7 +104,7 @@ export default function HolidayManager() {
 
       {showAdd && (
         <div className="flex gap-2 mb-4 p-3 bg-white dark:bg-gray-700 rounded">
-          <input type="date" lang="zh-CN" className="p-2 bg-gray-100 dark:bg-gray-600 border border-gray-300 dark:border-gray-500 rounded text-sm"
+          <input type="date" lang="zh-CN" min={DATE_MIN} max={DATE_MAX} className="p-2 bg-gray-100 dark:bg-gray-600 border border-gray-300 dark:border-gray-500 rounded text-sm"
             value={form.date} onChange={e => setForm({...form, date: e.target.value})} />
           <select className="p-2 bg-gray-100 dark:bg-gray-600 border border-gray-300 dark:border-gray-500 rounded text-sm"
             value={form.type} onChange={e => setForm({...form, type: e.target.value})}>

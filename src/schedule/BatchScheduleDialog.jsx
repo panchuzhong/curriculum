@@ -1,9 +1,13 @@
 import { useState, useEffect, useRef } from 'react';
-import { todayStr, fmt } from '../utils/date';
+import { todayStr, fmt, isUsableDate } from '../utils/date';
+import { DATE_MIN, DATE_MAX } from '../utils/constants';
 import { api } from '../api';
 import { useToast } from '../components/ToastProvider';
 import { useDialogFocusTrap } from '../hooks/useDialogFocusTrap';
 import { useBackdropClose } from '../hooks/useBackdropClose';
+
+// 与服务端 validateBatchCreate 的 `dates 最多 365 项` 保持一致。
+const MAX_BATCH_DATES = 365;
 
 const WEEKDAY_OPTIONS = [
   { value: 1, label: '周一' },
@@ -101,10 +105,23 @@ export default function BatchScheduleDialog({ onClose, onSaved }) {
 
   function generateRangeDates() {
     if (!rangeStart || !rangeEnd || rangeStep <= 0) return;
+    // 循环的上界完全取自输入框：年份打到一半（0002）就点生成，会从那一年一天天
+    // 走到结束日期，几十万个日期直接塞进输入框。用不了的日期一律当输入错误。
+    if (!isUsableDate(rangeStart) || !isUsableDate(rangeEnd)) {
+      toast(`日期需在 ${DATE_MIN} ~ ${DATE_MAX} 之间`);
+      return;
+    }
     const dates = [];
     const d = new Date(rangeStart + 'T00:00:00');
     const end = new Date(rangeEnd + 'T00:00:00');
     while (d <= end) {
+      // 上下限之内也可能是几十年的跨度（1900 ~ 2999 逐日就是 40 万个日期）。
+      // 服务端一次最多收 MAX_BATCH_DATES 个，先在这里封顶，不然主线程会先拼出
+      // 一个几 MB 的字符串再被整单打回。
+      if (dates.length >= MAX_BATCH_DATES) {
+        toast(`一次最多生成 ${MAX_BATCH_DATES} 个日期`);
+        return;
+      }
       dates.push(fmt(d));
       d.setDate(d.getDate() + rangeStep);
     }
@@ -288,9 +305,11 @@ export default function BatchScheduleDialog({ onClose, onSaved }) {
                   <div className="grid grid-cols-2 gap-2">
                     <div>
                       <label className="block text-xs text-gray-400 mb-0.5">开始</label>
-                      <input type="date" lang="zh-CN" className={sel} value={rangeStart} onChange={e => {
+                      <input type="date" lang="zh-CN" min={DATE_MIN} max={DATE_MAX} className={sel} value={rangeStart} onChange={e => {
                         setRangeStart(e.target.value);
-                        if (e.target.value && (!rangeEnd || rangeEnd <= e.target.value)) {
+                        // 越界/位数不对的日期喂给 new Date() 是 Invalid Date，
+                        // fmt() 会把结束日期写成「NaN-NaN-NaN」，输入框直接变空。
+                        if (isUsableDate(e.target.value) && (!rangeEnd || rangeEnd <= e.target.value)) {
                           const d = new Date(e.target.value + 'T00:00:00');
                           d.setDate(d.getDate() + 9);
                           setRangeEnd(fmt(d));
@@ -299,7 +318,7 @@ export default function BatchScheduleDialog({ onClose, onSaved }) {
                     </div>
                     <div>
                       <label className="block text-xs text-gray-400 mb-0.5">结束</label>
-                      <input type="date" lang="zh-CN" className={sel} value={rangeEnd} onChange={e => setRangeEnd(e.target.value)} />
+                      <input type="date" lang="zh-CN" min={DATE_MIN} max={DATE_MAX} className={sel} value={rangeEnd} onChange={e => setRangeEnd(e.target.value)} />
                     </div>
                   </div>
                   <div className="flex gap-2 items-end">
@@ -332,11 +351,11 @@ export default function BatchScheduleDialog({ onClose, onSaved }) {
                 <div className="grid grid-cols-2 gap-2">
                   <div>
                     <label className="block text-sm text-gray-500 dark:text-gray-400 mb-1">开始日期</label>
-                    <input type="date" lang="zh-CN" className={sel} value={delStart} onChange={e => { setDelStart(e.target.value); resetPreview(); }} />
+                    <input type="date" lang="zh-CN" min={DATE_MIN} max={DATE_MAX} className={sel} value={delStart} onChange={e => { setDelStart(e.target.value); resetPreview(); }} />
                   </div>
                   <div>
                     <label className="block text-sm text-gray-500 dark:text-gray-400 mb-1">结束日期</label>
-                    <input type="date" lang="zh-CN" className={sel} value={delEnd} onChange={e => { setDelEnd(e.target.value); resetPreview(); }} />
+                    <input type="date" lang="zh-CN" min={DATE_MIN} max={DATE_MAX} className={sel} value={delEnd} onChange={e => { setDelEnd(e.target.value); resetPreview(); }} />
                   </div>
                 </div>
                 {delStart && delEnd ? (
