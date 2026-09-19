@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { api } from '../api';
 import { GRADES, DATE_MIN, DATE_MAX } from '../utils/constants';
+import { isUsableDate, DATE_INVALID_HINT } from '../utils/date';
 import { useToast } from '../components/ToastProvider';
 import { useConfirm } from '../components/ConfirmDialog';
 import { useDialogFocusTrap } from '../hooks/useDialogFocusTrap';
@@ -44,6 +45,13 @@ export default function ScheduleDialog({ date, startTime, schedule, onClose, onS
     api.getProfile().then(p => {
       const subs = p.subjects || [];
       setSubjects(subs);
+      // 下面每个 newClass 的 onChange 都必须用函数式更新：写成 {...newClass, x} 的话它闭包
+      // 的是渲染那一刻的 newClass。学科恰好在那之后被这里填上、而用户在重渲前敲了
+      // 一个字的话，那个展开会把 subject 又写回 ''，建出一个没有学科的班级。
+      //
+      // 同一个文件里的 setForm 还是 {...form, x}，不是漏改：form 没有任何异步写入方
+      // （只有 [schedule] 那个 effect 写它，而它在绘制前就提交了），没有竞争对手就没有这个坑。
+      // 哪天给 form 加了异步写入（比如拿班级默认地点回填 locationName），那六处也得一起改成函数式。
       if (subs.length > 0) setNewClass(nc => ({ ...nc, subject: nc.subject || subs[0] }));
     }).catch(e => toast(e.message || '加载学科失败'));
   }, []);
@@ -63,7 +71,13 @@ export default function ScheduleDialog({ date, startTime, schedule, onClose, onS
   }, [schedule]);
 
   async function handleSave() {
-    if (!form.classId) return;
+    // 班级/班级名为空时保存按钮本来就是置灰的（见下方 disabled），这里不再重复判一遍：
+    // 写了也跑不到，而「点了没反应」那句理由对置灰的按钮也不成立。
+    // 日期不同：日期框没有置灰态，下面那道守卫是真能踩到的。
+    // min/max 只把越界值标成 :invalid，value 照样提交。服务端的 isValidDate 带着同一对
+    // 上下限，0261-09-17 这种被左移的年份存不进去；这里拦是为了给出写明范围的
+    // 提示，而不是抛一句服务端 400。
+    if (!isUsableDate(form.date)) { setError(DATE_INVALID_HINT); return; }
     setSaving(true);
     setError('');
     try {
@@ -89,7 +103,8 @@ export default function ScheduleDialog({ date, startTime, schedule, onClose, onS
   }
 
   async function handleCreateClassAndSchedule() {
-    if (!newClass.name) return;
+    // 同 handleSave：这条路径也直接建排课，而且失败还会回滚刚建的班级。
+    if (!isUsableDate(form.date)) { setError(DATE_INVALID_HINT); return; }
     setSaving(true);
     setError('');
     let cls;
@@ -231,21 +246,21 @@ export default function ScheduleDialog({ date, startTime, schedule, onClose, onS
             <div>
               <label className="block text-sm text-gray-500 dark:text-gray-400 mb-1">班级名称</label>
               <input className="w-full p-2 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded" value={newClass.name}
-                onChange={e => setNewClass({...newClass, name: e.target.value})}
+                onChange={e => setNewClass(nc => ({ ...nc, name: e.target.value }))}
                 placeholder="如：初三数学A班" />
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <label className="block text-sm text-gray-500 dark:text-gray-400 mb-1">年级</label>
                 <select className="w-full p-2 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded" value={newClass.grade}
-                  onChange={e => setNewClass({...newClass, grade: e.target.value})}>
+                  onChange={e => setNewClass(nc => ({ ...nc, grade: e.target.value }))}>
                   {GRADES.map(g => <option key={g} value={g}>{g}</option>)}
                 </select>
               </div>
               <div>
                 <label className="block text-sm text-gray-500 dark:text-gray-400 mb-1">学科</label>
                 <select className="w-full p-2 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded" value={newClass.subject}
-                  onChange={e => setNewClass({...newClass, subject: e.target.value})}>
+                  onChange={e => setNewClass(nc => ({ ...nc, subject: e.target.value }))}>
                   {subjects.map(s => <option key={s} value={s}>{s}</option>)}
                 </select>
               </div>
@@ -255,13 +270,13 @@ export default function ScheduleDialog({ date, startTime, schedule, onClose, onS
                 <label className="block text-sm text-gray-500 dark:text-gray-400 mb-1">学生人数</label>
                 <input type="number" min="1" className="w-full p-2 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded"
                   value={newClass.studentCount}
-                  onChange={e => setNewClass({...newClass, studentCount: e.target.value === '' ? '' : +e.target.value})} />
+                  onChange={e => setNewClass(nc => ({ ...nc, studentCount: e.target.value === '' ? '' : +e.target.value }))} />
               </div>
               <div>
                 <label className="block text-sm text-gray-500 dark:text-gray-400 mb-1">单价 (元/人/时)</label>
                 <input type="number" className="w-full p-2 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded"
                   value={newClass.unitPrice}
-                  onChange={e => setNewClass({...newClass, unitPrice: e.target.value === '' ? '' : +e.target.value})} />
+                  onChange={e => setNewClass(nc => ({ ...nc, unitPrice: e.target.value === '' ? '' : +e.target.value }))} />
               </div>
             </div>
             <div className="grid grid-cols-2 gap-3">
@@ -269,13 +284,13 @@ export default function ScheduleDialog({ date, startTime, schedule, onClose, onS
                 <label className="block text-sm text-gray-500 dark:text-gray-400 mb-1">优惠金额</label>
                 <input type="number" step="0.01" className="w-full p-2 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded"
                   value={newClass.discountAmount ?? 0}
-                  onChange={e => setNewClass({...newClass, discountAmount: e.target.value === '' ? '' : +e.target.value})} />
+                  onChange={e => setNewClass(nc => ({ ...nc, discountAmount: e.target.value === '' ? '' : +e.target.value }))} />
               </div>
               <div>
                 <label className="block text-sm text-gray-500 dark:text-gray-400 mb-1">优惠原因</label>
                 <input className="w-full p-2 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded"
                   value={newClass.discountReason || ''}
-                  onChange={e => setNewClass({...newClass, discountReason: e.target.value})}
+                  onChange={e => setNewClass(nc => ({ ...nc, discountReason: e.target.value }))}
                   placeholder="可选" />
               </div>
             </div>
@@ -283,20 +298,22 @@ export default function ScheduleDialog({ date, startTime, schedule, onClose, onS
               <label className="block text-sm text-gray-500 dark:text-gray-400 mb-1">默认上课地点</label>
               <input className="w-full p-2 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded"
                 value={newClass.defaultLocationName || ''}
-                onChange={e => setNewClass({...newClass, defaultLocationName: e.target.value})}
+                onChange={e => setNewClass(nc => ({ ...nc, defaultLocationName: e.target.value }))}
                 placeholder="可选" />
             </div>
             <div>
               <label className="flex items-center gap-2 cursor-pointer">
                 <input type="checkbox" checked={newClass.isCompetition}
-                  onChange={e => setNewClass({...newClass, isCompetition: e.target.checked})} />
+                  onChange={e => setNewClass(nc => ({ ...nc, isCompetition: e.target.checked }))} />
                 <span>竞赛课</span>
               </label>
             </div>
             <div className="flex gap-2 mt-4">
+              {/* 置灰条件和 ClassForm、StudentList 一样按 trim 后判空：
+                  只打空格时按钮亮着，点下去要跑一趟服务端才换回一句「班级名称不能为空」。 */}
               <button onClick={handleCreateClassAndSchedule}
                 className="flex-1 p-2 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50"
-                disabled={saving || !newClass.name}>{saving ? '创建中...' : '创建并排课'}</button>
+                disabled={saving || !newClass.name?.trim()}>{saving ? '创建中...' : '创建并排课'}</button>
               <button onClick={() => { setMode('existing'); setForm(f => ({ ...f, classId: '' })); }} disabled={saving}
                 className="p-2 bg-gray-300 dark:bg-gray-600 rounded disabled:opacity-50">返回</button>
             </div>

@@ -1,3 +1,5 @@
+import { fmt, parseDateStr, clampDate } from './date';
+
 // The stored week is the first visible day, and its span can straddle a month or
 // year boundary — the week beginning 2026-08-31 runs into September. Asking
 // whether the span *touches* a period, rather than testing its first day alone,
@@ -26,16 +28,20 @@ function weekTouchesYear(weekStart, spanDays, year) {
 // With nothing to agree with, a straddling week belongs to the period holding
 // most of its days — the one containing its middle day (Thursday of a Monday
 // week, which is also the ISO 8601 rule). A two-day span anchors on its first day.
+//
+// 周视图可以停在范围的最后一天上，锚点再往后推就出界了：不夹的话跳转会给出
+// year=3000，而月/年视图的 intParam 只能把它丢掉、退回今年——用户从 2999 年底点一下
+// 「月课表」，落到的是今年一月。夹回边界才能落在他原本待的地方旁边。
 function weekAnchor(weekStart, spanDays) {
   const d = new Date(weekStart + 'T00:00:00');
   d.setDate(d.getDate() + Math.floor((spanDays - 1) / 2));
-  return d;
+  return parseDateStr(clampDate(fmt(d)));
 }
 
 // Pure function: computes navigation target URL from current view context.
 // Parameters:
 //   path       - target path (e.g. '/monthly')
-//   currentPath - current window.location.pathname
+//   currentPath - router-relative pathname (without the deployment basename)
 //   getDate    - function(view) → string|null (viewDate store reader)
 //   spanDays   - days the weekly view shows from the stored week (7 desktop, 2 mobile)
 export function getNavTarget(path, currentPath, getDate, spanDays = 7) {
@@ -93,7 +99,15 @@ export function getNavTarget(path, currentPath, getDate, spanDays = 7) {
           const [my, mm] = mo.split('-');
           if (my === yr) return `/?date=${yr}-${String(+mm + 1).padStart(2, '0')}-10`;
         }
-        return `/?date=${yr}-${String(n.getMonth() + 1).padStart(2, '0')}-${String(n.getDate()).padStart(2, '0')}`;
+        // 把今天的月/日原样贴到另一个年份上，2 月 29 日那天会得到 2027-02-29——
+        // 日历上不存在。dateParam 验得出来、于是拒掉，周视图静默回到本周，
+        // 而用户点的是 2027 年：翻了个年份，落点却还在今天，一句提示都没有。
+        // 超出目标月份天数就往回收一天。三参数 setFullYear 是原子的，绕开
+        // 「先改年、2 月 29 日当场溢出成 3 月 1 日」那一跳。
+        const eom = new Date(2000, 0, 1);
+        eom.setFullYear(+yr, n.getMonth() + 1, 0);
+        const day = Math.min(n.getDate(), eom.getDate());
+        return `/?date=${yr}-${String(n.getMonth() + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
       }
       if (path === '/monthly') {
         // Prefer stored month if in same year

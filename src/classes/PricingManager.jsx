@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { api } from '../api';
 import { DATE_MIN, DATE_MAX } from '../utils/constants';
+import { isUsableDate, DATE_INVALID_HINT } from '../utils/date';
 import { useToast } from '../components/ToastProvider';
 import { useConfirm } from '../components/ConfirmDialog';
 
@@ -12,9 +13,18 @@ export default function PricingManager({ classId, onChanged }) {
   const [editId, setEditId] = useState(null);
   const [form, setForm] = useState({ studentCount: '', unitPrice: '', discountAmount: '', discountReason: '', effectiveFrom: '' });
   const [saving, setSaving] = useState(false);
+  // openAdd 是拿 records[0]（当前定价）预填的。列表还没回来就点「新增定价」的话，
+  // records 是空数组，预填就全空——而之后到达的列表只写 records，不会回头补这一次。
+  // 用户看到的就是一张空表单，得把人数单价一项项重新敲一遍。
+  // 没加载完就不让开：失败也算加载完（真的取不到旧值，该空就空），否则按钮会永远置灰。
+  const [loaded, setLoaded] = useState(false);
 
   useEffect(() => {
-    api.getClassPricing(classId).then(setRecords).catch(e => toast(e.message || '加载定价历史失败'));
+    setLoaded(false);
+    api.getClassPricing(classId)
+      .then(setRecords)
+      .catch(e => toast(e.message || '加载定价历史失败'))
+      .finally(() => setLoaded(true));
   }, [classId]);
 
   const current = records[0];
@@ -52,7 +62,12 @@ export default function PricingManager({ classId, onChanged }) {
   }
 
   async function handleSave() {
-    if (!form.effectiveFrom || saving) return;
+    if (saving) return;
+    // 空值不能静默返回：点了保存什么都不发生，和页面卡死了没区别。
+    if (!form.effectiveFrom) { toast('请先填写生效日期'); return; }
+    // min/max 只把越界值标成 :invalid，value 照样提交。生效日期被左移成 0261 之后，
+    // 这条定价会排到历史最前面，而且在界面上修不回来。
+    if (!isUsableDate(form.effectiveFrom)) { toast(DATE_INVALID_HINT); return; }
     setSaving(true);
     try {
       const data = {
@@ -99,7 +114,8 @@ export default function PricingManager({ classId, onChanged }) {
     <div className="mt-3">
       <div className="flex items-center justify-between mb-3">
         <h4 className="font-medium text-sm">定价管理</h4>
-        <button onClick={openAdd} className="px-3 py-1 text-sm bg-blue-600 text-white rounded hover:bg-blue-700">+ 新增定价</button>
+        <button onClick={openAdd} disabled={!loaded}
+          className="px-3 py-1 text-sm bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50">+ 新增定价</button>
       </div>
 
       {/* Current pricing summary card */}

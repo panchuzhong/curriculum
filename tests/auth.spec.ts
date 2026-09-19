@@ -25,8 +25,14 @@ test.describe('登录页', () => {
     await expect(page.getByRole('link', { name: '立即注册' })).toBeVisible();
   });
 
-  test('用户名为空时不跳转', async ({ page }) => {
+  test('用户名为空时不发登录请求，也不跳转', async ({ page }) => {
+    // 只断言"还停在 /login"是恒成立的：原生 required 会挡住提交，handleSubmit
+    // 根本不会跑，页面当然不动。真正该证的是这一下什么请求都没发出去。
+    let posts = 0;
+    await page.route('**/api/auth/login', route => { posts++; return route.abort(); });
+
     await page.getByRole('button', { name: '登录' }).click();
+    expect(posts).toBe(0);
     await expect(page).toHaveURL(/\/login/);
   });
 
@@ -60,6 +66,41 @@ test.describe('注册页', () => {
     await expect(page.getByPlaceholder('请输入用户名')).toBeVisible();
     await expect(page.getByPlaceholder('至少8位')).toBeVisible();
     await expect(page.getByRole('button', { name: '注册' })).toBeVisible();
+  });
+
+  // 「两次密码不一致」只有客户端拦得住：confirmPassword 根本不发给服务端，
+  // 所以这个守卫一旦没了，用户就用打错的那一遍密码注册成功了，还以为是后一遍——
+  // 下次登录才发现进不去，而且没有任何提示说过哪里不对。
+  // 另一条守卫「密码至少8位」服务端也有同样的字样，所以这里连「请求没发出去」一起断言，
+  // 否则删掉客户端守卫、由服务端回同一句话，用例照样绿（Settings 那条就踩过这个坑）。
+  test('两次密码不一致时当场拦下，不发注册请求', async ({ page }) => {
+    let calls = 0;
+    await page.route('**/api/auth/register', route => { calls++; return route.abort(); });
+
+    await page.getByPlaceholder('请输入姓名').fill('E2E注册');
+    await page.getByPlaceholder('请输入用户名').fill(`e2e_${Date.now()}`);
+    await page.getByPlaceholder('至少8位').fill('correct-horse');
+    await page.getByPlaceholder('再次输入密码').fill('correct-hoRse');
+    await page.getByRole('button', { name: '注册' }).click();
+
+    await expect(page.getByText('两次输入的密码不一致')).toBeVisible();
+    expect(calls).toBe(0);
+    // 没跳走：还停在注册页
+    await expect(page.getByRole('heading', { name: '创建账号' })).toBeVisible();
+  });
+
+  test('密码不足 8 位时当场拦下，不发注册请求', async ({ page }) => {
+    let calls = 0;
+    await page.route('**/api/auth/register', route => { calls++; return route.abort(); });
+
+    await page.getByPlaceholder('请输入姓名').fill('E2E注册');
+    await page.getByPlaceholder('请输入用户名').fill(`e2e_${Date.now()}`);
+    await page.getByPlaceholder('至少8位').fill('short');
+    await page.getByPlaceholder('再次输入密码').fill('short');
+    await page.getByRole('button', { name: '注册' }).click();
+
+    await expect(page.getByText('密码至少8位')).toBeVisible();
+    expect(calls).toBe(0);
   });
 });
 

@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { api } from '../api';
 import { BUILT_IN_HOLIDAYS as HOLIDAY_DATES, BUILT_IN_WORKDAYS as WORKDAY_DATES, HOLIDAY_NAMES, refreshHolidays } from '../utils/holidays';
 import { DATE_MIN, DATE_MAX } from '../utils/constants';
+import { isUsableDate, DATE_INVALID_HINT, YEAR_MIN, YEAR_MAX } from '../utils/date';
 import { useToast } from '../components/ToastProvider';
 
 // Derive import records from the same fallback data rendered by calendars, so
@@ -37,7 +38,13 @@ export default function HolidayManager() {
   const workdays = yearHolidays.filter(h => h.type === 'workday');
 
   async function addHoliday() {
-    if (!form.date || !form.name.trim() || saving) return;
+    if (saving) return;
+    // 空值不能静默返回：点了添加什么都不发生，和页面卡死了没区别。
+    if (!form.date) { toast('请先选择日期'); return; }
+    if (!form.name.trim()) { toast('请先填写名称'); return; }
+    // min/max 只把越界值标成 :invalid，value 照样提交。上面的列表按年份筛，
+    // 年份被左移成 0261 的记录哪一年都不属于，存进去就删不掉了。
+    if (!isUsableDate(form.date)) { toast(DATE_INVALID_HINT); return; }
     setSaving(true);
     try {
       await api.createHoliday(form);
@@ -88,11 +95,14 @@ export default function HolidayManager() {
 
       <div className="flex items-center gap-4 mb-4">
         <div className="flex items-center gap-2">
-          <button onClick={() => setYear(y => y - 1)}
-            className="px-2 py-1 bg-gray-200 dark:bg-gray-700 rounded">◀</button>
+          {/* 年份只用于客户端过滤和内置数据查找，越界不会 400；但翻到 1899 年、
+              0 年、负年份同样是个没人拦的空页，还会报一句「-3年暂无内置数据」。
+              其他视图都把翻页夹在同一对上下限里，这里没理由例外。 */}
+          <button onClick={() => setYear(y => Math.max(y - 1, YEAR_MIN))} disabled={year <= YEAR_MIN}
+            className="px-2 py-1 bg-gray-200 dark:bg-gray-700 rounded disabled:opacity-50">◀</button>
           <span className="w-20 text-center font-medium">{year}年</span>
-          <button onClick={() => setYear(y => y + 1)}
-            className="px-2 py-1 bg-gray-200 dark:bg-gray-700 rounded">▶</button>
+          <button onClick={() => setYear(y => Math.min(y + 1, YEAR_MAX))} disabled={year >= YEAR_MAX}
+            className="px-2 py-1 bg-gray-200 dark:bg-gray-700 rounded disabled:opacity-50">▶</button>
         </div>
         <button onClick={importYear} disabled={importing}
           className="px-3 py-1 bg-blue-600 text-white rounded text-sm disabled:opacity-50">

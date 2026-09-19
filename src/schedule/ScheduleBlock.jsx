@@ -1,16 +1,13 @@
 import { useContext, memo } from 'react';
 import { getClassColor, getTextColor, DarkContext } from '../utils/colors';
-import { toMin, duration, clipBlock } from '../utils/schedule';
+import { blockGeometry, clipBlock } from '../utils/schedule';
 
 export default memo(function ScheduleBlock({ item, hasConflict, totalCols, rowHeight, topGapHeight, firstLabelMin, totalHeight, onScheduleClick, schedLpRef, wasRecentTouch }) {
   const dark = useContext(DarkContext);
   if (!item?.startTime || !item?.endTime) return null;
-  const topPx = topGapHeight + (toMin(item.startTime) - firstLabelMin) / 60 * rowHeight + 1;
-  const dur = duration(item.startTime, item.endTime);
-  const heightPx = dur / 60 * rowHeight - 1;
+  const { top: topPx, height: h } = blockGeometry(item.startTime, item.endTime, { rowHeight, topGapHeight, firstLabelMin });
   const widthPct = 100 / totalCols;
   const leftPct = item._col * widthPct;
-  const h = Math.max(heightPx, rowHeight - 1);
   const isShort = h < rowHeight * 1.5;
   const clip = clipBlock(topPx, h, totalHeight);
   const { top: clippedTop, height: clippedHeight } = clip ?? { top: 0, height: 0 };

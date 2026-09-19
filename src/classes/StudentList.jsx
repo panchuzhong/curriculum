@@ -43,7 +43,11 @@ function StudentDialog({ student, classes, onClose, onSaved }) {
 
   async function handleSubmit(e) {
     e.preventDefault();
-    if (!form.name.trim() || saving) return;
+    if (saving) return;
+    // 输入框带 required，空着提交浏览器自己会拦。但只打一个空格就过了 required，
+    // 走到这里 trim 完为空、直接 return——点「保存」毫无反应，也没人说为什么。
+    // 和 HolidayManager 一样把理由说出来。
+    if (!form.name.trim()) { toast('请先填写学生姓名'); return; }
     setSaving(true);
     try {
       if (student) {

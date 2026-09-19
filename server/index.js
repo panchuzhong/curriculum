@@ -15,6 +15,7 @@ import holidayRoutes from './routes/holidays.js';
 import auditLogRoutes from './routes/audit-log.js';
 import backupRoutes from './routes/backup.js';
 import geocodeRoutes from './routes/geocode.js';
+import errorHandler from './error-handler.js';
 
 const app = express();
 
@@ -100,6 +101,8 @@ app.use('/api', (req, res) => res.status(404).json({ error: 'Not found' }));
 
 // Serve static files in production
 if (existsSync('./dist')) {
+  // Match Vite's build-time BASE. API routes stay at /api on the same origin.
+  const base = (process.env.BASE || '/').replace(/\/+$/, '');
   // CSP only applies to the SPA responses (mounted after all /api routes).
   // style-src needs 'unsafe-inline' for React style attributes.
   app.use((req, res, next) => {
@@ -109,16 +112,12 @@ if (existsSync('./dist')) {
       "object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'");
     next();
   });
-  app.use(express.static('./dist'));
-  app.get('/{*splat}', (req, res) => res.sendFile('index.html', { root: './dist' }));
+  app.use(base || '/', express.static('./dist'));
+  app.get(`${base}/{*splat}`, (req, res) => res.sendFile('index.html', { root: './dist' }));
 }
 
 // Error handler
-app.use((err, req, res, next) => {
-  console.error(err.stack || err);
-  // Honor parser/route error statuses (e.g. body-parser 413) instead of 500
-  res.status(err.status || err.statusCode || 500).json({ error: 'Internal server error' });
-});
+app.use(errorHandler);
 
 const PORT = process.env.PORT || 8443;
 const HOST = process.env.HOST || '127.0.0.1';

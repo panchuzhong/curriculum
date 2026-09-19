@@ -92,6 +92,55 @@ test.describe('定价管理', () => {
     await expect(page.getByText('生效日期')).toBeVisible();
     await expect(page.getByRole('button', { name: '添加' })).toBeVisible();
   });
+
+  // 无定价记录的班级打开的就是一张空表单，生效日期也是空的。
+  // 这条空值守卫是这次改动新加的（之前点「添加」毫无反应），此前没有用例。
+  test('生效日期空着就保存时会说明原因', async ({ authenticatedPage: page }) => {
+    ensureZeroPricingClass();
+    await page.goto('/classes');
+    await page.getByText('E2E无定价班').click();
+    await page.getByRole('button', { name: '定价历史' }).click();
+    await page.getByRole('button', { name: '新增定价' }).click();
+    // 「拦住了」要靠「请求没发出去」来证：守卫改成「弹提示但照样提交」时，
+    // 提示依旧可见，只断言文案的话用例全绿，而请求已经发出去了。
+    let posts = 0;
+    await page.route('**/api/classes/*/pricing', route => {
+      if (route.request().method() === 'POST') { posts++; return route.abort(); }
+      return route.continue();
+    });
+
+    // openAdd 总是把生效日期预填成今天，所以这条守卫只有用户自己清空时才走得到。
+    await page.locator('input[type="date"]').first().fill('');
+    await page.getByRole('button', { name: '添加' }).click();
+    await expect(page.getByText('请先填写生效日期').first()).toBeVisible();
+    expect(posts).toBe(0);
+    // 留空要说「请先填写」，而不是笼统的「日期无效」。下面那条 isUsableDate 守卫
+    // 对空串同样不放行，所以光看「请求没发出去」两条守卫分不开——必须断言
+    // 用户读到的是针对性的那句，否则把这条守卫去掉也察觉不到。
+    expect(await page.getByText('日期无效').count()).toBe(0);
+  });
+
+  // 另一条守卫：日期填得出来但越界。原生日期框的年份段能打出 5 位数，
+  // min/max 只把值标成 invalid，value 照样提交——所以这里也得当场拦下并说清范围。
+  test('生效日期越界时被拒，并说出范围', async ({ authenticatedPage: page }) => {
+    ensureZeroPricingClass();
+    await page.goto('/classes');
+    await page.getByText('E2E无定价班').click();
+    await page.getByRole('button', { name: '定价历史' }).click();
+    await page.getByRole('button', { name: '新增定价' }).click();
+
+    let posts = 0;
+    await page.route('**/api/classes/*/pricing', route => {
+      if (route.request().method() === 'POST') { posts++; return route.abort(); }
+      return route.continue();
+    });
+
+    await page.locator('input[type="date"]').first().fill('3000-01-01');
+    await page.getByRole('button', { name: '添加' }).click();
+
+    await expect(page.getByText('日期无效，须在 1900-01-01 ~ 2999-12-31 之间').first()).toBeVisible();
+    expect(posts).toBe(0);
+  });
 });
 
 test.describe('定价历史列', () => {
@@ -139,7 +188,11 @@ test.describe('排课历史', () => {
     await openHistory(page);
     const row = page.getByRole('row').filter({ hasText: toDateString(getCurrentMonday()) });
 
-    await expect(row.getByRole('cell').nth(1)).toHaveText(/^周[一二三四五六日]$/);
+    // 这一行钉的是本周一，所以唯一正确的值就是「周一」。原来写成
+    // /^周[一二三四五六日]$/ 的话七个值都算对——而 weekdayOf 的全部内容就是
+    // 那个 (getDay() + 6) % 7（WEEKDAYS 从周一起算，getDay() 从周日起算），
+    // 去掉它每一行都会错一天，正则照样放行。
+    await expect(row.getByRole('cell').nth(1)).toHaveText('周一');
     await expect(row.getByRole('cell').nth(2)).toHaveText('09:00-10:30');
     await expect(row.getByRole('cell').nth(3)).toHaveText('1.5h');
     await expect(row.getByRole('cell').nth(4)).toHaveText('E2E教室');
@@ -155,27 +208,35 @@ test.describe('排课历史', () => {
   });
 
   // 年份段不会在第 4 位后自动跳段，直接键入整个日期时多出的数字继续落在年份里。
-  // 没有 max 约束时年份能涨到 5 位以上，「2026」就变成了「20261」。
-  test('年份段多打一位也不会产生位数不对的年份', async ({ authenticatedPage: page }) => {
+  // 没有 max 约束时年份能涨到 5 位以上，「2026」就变成了「20261」；加上 max 之后
+  // 改为把年份段整个左移，「2026」再打一位得到的是「0261」。
+  //
+  // click() 落在哪个段取决于横坐标，填好的日期框点中心往往落在月/日段；
+  // 数字进了月/日段，「年份是 4 位」就成了一句永远成立的空话。所以先把光标
+  // 明确移到最左边的年份段，再用「年份滑到了 1900 之前」来证明数字确实落在了年份上。
+  test('年份段多打一位只会把年份左移，不会产生位数不对的年份', async ({ authenticatedPage: page }) => {
     await openHistory(page);
-    for (const input of [page.locator('input[type="date"]').first(), page.locator('input[type="date"]').nth(1)]) {
-      await input.click();
-      await page.keyboard.type('20261');
-      expect(await input.inputValue()).toMatch(/^\d{4}-\d{2}-\d{2}$/);
-    }
+    const start = page.locator('input[type="date"]').first();
+    await start.press('ArrowLeft');
+    await start.press('ArrowLeft');
+    await page.keyboard.type('20261');
+
+    expect(await start.inputValue()).toMatch(/^[01]\d{3}-\d{2}-\d{2}$/);
+    await expect(page.getByText(/日期无效/)).toBeVisible();
   });
 
   // 兜底：HTML 规范允许 4 位以上的年份，别的浏览器仍可能给出这种值。
-  // 筛选是按字符串比大小的，位数一多比较结果就没有意义，整张表会被静默筛空。
-  test('日期值位数异常时该端视为不设限，而不是把表筛空', async ({ authenticatedPage: page }) => {
+  // 筛选是按字符串比大小的，位数一多比较结果就没有意义；当成「该方向不设限」
+  // 的话，输入框里还显示着 20261-08-26，下面的「共 N 节」却静默涨成了该班全部历史。
+  test('日期值位数异常时给出理由，而不是静默改变统计口径', async ({ authenticatedPage: page }) => {
     await openHistory(page);
     await page.locator('input[type="date"]').first().evaluate((el: HTMLInputElement) => {
       Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(el, '20261-08-26');
       el.dispatchEvent(new Event('input', { bubbles: true }));
     });
 
-    await expect(page.getByText('该时段无排课')).toHaveCount(0);
-    await expect(page.getByRole('cell', { name: '2026-05-13' })).toBeVisible();
+    await expect(page.getByText(/日期无效/)).toBeVisible();
+    await expect(page.getByText(/共 \d+ 节/)).toHaveCount(0);
   });
 });
 
@@ -271,6 +332,20 @@ test.describe('排课历史日期边界', () => {
 test.describe('排课历史降级', () => {
   test.use({ baseURL: 'http://127.0.0.1:5174' });
 
+  test('排课请求失败显示错误而非空历史，重试后恢复', async ({ authenticatedPage: page }) => {
+    await page.route('**/api/schedules?**', route =>
+      route.fulfill({ status: 503, json: { error: '排课历史暂不可用' } }));
+    await page.goto('/classes');
+    await page.getByText('E2E数学班', { exact: true }).click();
+    await page.getByRole('button', { name: '排课历史' }).click();
+    await expect(page.getByRole('alert')).toContainText('排课历史暂不可用');
+    await expect(page.getByText('该时段无排课')).toHaveCount(0);
+    await page.unroute('**/api/schedules?**');
+    await page.getByRole('button', { name: '重试', exact: true }).click();
+    await expect(page.getByRole('table')).toBeVisible();
+    await expect(page.getByRole('alert')).toHaveCount(0);
+  });
+
   test('学期接口失败时排课仍正常显示', async ({ authenticatedPage: page }) => {
     // 修复前：getSemesters 失败会让 Promise.all 整体 reject，已到手的排课
     // 被丢弃，表格显示「该时段无排课」
@@ -284,5 +359,49 @@ test.describe('排课历史降级', () => {
     // 排课照常展示：学期不可用时默认范围为全部排课
     await expect(page.getByRole('cell', { name: '2026-05-13' })).toBeVisible();
     await expect(page.getByText('该时段无排课')).toHaveCount(0);
+  });
+});
+
+test.describe('被拦下的操作要说明原因', () => {
+  test.use({ baseURL: 'http://127.0.0.1:5174' });
+
+  // 线上课不该拿去问高德：短路分支直接清空经纬度并说一声。
+  // 这条提示此前没有用例，而它也是「不发请求」的唯一可观察证据。
+  test('线上课直接清空经纬度，不请求上游', async ({ authenticatedPage: page }) => {
+    await page.route('**/api/geocode/status', route =>
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ available: true }) }));
+    let upstreamCalls = 0;
+    await page.route('**/api/geocode?**', async route => { upstreamCalls++; await route.abort(); });
+
+    await page.goto('/classes');
+    await page.getByRole('button', { name: '新建班级' }).click();
+    const btn = page.getByRole('button', { name: '获取经纬度' });
+    const input = page.locator('div.flex.gap-2').filter({ has: btn }).locator('input');
+
+    await input.fill('线上');
+    await btn.click();
+    await expect(page.getByText('线上课程无需经纬度，已清空').first()).toBeVisible();
+    expect(upstreamCalls).toBe(0);
+  });
+
+  test('默认地点只打空格时「获取经纬度」保持禁用', async ({ authenticatedPage: page }) => {
+    // 没配 AMAP_KEY 时这个按钮压根不渲染，先把 status 打开
+    await page.route('**/api/geocode/status', route =>
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ available: true }) }));
+    await page.goto('/classes');
+    await page.getByRole('button', { name: '新建班级' }).click();
+
+    const btn = page.getByRole('button', { name: '获取经纬度' });
+    await expect(btn).toBeVisible();
+    // label 没挂 htmlFor，用按钮所在的那一行反查输入框
+    const input = page.locator('div.flex.gap-2').filter({ has: btn }).locator('input');
+
+    await expect(btn).toBeDisabled();
+    // 修复前：置灰条件读的是未 trim 的原值，一个空格就把按钮点亮，
+    // 而 handler trim 完为空直接 return——点下去毫无反应，也没人说为什么。
+    await input.fill('   ');
+    await expect(btn).toBeDisabled();
+    await input.fill('上海市徐汇区');
+    await expect(btn).toBeEnabled();
   });
 });

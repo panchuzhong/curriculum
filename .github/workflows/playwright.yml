@@ -18,6 +18,10 @@ jobs:
       run: npm ci
     - name: Install Playwright Browsers
       run: npx playwright install --with-deps
+    - name: Build production assets
+      run: npm run build
+    - name: Run unit and integration tests
+      run: npm test
     - name: Run Playwright tests
       env:
         JWT_SECRET: test-jwt-secret-for-ci-only-not-a-real-secret

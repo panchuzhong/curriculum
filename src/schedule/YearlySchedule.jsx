@@ -2,19 +2,22 @@ import { useState, useEffect, useLayoutEffect, useRef, useContext, useCallback, 
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { api } from '../api';
 import { getCategoryColor, DarkContext } from '../utils/colors';
-import { toHoursAbs, todayStr, getMonday, intParam } from '../utils/date';
+import { toHoursAbs, todayStr, getMonday, intParam, getYearRange, YEAR_MIN, YEAR_MAX } from '../utils/date';
 import { setViewDate } from '../utils/viewDate';
 import { useSimpleSwipe } from '../hooks/useSimpleSwipe';
-import { useToast } from '../components/ToastProvider';
+import useBoundWarning from '../hooks/useBoundWarning';
 import BatchScheduleDialog from './BatchScheduleDialog';
 import ExportDialog from './ExportDialog';
 import useScheduleExport from './useScheduleExport';
 import { shortcutBlocked } from '../utils/keys';
 
 const COLLAPSE_THRESHOLD_MOBILE = 4;
-const COLLAPSE_THRESHOLD_DESKTOP = 9;
+export const COLLAPSE_THRESHOLD_DESKTOP = 9;
 
-function getCategory(cls) {
+// 下面四个函数和 server/services/image-gen-yearly.js 里的同名函数必须完全一致，
+// 由 data-consistency 测试钉着：网页上的年度格子和导出的年度 PNG 不能
+// 对同一年给出不同的分类、分组或颜色。导出是为了给测试比对，别在别处引用。
+export function getCategory(cls) {
   if (!cls) return '未知';
   const s = cls.subject || '未知';
   const g = cls.grade || '';
@@ -25,12 +28,12 @@ function getCategory(cls) {
   return prefix ? `${prefix}${s}` : s;
 }
 
-function getGradeLevel(cat) {
+export function getGradeLevel(cat) {
   const match = cat.match(/^(初中竞赛|高中竞赛|初中|高中|大学)/);
   return match ? match[1] : '其他';
 }
 
-function groupByGrade(entries) {
+export function groupByGrade(entries) {
   const grouped = {};
   entries.forEach(([cat, h]) => {
     const level = getGradeLevel(cat);
@@ -46,20 +49,23 @@ function groupByGrade(entries) {
     .sort((a, b) => b[1] - a[1]);
 }
 
-const FALLBACK_COLOR = 'hsl(0, 0%, 50%)';
+export const FALLBACK_COLOR = 'hsl(0, 0%, 50%)';
 
-function resolveColor(label, dominantCategory, dark) {
+export function resolveColor(label, dominantCategory, dark) {
   return getCategoryColor(label, dark) || getCategoryColor(dominantCategory, dark) || FALLBACK_COLOR;
 }
 
 export default function YearlySchedule() {
   const navigate = useNavigate();
-  const toast = useToast();
+  // 按钮会变灰，但方向键和滑动走的是同一个 changeYear，得自己说一声。
+  const warnAtBound = useBoundWarning();
   const dark = useContext(DarkContext);
   const [searchParams, setSearchParams] = useSearchParams();
-  const [year, setYear] = useState(() => intParam(searchParams.get('year'), new Date().getFullYear(), { min: 1000, max: 9999 }));
+  const [year, setYear] = useState(() => intParam(searchParams.get('year'), new Date().getFullYear(), { min: YEAR_MIN, max: YEAR_MAX }));
   const [schedules, setSchedules] = useState([]);
   const [classes, setClasses] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
   const [animKey, setAnimKey] = useState(0);
   const animDir = useRef(1);
   const containerRef = useRef(null);
@@ -73,13 +79,32 @@ export default function YearlySchedule() {
   // previous year's fetch must not overwrite the newly displayed year
   const fetchGenRef = useRef(0);
 
-  useEffect(() => {
-    let cancelled = false;
+  const reload = useCallback(() => {
     const gen = ++fetchGenRef.current;
-    api.getSchedules(`${year}-01-01`, `${year}-12-31`).then(data => { if (!cancelled && gen === fetchGenRef.current) setSchedules(data); }).catch(e => { if (!cancelled) toast(e.message || '加载课表失败'); });
-    api.getClasses().then(data => { if (!cancelled) setClasses(data); }).catch(e => { if (!cancelled) toast(e.message || '加载班级失败'); });
-    return () => { cancelled = true; };
+    // 走 getYearRange：它把年份补到 4 位。就地拼 `${year}-01-01` 的话，年份一旦不是 4 位
+    // 就会发出一个服务端直接 400 的区间。今天 year 被 intParam 和翻页守卫夹住了，
+    // 但这是靠调用方自觉，而不是这一行自己保证的。
+    const { start, end } = getYearRange(year);
+    setLoading(true);
+    setLoadError('');
+    Promise.all([api.getSchedules(start, end), api.getClasses()])
+      .then(([nextSchedules, nextClasses]) => {
+        if (gen !== fetchGenRef.current) return;
+        setSchedules(nextSchedules);
+        setClasses(nextClasses);
+      })
+      .catch(e => {
+        if (gen === fetchGenRef.current) setLoadError(e.message || '加载课表失败');
+      })
+      .finally(() => {
+        if (gen === fetchGenRef.current) setLoading(false);
+      });
   }, [year]);
+
+  useEffect(() => {
+    reload();
+    return () => { fetchGenRef.current++; };
+  }, [reload]);
 
   useEffect(() => { containerRef.current?.focus(); }, []);
 
@@ -111,7 +136,7 @@ export default function YearlySchedule() {
   }, [year]);
 
   // Sync year to viewDate store for cross-view navigation
-  useEffect(() => {
+  useLayoutEffect(() => {
     setViewDate('year', String(year));
   }, [year]);
 
@@ -171,18 +196,19 @@ export default function YearlySchedule() {
   }).join(' ') : undefined;
 
   function changeYear(delta) {
-    animDir.current = delta;
     const ny = year + delta;
+    // 服务端的 isValidDate 带着同一对上下限，翻出去之后区间查询直接 400。
+    if (ny < YEAR_MIN || ny > YEAR_MAX) {
+      warnAtBound(`已到可用日期范围的${delta < 0 ? '最早' : '最晚'}一年`);
+      return;
+    }
+    animDir.current = delta;
     setViewDate('year', String(ny));
     setSearchParams({ year: String(ny) }, { replace: true });
-    setYear(y => y + delta);
+    // 同 MonthlySchedule：提交刚刚卡过的那个值，而不是再算一次增量。
+    setYear(ny);
     setAnimKey(k => k + 1);
   }
-
-  const reload = useCallback(() => {
-    const gen = ++fetchGenRef.current;
-    api.getSchedules(`${year}-01-01`, `${year}-12-31`).then(data => { if (gen === fetchGenRef.current) setSchedules(data); }).catch(e => toast(e.message || '加载课表失败'));
-  }, [year]);
 
   const navBtn = "px-2 sm:px-4 py-1.5 sm:py-2 text-xs sm:text-base bg-gray-200 dark:bg-gray-700 rounded hover:bg-gray-300 dark:hover:bg-gray-600 active:scale-95 transition-transform select-none";
   const actBtn = "px-2 sm:px-3 py-1.5 sm:py-2 text-white rounded text-xs sm:text-sm select-none active:scale-95 transition-transform";
@@ -192,23 +218,31 @@ export default function YearlySchedule() {
   return (
     <div ref={containerRef} tabIndex={-1} className="outline-none h-full flex flex-col" {...swipe}>
       <div className="flex items-center justify-between mb-2 shrink-0">
-        <button onClick={() => changeYear(-1)} className={navBtn}><span className="sm:hidden">‹</span><span className="hidden sm:inline">上一年</span></button>
+        {/* 越界时 changeYear 直接不走；按钮还亮着的话点下去毫无反应，和卡死了没区别。 */}
+        <button onClick={() => changeYear(-1)} disabled={year <= YEAR_MIN} className={`${navBtn} disabled:opacity-40`}><span className="sm:hidden">‹</span><span className="hidden sm:inline">上一年</span></button>
         <h2 className="text-base sm:text-xl font-medium">{year}年</h2>
         <div className="flex gap-1 sm:gap-2">
           <button onClick={goToThisYear} className={`${navBtn} px-3 sm:px-4`}>今年</button>
-          <button onClick={() => changeYear(1)} className={navBtn}><span className="sm:hidden">›</span><span className="hidden sm:inline">下一年</span></button>
+          <button onClick={() => changeYear(1)} disabled={year >= YEAR_MAX} className={`${navBtn} disabled:opacity-40`}><span className="sm:hidden">›</span><span className="hidden sm:inline">下一年</span></button>
           <div className="flex gap-1 ml-1 sm:ml-2">
             <button onClick={() => setShowBatch(true)} className={actBtn + ' bg-green-600 hover:bg-green-700'}>
               <span className="sm:hidden">批量</span><span className="hidden sm:inline">批量操作</span>
             </button>
-            <button disabled={exportHook.exporting} onClick={() => exportHook.openExport(`${year}-01-01`, `${year}-12-31`)}
+            <button disabled={exportHook.exporting} onClick={() => { const r = getYearRange(year); exportHook.openExport(r.start, r.end); }}
               className={actBtn + ' bg-purple-600 hover:bg-purple-700 disabled:opacity-50'}>
               {exportHook.exporting ? '…' : '导出'}
             </button>
           </div>
         </div>
       </div>
-      <div key={animKey} className={`flex-1 min-h-0 flex flex-col ${animDir.current > 0 ? 'slide-in-right' : animDir.current < 0 ? 'slide-in-left' : ''}`}>
+      {loading ? (
+        <p role="status" className="py-8 text-center text-gray-500">正在加载课表…</p>
+      ) : loadError ? (
+        <div className="py-8 text-center">
+          <p role="alert" className="mb-3 text-red-500">课表加载失败：{loadError}</p>
+          <button onClick={reload} className={navBtn}>重试</button>
+        </div>
+      ) : <div key={animKey} className={`flex-1 min-h-0 flex flex-col ${animDir.current > 0 ? 'slide-in-right' : animDir.current < 0 ? 'slide-in-left' : ''}`}>
         <div className={`grid grid-cols-2 sm:grid-cols-3 gap-1 sm:gap-2 flex-1 min-h-0 ${mobileRows ? '' : 'grid-rows-4'}`}
           style={mobileRows ? { gridTemplateRows: mobileRows } : undefined}>
           {Array.from({ length: 12 }, (_, m) => {
@@ -320,7 +354,7 @@ export default function YearlySchedule() {
             </div>
           </div>
         )}
-      </div>
+      </div>}
 
       {showBatch && (
         <BatchScheduleDialog

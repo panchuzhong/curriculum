@@ -64,9 +64,12 @@ test.describe('月课表', () => {
   });
 
   test('显示日期网格中的排课', async ({ authenticatedPage: page }) => {
-    await page.goto('/monthly');
-    const items = page.locator('[class*="cursor-pointer"]');
-    await expect(items.first()).toBeVisible();
+    // 原来断言的是 [class*="cursor-pointer"] 可见——每个日期格子都带这个类
+    // （无条件渲染），排课块本身反而没有。把整段排课渲染删掉，用例照样绿。
+    // 种子数据里有一节固定在 2026-05-13 的课，所以直接去那个月看班名。
+    await page.goto('/monthly?year=2026&month=4');
+    await expect(page.getByRole('heading', { name: '2026年5月' })).toBeVisible();
+    await expect(page.locator('main').getByText('E2E数学班').first()).toBeVisible();
   });
 
   test('切换月份', async ({ authenticatedPage: page }) => {
@@ -98,6 +101,37 @@ test.describe('月课表', () => {
 test.describe('年课表', () => {
   test.use({ baseURL: 'http://127.0.0.1:5174' });
 
+  test('切换年份加载失败时不显示上一年的统计，重试后恢复', async ({ authenticatedPage: page }) => {
+    await page.goto('/yearly?year=2026');
+    await expect(page.getByText('2026 年度统计')).toBeVisible();
+    let release!: () => void;
+    const held = new Promise<void>(resolve => { release = resolve; });
+    await page.route('**/api/schedules?**', async route => {
+      if (new URL(route.request().url()).searchParams.get('start') !== '2027-01-01') {
+        await route.continue();
+        return;
+      }
+      await held;
+      await route.fulfill({ status: 503, json: { error: '年度课表暂不可用' } });
+    });
+    await page.getByRole('button', { name: '下一年' }).click();
+    try {
+      await expect(page.getByRole('status')).toHaveText('正在加载课表…');
+      await expect(page.getByText(/年度统计/)).toHaveCount(0);
+      release();
+      await expect(page.getByRole('alert')).toContainText('年度课表暂不可用');
+      await expect(page.getByText(/年度统计/)).toHaveCount(0);
+      await page.unroute('**/api/schedules?**');
+      await page.getByRole('button', { name: '重试', exact: true }).click();
+      await expect(page.getByRole('alert')).toHaveCount(0);
+      await expect(page.getByText('1月', { exact: true })).toBeVisible();
+      await page.getByRole('button', { name: '上一年' }).click();
+      await expect(page.getByText('2026 年度统计')).toBeVisible();
+    } finally {
+      release();
+    }
+  });
+
   test('显示年度标题和导航', async ({ authenticatedPage: page }) => {
     await page.goto('/yearly');
     await expect(page.getByRole('heading', { name: thisYearName })).toBeVisible();
@@ -110,7 +144,10 @@ test.describe('年课表', () => {
     await page.goto('/yearly');
     await expect(page.getByRole('heading', { name: thisYearName })).toBeVisible();
     const main = page.locator('main');
-    await expect(main.getByText('3月')).toBeVisible();
+    // 用例名说的是 12 个卡片，原来只看了 3 月和 9 月两个——少渲染其余十个也照样绿。
+    for (let m = 1; m <= 12; m++) {
+      await expect(main.getByText(`${m}月`, { exact: true }).first()).toBeVisible();
+    }
     await expect(main.getByText('9月')).toBeVisible();
   });
 
@@ -120,8 +157,23 @@ test.describe('年课表', () => {
   });
 
   test('显示学科分类统计', async ({ authenticatedPage: page }) => {
+    // 这一条原本和上面「显示年度统计汇总」逐字相同，两条都只断言标题。
+    // 第一次修的时候用了 main.getByText('数学').first()，那仍然拦不住：
+    // 月份卡片里的小标签（高中数学 16.5h 这种）在 DOM 里排在年度统计之前，
+    // .first() 命中的永远是月卡片，把整块分类明细删掉照样绿（实测 main 里
+    // 含「数学」的节点有 6 个）。所以要把范围收进年度统计那一块再断言。
     await page.goto('/yearly?year=2026');
-    await expect(page.getByText('2026 年度统计')).toBeVisible();
+    const heading = page.getByText('2026 年度统计');
+    await expect(heading).toBeVisible();
+
+    const summary = heading.locator('xpath=../..');
+    const rows = summary.locator('> div.space-y-0\\.5 > div');
+    await expect(rows.first()).toBeVisible();
+
+    // 分类明细里必须真的列出学科分类和它的课时
+    const mathRow = rows.filter({ hasText: '高中数学' });
+    await expect(mathRow).toHaveCount(1);
+    await expect(mathRow).toContainText(/[\d.]+h/);
   });
 
   test('切换年份', async ({ authenticatedPage: page }) => {
@@ -148,14 +200,23 @@ test.describe('月/年课表交互', () => {
   });
 
   test('年视图年度统计显示实际数字', async ({ authenticatedPage: page }) => {
+    const teacherId = ensureTestUser();
+    const db = new Database(E2E_DB_PATH, { readonly: true });
+    let totals;
+    try {
+      totals = db.prepare(`SELECT COUNT(*) AS count, COUNT(DISTINCT s.date) AS days,
+        SUM(ABS(s.duration_billing)) / 60.0 AS hours
+        FROM schedules s JOIN classes c ON c.id = s.class_id
+        WHERE c.teacher_id = ? AND c.deleted = 0 AND s.date BETWEEN ? AND ?`)
+        .get(teacherId, `${thisYear}-01-01`, `${thisYear}-12-31`) as { count: number; days: number; hours: number };
+    } finally {
+      db.close();
+    }
+    expect(totals.count).toBeGreaterThan(0);
     await page.goto('/yearly');
-    // 年度统计行：{hours}h · {days}天 · {count}次；种子数据至少 5 节
-    // （数学班 3 + 英语班 2），其余用例可能追加更多，只验证下界
+    // 与当前测试库逐项比对，不能依赖其他测试先追加排课来凑够 5 节。
     const summary = page.getByText(/h · \d+天 · \d+次/);
-    await expect(summary).toBeVisible();
-    const text = await summary.textContent();
-    const count = Number(text?.match(/(\d+)次/)?.[1]);
-    expect(count).toBeGreaterThanOrEqual(5);
+    await expect(summary).toHaveText(`${totals.hours.toFixed(1)}h · ${totals.days}天 · ${totals.count}次`);
   });
 });
 
@@ -243,5 +304,61 @@ test.describe('导出对话框', () => {
     // 请求挂起期间对话框保持打开：修复后按钮禁用；修复前可重复点击
     await expect(csvBtn).toBeDisabled();
     for (const r of held) await r.continue();
+  });
+
+  // 月/年视图的区间来自两组下拉框，没有任何约束阻止「结束早于开始」：
+  // 修复前对话框会显示「共 -8 个月」，按钮照样可点，请求发出去只是被服务端 400 掉。
+  test('月度导出区间倒挂时给出理由并禁用导出', async ({ authenticatedPage: page }) => {
+    await page.goto('/monthly');
+    await page.getByRole('button', { name: '导出', exact: true }).click();
+    const dialog = page.getByRole('dialog', { name: '导出课表' });
+    await expect(dialog).toBeVisible();
+    // 开始年份取选项里最大的、结束年份取最小的：不管对话框开在哪一年，
+    // 这两个选择都一定构成倒挂（写死「开始年 - 1」的话，开始年恰好是最小选项时就失效了）
+    const selects = dialog.getByRole('combobox');
+    const years = await selects.nth(0).locator('option').evaluateAll(
+      (opts) => opts.map(o => (o as HTMLOptionElement).value));
+    await selects.nth(0).selectOption(years[years.length - 1]);
+    await selects.nth(2).selectOption(years[0]);
+
+    await expect(dialog.getByText('开始日期晚于结束日期')).toBeVisible();
+    await expect(dialog.getByRole('button', { name: '导出 PNG' })).toBeDisabled();
+    await expect(dialog.getByRole('button', { name: '导出 CSV' })).toBeDisabled();
+  });
+
+  // 图片导出服务端卡 24 个月，而年份下拉框能选出五年的跨度；
+  // CSV 没有这个限制，所以只能禁 PNG，不能两个一起禁。
+  test('月度导出跨度超过图片上限时只禁 PNG', async ({ authenticatedPage: page }) => {
+    await page.goto('/monthly');
+    await page.getByRole('button', { name: '导出', exact: true }).click();
+    const dialog = page.getByRole('dialog', { name: '导出课表' });
+    const selects = dialog.getByRole('combobox');
+    const years = await selects.nth(0).locator('option').evaluateAll(
+      (opts) => opts.map(o => (o as HTMLOptionElement).value));
+    await selects.nth(0).selectOption(years[0]);
+    await selects.nth(1).selectOption('0');
+    await selects.nth(2).selectOption(years[years.length - 1]);
+    await selects.nth(3).selectOption('11');
+
+    await expect(dialog.getByText('图片导出最多 24 个月')).toBeVisible();
+    await expect(dialog.getByRole('button', { name: '导出 PNG' })).toBeDisabled();
+    await expect(dialog.getByRole('button', { name: '导出 CSV' })).toBeEnabled();
+  });
+
+  // 年份下拉框总会带上当前所在的年份，所以翻到远处之后能选出超过
+  // 服务端 12 个年份上限的跨度（schedule-image.js 的 endYear - year > 11）。
+  test('年度导出跨度超过图片上限时只禁 PNG', async ({ authenticatedPage: page }) => {
+    await page.goto('/yearly?year=2040');
+    await page.getByRole('button', { name: '导出', exact: true }).click();
+    const dialog = page.getByRole('dialog', { name: '导出课表' });
+    const selects = dialog.getByRole('combobox');
+    const years = await selects.nth(0).locator('option').evaluateAll(
+      (opts) => opts.map(o => (o as HTMLOptionElement).value));
+    await selects.nth(0).selectOption(years[0]);
+    await selects.nth(1).selectOption(years[years.length - 1]);
+
+    await expect(dialog.getByText('图片导出最多 12 个年份')).toBeVisible();
+    await expect(dialog.getByRole('button', { name: '导出 PNG' })).toBeDisabled();
+    await expect(dialog.getByRole('button', { name: '导出 CSV' })).toBeEnabled();
   });
 });

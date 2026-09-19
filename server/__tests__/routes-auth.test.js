@@ -61,6 +61,28 @@ describe('POST /api/auth/register', () => {
     expect(res.status).toBe(400);
   });
 
+  // 用户名只认字母数字。少了 isAlphanumeric 这一段，带空格、符号或同形字的用户名
+  // 就能注册（'admin '、'аdmin' 这类），而报错本身还写着「3-20位字母数字」。
+  // 长度那条用例拦不住它：'ab' 是长度不够被拒的，跟这一段无关。
+  it.each([
+    ['带空格', 'admin user'],
+    ['带符号', 'admin!'],
+    ['带下划线', 'admin_user'],
+    ['非 ASCII', '管理员账号'],
+  ])('拒绝%s的用户名，并说清规则', async (_label, username) => {
+    const res = await request(app).post('/api/auth/register')
+      .send({ username, password: 'test1234', name: 'Test' });
+
+    expect(res.status).toBe(400);
+    expect(res.body.error).toBe('用户名须为3-20位字母数字');
+  });
+
+  it('纯字母数字的用户名正常注册', async () => {
+    const res = await request(app).post('/api/auth/register')
+      .send({ username: `ok${Date.now() % 100000}`, password: 'test1234', name: 'Test' });
+    expect(res.status).toBe(200);
+  });
+
   it('rejects short password (<8 chars)', async () => {
     const res = await request(app).post('/api/auth/register')
       .send({ username: 'testuser', password: '12345', name: 'Test' });
@@ -321,5 +343,49 @@ describe('PUT /api/auth/password with a wrong current password', () => {
       .send({ oldPassword: 'nope1234', newPassword: 'newpass123' });
     expect(res.status).toBe(400);
     expect(res.body.error).toBe('当前密码错误');
+  });
+});
+
+// GET /profile 里的 apiKey 必须是掩码。agent-help 明说「apiKey 为脱敏掩码（前4...后4），
+// 完整 key 仅在 register 或 PUT /api/auth/api-key 时返回」，Settings 页也写着
+// 「API Key 已隐藏」、复制按钮在拿到完整 key 之前是禁用的。真把完整 key 发出来的话，
+// 页面会在一句"已隐藏"底下把它原样印出来，而没有任何测试会红。
+describe('GET /api/auth/profile 的 apiKey 是掩码', () => {
+  // 这个套件的 beforeEach 不建用户（注册用例要空库），所以这里自己建一个。
+  let token, teacherId;
+  beforeEach(async () => {
+    ({ token, id: teacherId } = await makeUser(drizzleDb));
+  });
+
+  it('只露前 4 后 4，中间是省略号', async () => {
+    const { teachers } = await import('../db/schema.js');
+    const { eq } = await import('drizzle-orm');
+    const full = 'abcd1234567890wxyz';
+    drizzleDb.update(teachers).set({ apiKey: full }).where(eq(teachers.id, teacherId)).run();
+
+    const res = await request(app).get('/api/auth/profile').set(auth(token));
+    expect(res.status).toBe(200);
+    expect(res.body.apiKey).toBe('abcd...wxyz');
+    expect(res.body.apiKey, '完整 API Key 出现在了 profile 响应里').not.toBe(full);
+    expect(JSON.stringify(res.body)).not.toContain('1234567890');
+  });
+
+  it('没有 apiKey 时返回 null，而不是掩码字符串', async () => {
+    const { teachers } = await import('../db/schema.js');
+    const { eq } = await import('drizzle-orm');
+    drizzleDb.update(teachers).set({ apiKey: null }).where(eq(teachers.id, teacherId)).run();
+
+    const res = await request(app).get('/api/auth/profile').set(auth(token));
+    expect(res.status).toBe(200);
+    expect(res.body.apiKey).toBeNull();
+  });
+
+  // 对照：重新生成时才给完整 key。
+  it('PUT /api/auth/api-key 返回的是完整 key', async () => {
+    const res = await request(app).put('/api/auth/api-key').set(auth(token));
+    expect(res.status).toBe(200);
+    expect(res.body.apiKey).toBeTruthy();
+    expect(res.body.apiKey).not.toContain('...');
+    expect(res.body.apiKey.length).toBeGreaterThan(11);
   });
 });

@@ -1,4 +1,6 @@
-const SUBJECT_HUES = {
+// 导出给 data-consistency：这两张表在客户端 src/utils/constants.js 里还有一份。
+// 不导出的话那条「常量一致」的用例只能拿前端的表跟自己比，等于没比。
+export const SUBJECT_HUES = {
   '数学': { h: 210, s: 79 },
   '物理': { h: 122, s: 50 },
   '英语': { h: 45, s: 93 },
@@ -18,7 +20,7 @@ function subjectHue(name) {
   return { h: ((hash & 0x7fffffff) % 360), s: 55 + (hash % 30) };
 }
 
-const GRADE_LIGHTNESS = {
+export const GRADE_LIGHTNESS = {
   '初一': 70, '初二': 64, '初三': 58,
   '高一': 52, '高二': 46, '高三': 42, '大学': 38,
 };

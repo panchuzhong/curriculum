@@ -1,6 +1,8 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
 
 const MAX_TOASTS = 5;
+// 导出给 useBoundWarning：它的限流窗口比这个短的话，第二条会在第一条还没消失时就堆上去。
+export const TOAST_DURATION_MS = 3000;
 const ToastContext = createContext(() => {});
 let toastId = 0;
 
@@ -23,7 +25,7 @@ export default function ToastProvider({ children }) {
     const timer = setTimeout(() => {
       timers.current.delete(timer);
       setToasts(prev => prev.filter(t => t.id !== id));
-    }, 3000);
+    }, TOAST_DURATION_MS);
     timers.current.add(timer);
   }, []);
 

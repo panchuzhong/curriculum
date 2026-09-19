@@ -56,6 +56,22 @@ describe('getDefaultScheduleRange', () => {
       .toEqual({ start: '2026-09-05', end: '2026-12-20' });
   });
 
+  // 倒挂要退回全部排课，但"正好一天"不是倒挂，得留住。学期之间只隔一天时
+  // （上一个 07-05 结束、下一个 07-07 开始），窗口算出来 start === end === 07-06。
+  // 把 start > end 写成 >= 的话这一天会被当成倒挂丢掉，排课历史默认范围
+  // 悄悄放宽成该班全部排课——看着有数据，其实不是用户要的那一段。
+  it('学期之间只隔一天时，那一天的窗口要留住', () => {
+    const r = getDefaultScheduleRange(
+      [
+        { type: 'spring', startDate: '2026-03-01', endDate: '2026-07-05' },
+        { type: 'summer', startDate: '2026-07-07', endDate: '2026-08-31' },
+      ],
+      '2026-07-06',
+      { first: '2024-01-01', last: '2027-12-31' },
+    );
+    expect(r).toEqual({ start: '2026-07-06', end: '2026-07-06' });
+  });
+
   it('暑假里打开一个春季就结课的班级：不返回倒挂的空窗口', () => {
     // 只建了春季学期，该班最后一节课在春季学期之内
     expect(getDefaultScheduleRange([SPRING], '2026-08-01', { first: '2026-03-10', last: '2026-06-20' }))
@@ -69,5 +85,50 @@ describe('getDefaultScheduleRange', () => {
     ];
     expect(getDefaultScheduleRange(contiguous, '2027-01-15', EXTENT))
       .toEqual({ start: '2026-09-01', end: '2027-01-15' });
+  });
+});
+
+// 还原时故意不校验 semesters，所以库里可能存着 endDate:'2026' 这种行。
+// addDays 走的是 new Date('2026' + 'T00:00:00')，V8 宽松解成 2026-01-01，再加一天
+// 就是一个完全合法的 '2026-01-02'——调用方再怎么校验结果也看不出问题，
+// 页面就默默只列这一年的课，更早的一节不剩。坏行必须在推算前就筛掉。
+describe('用不了的学期行不参与推算', () => {
+  const EXTENT2 = { first: '2024-03-01', last: '2026-08-30' };
+
+  // V8 宽松解析不只 '2026' 一种：'2026-05' 解成 2026-05-01，'2026-02-31' 直接
+  // 滑到 2026-03-03。三种都能算出一个完全合法的日期，所以三种都得被筛掉。
+  it.each([
+    ['只有年份', '2026'],
+    ['只到月', '2026-05'],
+    ['日历上不存在', '2026-02-31'],
+  ])('endDate %s 时不拿它算区间，而不是算出一个看着正常的日期', (_label, endDate) => {
+    const r = getDefaultScheduleRange(
+      [{ type: 'fall', startDate: '2025-09-01', endDate }],
+      '2026-09-18', EXTENT2,
+    );
+    expect(r).toEqual({ start: '2024-03-01', end: '2026-08-30' });
+  });
+
+  // startDate 那一半同样要筛，而且错得更难看出来：坏行会被选成「下一个学期」，
+  // end 取 addDays(startDate, -1)，'2027' 算出 '2026-12-31'、'2027-02-31' 算出 '2027-03-02'——
+  // 都是完全正常的日期，页面照着它少列或多列几个月的课，没有任何提示。
+  it.each([
+    ['只有年份', '2027'],
+    ['只到月', '2027-01'],
+    ['日历上不存在', '2027-02-31'],
+  ])('startDate %s 时不拿它算区间，而不是算出一个看着正常的日期', (_label, startDate) => {
+    const r = getDefaultScheduleRange(
+      [{ type: 'spring', startDate, endDate: '2027-07-15' }],
+      '2026-09-18', EXTENT2,
+    );
+    expect(r).toEqual({ start: '2024-03-01', end: '2026-08-30' });
+  });
+
+  it('坏行不能把好行挤掉', () => {
+    const r = getDefaultScheduleRange(
+      [{ startDate: '2026-03-01', endDate: '2026-07-15' }, { startDate: 'x', endDate: 'x' }],
+      '2026-05-01', EXTENT2,
+    );
+    expect(r).toEqual({ start: '2026-03-01', end: '2026-07-15' });
   });
 });

@@ -1,11 +1,17 @@
-import { addDays } from './date';
+import { addDays, isUsableDate } from './date';
 
 // 班级排课历史打开时的默认日期范围。
 // 教师只建春季/秋季两类学期，学期之间的空档就是寒暑假，所以：今天在学期内看整个学期，
 // 今天在空档里看整个寒暑假。范围的某一端没有学期兜底时，退到该班第一节/最后一节课。
 // extent 为该班全部排课的起止日期（无排课时为 null）。
 export function getDefaultScheduleRange(semesters, today, { first, last }) {
-  const sorted = [...semesters].sort((a, b) => a.startDate.localeCompare(b.startDate));
+  // 用不了的学期行先筛掉，再推算。还原故意不校验 semesters，库里可能存着
+  // endDate:'2026' 这种行；addDays 走 new Date('2026' + 'T00:00:00')，V8 宽松解成
+  // 2026-01-01，加一天就是一个完全合法的 '2026-01-02'。只校验返回值的调用方
+  // （ScheduleHistory）根本看不出问题，页面就默默只列这一年的课、更早的一节不剩，
+  // 连一句提示都没有——正是这整套改动要消灭的那种静默算错。
+  const usable = (semesters || []).filter(s => isUsableDate(s.startDate) && isUsableDate(s.endDate));
+  const sorted = [...usable].sort((a, b) => a.startDate.localeCompare(b.startDate));
 
   // 含起止日。相邻学期共用边界日时（如秋季 ~01-15 接寒假 01-15~），边界日归先开始的那个。
   const current = sorted.find(s => today >= s.startDate && today <= s.endDate);

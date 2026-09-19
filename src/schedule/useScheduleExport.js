@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { api } from '../api';
-import { addDays } from '../utils/date';
+import { addDays, clampDate } from '../utils/date';
 import { useToast } from '../components/ToastProvider';
 import { downloadBlob } from '../utils/download';
 
@@ -17,9 +17,11 @@ export default function useScheduleExport({ weekStart, visibleDays, view } = {})
       setExportStart(start);
       setExportEnd(end);
     } else {
-      // Week mode: compute from weekStart and visibleDays
+      // Week mode: compute from weekStart and visibleDays.
+      // 周视图的首列可以停在 DATE_MAX 上，那么算出来的末尾就越界了；不夹的话
+      // 导出对话框会判定区间无效，两个导出按钮一打开就是置灰的。
       setExportStart(weekStart);
-      setExportEnd(addDays(weekStart, visibleDays - 1));
+      setExportEnd(clampDate(addDays(weekStart, visibleDays - 1)));
     }
     setShowExport(true);
   }

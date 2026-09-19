@@ -8,7 +8,7 @@ import { generateScheduleImage } from '../services/image-gen.js';
 import { generateMonthlyImage } from '../services/image-gen-monthly.js';
 import { generateYearlyImage } from '../services/image-gen-yearly.js';
 import { resolveRange } from '../services/schedule-helpers.js';
-import { isValidDate } from '../validations/dates.js';
+import { isValidDate, YEAR_MIN, YEAR_MAX, DATE_RANGE_SUFFIX } from '../validations/dates.js';
 
 const router = Router();
 router.use(authMiddleware);
@@ -24,7 +24,7 @@ function parseExactInt(value, { min, max } = {}) {
 }
 
 function imageRangeError(start, end) {
-  if (!isValidDate(start) || !isValidDate(end)) return 'start/end 须为有效日期';
+  if (!isValidDate(start) || !isValidDate(end)) return `start/end 须为有效日期${DATE_RANGE_SUFFIX}`;
   if (start > end) return 'start 须不晚于 end';
   const days = Math.round((new Date(end + 'T00:00:00') - new Date(start + 'T00:00:00')) / 86400000) + 1;
   if (days > 31) return '周课表图片导出范围不能超过 31 天';
@@ -67,15 +67,17 @@ router.get('/', async (req, res) => {
 // GET /api/schedule-image/monthly?year=2026&month=5&endYear=2026&endMonth=8&theme=auto
 router.get('/monthly', async (req, res) => {
   try {
-    const year = parseExactInt(req.query.year, { min: 1000, max: 9999 });
+    const year = parseExactInt(req.query.year, { min: YEAR_MIN, max: YEAR_MAX });
     const month = parseExactInt(req.query.month, { min: 0, max: 11 });
+    // parseExactInt 把「没传」和「超出上下限」都折成 null，提示语得把两种都说清楚：
+    // 否则 year=1000 拿到的是一句「没传 year」，而它明明传了。
     if (year == null || month == null)
-      return res.status(400).json({ error: 'year and month (0-11) required' });
+      return res.status(400).json({ error: `year 须为 ${YEAR_MIN}-${YEAR_MAX} 的整数，month 须为 0-11` });
 
-    const endYear = req.query.endYear != null ? parseExactInt(req.query.endYear, { min: 1000, max: 9999 }) : null;
+    const endYear = req.query.endYear != null ? parseExactInt(req.query.endYear, { min: YEAR_MIN, max: YEAR_MAX }) : null;
     const endMonth = req.query.endMonth != null ? parseExactInt(req.query.endMonth, { min: 0, max: 11 }) : null;
     if ((req.query.endYear != null && endYear == null) || (req.query.endMonth != null && endMonth == null))
-      return res.status(400).json({ error: 'endYear/endMonth 无效（endMonth 须为 0-11）' });
+      return res.status(400).json({ error: `endYear 须为 ${YEAR_MIN}-${YEAR_MAX} 的整数，endMonth 须为 0-11` });
     const theme = req.query.theme;
 
     const teacherClasses = drizzleDb.select().from(classes)
@@ -115,10 +117,10 @@ router.get('/monthly', async (req, res) => {
 // GET /api/schedule-image/yearly?year=2026&endYear=2027&theme=auto
 router.get('/yearly', async (req, res) => {
   try {
-    const year = parseExactInt(req.query.year, { min: 1000, max: 9999 });
-    if (year == null) return res.status(400).json({ error: 'year required' });
+    const year = parseExactInt(req.query.year, { min: YEAR_MIN, max: YEAR_MAX });
+    if (year == null) return res.status(400).json({ error: `year 须为 ${YEAR_MIN}-${YEAR_MAX} 的整数` });
 
-    const endYear = req.query.endYear != null ? parseExactInt(req.query.endYear, { min: 1000, max: 9999 }) : null;
+    const endYear = req.query.endYear != null ? parseExactInt(req.query.endYear, { min: YEAR_MIN, max: YEAR_MAX }) : null;
     if (req.query.endYear != null && (endYear == null || endYear < year || endYear - year > 11))
       return res.status(400).json({ error: 'endYear 无效（最多导出 12 个年份）' });
     const theme = req.query.theme;

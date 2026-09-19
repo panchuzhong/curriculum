@@ -40,4 +40,17 @@ describe('日期输入框', () => {
     });
     expect(offenders).toEqual([]);
   });
+
+  // min/max 只是把年份段封在 4 位、把越界值标成 :invalid，值照样从 value 传出去。
+  // 真正拦住 0261-09-17（年份被原生控件左移，位数正确、服务端也照收）的是使用处的
+  // 校验。上面那条只盯属性，写完属性却不校验的文件照样能把坏日期发给接口。
+  const VALIDATORS = ['isUsableDate', 'dateRangeError'];
+
+  it('渲染 type="date" 的文件必须自己校验日期值', () => {
+    const offenders = sourceFiles('src').filter(file => {
+      const source = readFileSync(file, 'utf-8');
+      return source.includes('type="date"') && !VALIDATORS.some(v => source.includes(v));
+    });
+    expect(offenders).toEqual([]);
+  });
 });

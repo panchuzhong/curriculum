@@ -49,6 +49,21 @@ describe('pickDefaultSemesterId', () => {
       .toBe(pickDefaultSemesterId([starting, ending], boundary));
   });
 
+  // 上面那条的两个学期 startDate 不同，localeCompare 已经给出全序，
+  // byStartDesc 里的 `|| a.id - b.id` 根本不参与——把它删掉照样绿。要让它起作用，
+  // 两个学期得共享同一个 startDate。这种数据进得来：重叠检查是半开的，
+  // 与别人同日开始的零长度学期不算重叠；还原更是把 semesters 原样写回。
+  it('两个学期开始日相同时，结果与列表顺序无关', () => {
+    const a = { id: 7, name: 'A', startDate: '2026-03-01', endDate: '2026-07-15' };
+    const b = { id: 3, name: 'B', startDate: '2026-03-01', endDate: '2026-08-31' };
+    const d = '2026-05-01';
+
+    // 没有 id 兜底时：V8 的 sort 是稳定的，谁排在数组前面就选谁，两次结果不同。
+    expect(pickDefaultSemesterId([a, b], d)).toBe(pickDefaultSemesterId([b, a], d));
+    // 而且是确定地取 id 小的那个，不是"看谁先进数组"
+    expect(pickDefaultSemesterId([a, b], d)).toBe(3);
+  });
+
   it('边界日优先选刚开始的那个学期，而不是当天结束的', () => {
     const ending = { id: 1, name: '春季', startDate: '2026-01-01', endDate: '2026-06-30' };
     const starting = { id: 2, name: '暑期', startDate: '2026-06-30', endDate: '2026-08-31' };

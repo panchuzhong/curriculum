@@ -1,12 +1,12 @@
 import { Router } from 'express';
 import { drizzleDb, db } from '../db/index.js';
 import { schedules, classes, semesters, holidays, classStudents, classPricing } from '../db/schema.js';
-import { eq, and, gte, lte, inArray, sql, ne } from 'drizzle-orm';
+import { eq, and, gte, lte, inArray, ne } from 'drizzle-orm';
 import { authMiddleware } from '../middleware/auth.js';
 import { isHoliday, getHolidaysForYear } from '../services/holidays.js';
 import handle from '../validations/handle.js';
 import { validateCreateSchedule, validateBatchCreate, validateBatchUpdate, validateBatchDelete, validateUpdateSchedule } from '../validations/schedules.js';
-import { isValidDate, isValidScheduleEndTime, isValidScheduleSpan, isValidTime, normalizeScheduleEndTime } from '../validations/dates.js';
+import { isValidDate, isValidScheduleEndTime, isValidScheduleSpan, isValidTime, normalizeScheduleEndTime, DATE_RANGE_SUFFIX } from '../validations/dates.js';
 import { logAudit } from '../services/audit.js';
 import { toLocalDateStr, toMin, resolveRange, toCSV, detectDatedConflictGroups, getScheduleWithClass, calcDurationBilling, getTeacherSemesters, buildPricingLookup, scheduleBounds, schedulesOverlap } from '../services/schedule-helpers.js';
 import { clearReportCache, getReportCache, setReportCache } from '../services/report-cache.js';
@@ -52,7 +52,7 @@ function dateSpanDays(start, end) {
 }
 
 function validateRange(start, end, { maxDays } = {}) {
-  if (!isValidDate(start) || !isValidDate(end)) return 'start/end 须为有效的 YYYY-MM-DD';
+  if (!isValidDate(start) || !isValidDate(end)) return `start/end 须为有效的 YYYY-MM-DD${DATE_RANGE_SUFFIX}`;
   if (start > end) return 'start must be <= end';
   if (maxDays != null && dateSpanDays(start, end) > maxDays) return `日期范围不能超过 ${maxDays + 1} 天`;
   return null;
@@ -166,7 +166,7 @@ router.post('/', validateCreateSchedule, handle, (req, res) => {
     }
     throw e;
   }
-  const created = getScheduleWithClass(Number(result.lastInsertRowid), req.teacherId);
+  const created = getScheduleWithClass(drizzleDb, Number(result.lastInsertRowid), req.teacherId);
   clearReportCache(req.teacherId);
   logAudit({ teacherId: req.teacherId, action: 'CREATE', tableName: 'schedules', recordId: created.id, after: created });
   const warnings = getConflictsForSchedule(created.id, req.teacherId);
@@ -209,6 +209,17 @@ router.post('/batch', validateBatchCreate, handle, (req, res) => {
     const semesterStart = today > semester.startDate ? today : semester.startDate;
     const current = new Date(semesterStart + 'T00:00:00');
     const end = new Date(semester.endDate + 'T00:00:00');
+
+    // 排课日期在这一分支是从学期行推算的，dates.* 那套校验管不到。旧服务端
+    // 收下的越界学期在原地升级的库里仍然存在，按它批量排课会写出一批所有
+    // 区间查询都看不到、按范围也删不掉的排课。
+    //
+    // 卡的是循环真正用到的区间（semesterStart 已经取过今天），不是原始的 startDate：
+    // startDate=1899 而 endDate 在未来的学期，从今天起生成的每一天都在范围内，
+    // 没理由逼用户去改一个实际区间完全正常的学期。
+    if (!isValidDate(semesterStart) || !isValidDate(semester.endDate)) {
+      return res.status(400).json({ error: `学期起止日期越界${DATE_RANGE_SUFFIX}，请先修正该学期` });
+    }
 
     // Semester dates carry no span cap, and the walk below is synchronous:
     // a typo'd millennium-long semester would block the event loop for seconds.
@@ -582,7 +593,7 @@ router.put('/:id', validateUpdateSchedule, handle, (req, res) => {
     }
     throw e;
   }
-  const updated = getScheduleWithClass(+id, req.teacherId);
+  const updated = getScheduleWithClass(drizzleDb, +id, req.teacherId);
   clearReportCache(req.teacherId);
   logAudit({ teacherId: req.teacherId, action: 'UPDATE', tableName: 'schedules', recordId: +id, before: existing, after: updated });
   const warnings = getConflictsForSchedule(+id, req.teacherId);
@@ -821,7 +832,7 @@ router.get('/free-slots', (req, res) => {
   const { date, start, end, dayStart, dayEnd, after, before, minDuration } = req.query;
   for (const [key, value] of Object.entries({ date, start, end })) {
     if (value != null && !isValidDate(value)) {
-      return res.status(400).json({ error: `${key} 须为有效的 YYYY-MM-DD` });
+      return res.status(400).json({ error: `${key} 须为有效的 YYYY-MM-DD${DATE_RANGE_SUFFIX}` });
     }
   }
   for (const [key, value] of Object.entries({ dayStart, dayEnd, after, before })) {
@@ -904,7 +915,10 @@ router.get('/conflicts', (req, res) => {
   if (rangeError) return res.status(400).json({ error: rangeError });
   const limit = Math.max(1, Math.min(parseInt(req.query.limit) || 20, 100));
 
-  const teacherClasses = drizzleDb.select({ id: classes.id }).from(classes)
+  // 整行都要：下面 classMap 会把它挂到每条排课的 class 上。只选 id 的话
+  // 返回的是 {id: N} 这样的残件，调用方拿不到班级名——而本接口的唯一用途就是
+  // 把冲突讲清楚，别的排课接口给的都是完整班级对象。
+  const teacherClasses = drizzleDb.select().from(classes)
     .where(and(eq(classes.teacherId, req.teacherId), eq(classes.deleted, false))).all();
   let classIds = teacherClasses.map(c => c.id);
   const { classId } = req.query;
@@ -934,7 +948,7 @@ router.get('/conflicts', (req, res) => {
 });
 
 router.get('/:id', (req, res) => {
-  const s = getScheduleWithClass(+req.params.id, req.teacherId);
+  const s = getScheduleWithClass(drizzleDb, +req.params.id, req.teacherId);
   if (!s) return res.status(404).json({ error: 'Not found' });
   res.json(s);
 });

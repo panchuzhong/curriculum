@@ -1,5 +1,5 @@
 import { useState, useRef } from 'react';
-import { todayStr, getMonday, addDays, parseDateStr } from '../utils/date';
+import { todayStr, getMonday, addDays, parseDateStr, dateRangeError } from '../utils/date';
 import { DATE_MIN, DATE_MAX } from '../utils/constants';
 import { useDialogFocusTrap } from '../hooks/useDialogFocusTrap';
 import { useBackdropClose } from '../hooks/useBackdropClose';
@@ -50,16 +50,18 @@ export default function ExportDialog({ view = 'week', defaultStart, defaultEnd, 
   ])].sort((a, b) => a - b);
 
   // ── Compute date range from month/year selections ──
+  // 年份补齐到 4 位，和 fmt/getMonthRange/getYearRange 一致：位数不对的年份字符串
+  // 排序上会落在上下限之内，下面的 rangeError 就是拿这两个值算的。
+  const yyyy = (y) => String(y).padStart(4, '0');
+
   function monthRangeToDates() {
-    const s = `${startYear}-${String(startMonth + 1).padStart(2, '0')}-01`;
-    const e = `${endYear}-${String(endMonth + 1).padStart(2, '0')}-${String(daysInMonth(endYear, endMonth)).padStart(2, '0')}`;
+    const s = `${yyyy(startYear)}-${String(startMonth + 1).padStart(2, '0')}-01`;
+    const e = `${yyyy(endYear)}-${String(endMonth + 1).padStart(2, '0')}-${String(daysInMonth(endYear, endMonth)).padStart(2, '0')}`;
     return { start: s, end: e };
   }
 
   function yearRangeToDates() {
-    const s = `${yStartYear}-01-01`;
-    const e = `${yEndYear}-12-31`;
-    return { start: s, end: e };
+    return { start: `${yyyy(yStartYear)}-01-01`, end: `${yyyy(yEndYear)}-12-31` };
   }
 
   // ── PNG handler ──
@@ -102,6 +104,14 @@ export default function ExportDialog({ view = 'week', defaultStart, defaultEnd, 
   const sel = 'p-2 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded text-sm';
   const quickBtn = 'px-3 py-1.5 text-sm bg-gray-200 dark:bg-gray-700 rounded-lg hover:bg-gray-300 dark:hover:bg-gray-600';
 
+  // 三个视图的区间都要校验：周视图是日期输入框（min/max 只把越界值标成 :invalid，
+  // value 照样传出去，年份被左移成 0261 时会算出「共 644000 天」），月/年视图是两组
+  // 下拉框（结束早于开始时会算出「共 -8 个月」）。两种都只是把请求发出去被 400 掉。
+  const exportRange = view === 'month' ? monthRangeToDates()
+    : view === 'year' ? yearRangeToDates()
+    : { start, end };
+  const rangeError = dateRangeError(exportRange.start, exportRange.end);
+
   // ── Week view helpers ──
   const startD = parseDateStr(start);
   const endD = parseDateStr(end);
@@ -110,6 +120,14 @@ export default function ExportDialog({ view = 'week', defaultStart, defaultEnd, 
 
   const nMonths = view === 'month' ? monthDiff(startYear, startMonth, endYear, endMonth) : 0;
   const nYears = view === 'year' ? (yEndYear - yStartYear + 1) : 0;
+
+  // 图片导出另有跨度上限（周 31 天、月 24 个月、年 12 个，见 server/routes/schedule-image.js），
+  // CSV 没有。只禁「导出 PNG」，否则本来能导的 CSV 也跟着点不动了。
+  // 年视图的下拉框总会带上当前所在的年份，翻到 2040 后就能选出 2023~2040 这种跨度。
+  const pngSpanError = view === 'week' && days > 31 ? '图片导出最多 31 天'
+    : view === 'month' && nMonths > 24 ? '图片导出最多 24 个月'
+    : view === 'year' && nYears > 12 ? '图片导出最多 12 个年份'
+    : null;
 
   return (
     <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-3"
@@ -173,9 +191,16 @@ export default function ExportDialog({ view = 'week', defaultStart, defaultEnd, 
                   }} className={quickBtn}>1个月</button>
                 </div>
               </div>
-              <p className="text-sm text-gray-500 dark:text-gray-400">
-                共 {days} 天，图片宽度约 {Math.max(800, days * 320)}px
-              </p>
+              {rangeError ? (
+                <p className="text-sm text-red-500">{rangeError}</p>
+              ) : (
+                <>
+                  <p className="text-sm text-gray-500 dark:text-gray-400">
+                    共 {days} 天，图片宽度约 {Math.max(800, days * 320)}px
+                  </p>
+                  {pngSpanError && <p className="text-sm text-red-500">{pngSpanError}</p>}
+                </>
+              )}
             </>
           )}
 
@@ -235,9 +260,16 @@ export default function ExportDialog({ view = 'week', defaultStart, defaultEnd, 
                   }} className={quickBtn}>今年全年</button>
                 </div>
               </div>
-              <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
-                共 {nMonths} 个月
-              </p>
+              {rangeError ? (
+                <p className="text-sm text-red-500 mt-1">{rangeError}</p>
+              ) : (
+                <>
+                  <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
+                    共 {nMonths} 个月
+                  </p>
+                  {pngSpanError && <p className="text-sm text-red-500">{pngSpanError}</p>}
+                </>
+              )}
             </>
           )}
 
@@ -276,18 +308,25 @@ export default function ExportDialog({ view = 'week', defaultStart, defaultEnd, 
                     className={quickBtn}>近5年</button>
                 </div>
               </div>
-              <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
-                共 {nYears} 年
-              </p>
+              {rangeError ? (
+                <p className="text-sm text-red-500 mt-1">{rangeError}</p>
+              ) : (
+                <>
+                  <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
+                    共 {nYears} 年
+                  </p>
+                  {pngSpanError && <p className="text-sm text-red-500">{pngSpanError}</p>}
+                </>
+              )}
             </>
           )}
 
           <div className="flex gap-3 mt-4">
-            <button onClick={handlePNG} disabled={exporting}
+            <button onClick={handlePNG} disabled={exporting || !!rangeError || !!pngSpanError}
               className="flex-1 p-3 bg-purple-600 text-white rounded-lg hover:bg-purple-700 disabled:opacity-50 font-medium">
               {exporting ? '生成中...' : '导出 PNG'}
             </button>
-            <button onClick={handleCSV} disabled={exporting}
+            <button onClick={handleCSV} disabled={exporting || !!rangeError}
               className="flex-1 p-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 font-medium">
               导出 CSV
             </button>

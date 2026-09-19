@@ -1,4 +1,5 @@
 import { body } from 'express-validator';
+import { isFiniteNumber } from './numbers.js';
 
 export const validateCreateTier = [
   body('minStudents').isInt({ min: 1 }).toInt().withMessage('最小人数须为正整数'),
@@ -9,7 +10,7 @@ export const validateCreateTier = [
       }
       return true;
     }),
-  body('pricePerStudentPerHour').isFloat({ gt: 0 }).withMessage('单价须大于0'),
+  body('pricePerStudentPerHour').isFloat({ gt: 0 }).withMessage('单价须大于0').bail().custom(isFiniteNumber).withMessage('单价须为有限数字'),
 ];
 
 export const validateUpdateTier = [
@@ -21,5 +22,5 @@ export const validateUpdateTier = [
       }
       return true;
     }),
-  body('pricePerStudentPerHour').optional().isFloat({ gt: 0 }).withMessage('单价须大于0'),
+  body('pricePerStudentPerHour').optional().isFloat({ gt: 0 }).withMessage('单价须大于0').bail().custom(isFiniteNumber).withMessage('单价须为有限数字'),
 ];

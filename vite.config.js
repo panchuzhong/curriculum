@@ -1,9 +1,9 @@
-import { defineConfig } from 'vite'
+import { defineConfig, loadEnv } from 'vite'
 import react from '@vitejs/plugin-react'
 
 /// <reference types="vitest/config" />
-export default defineConfig({
-  base: process.env.BASE || '/',
+export default defineConfig(({ mode }) => ({
+  base: process.env.BASE || loadEnv(mode, process.cwd(), 'BASE').BASE || '/',
   plugins: [react()],
   test: {
     // Some service imports open the DB; tests needing files choose a temporary path.
@@ -21,4 +21,4 @@ export default defineConfig({
   build: {
     outDir: 'dist'
   }
-})
+}))

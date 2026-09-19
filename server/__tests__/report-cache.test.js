@@ -77,3 +77,42 @@ describe('report cache eviction order', () => {
     delete process.env.REPORT_CACHE_MAX_SIZE;
   });
 });
+
+// makeKey 的两个区分维度：classId 和 teacherId。少了哪一个都不会报错，
+// 只会把别人的报表原样端出来，响应头还写着 X-Report-Cache: hit。
+describe('report cache key separates the things it must', () => {
+  const base = { teacherId: 1, start: '2026-01-01', end: '2026-01-31' };
+
+  it('全部班级与单个班级的汇总不共用一条缓存', async () => {
+    const c = await loadCache({});
+    c.clearReportCache();
+    c.setReportCache({ ...base }, { revenue: '全部班级' });
+
+    // 带 classId 的是另一个请求，不能命中上面那条
+    expect(c.getReportCache({ ...base, classId: 7 })).toBeNull();
+
+    c.setReportCache({ ...base, classId: 7 }, { revenue: '七班' });
+    expect(c.getReportCache({ ...base })).toEqual({ revenue: '全部班级' });
+    expect(c.getReportCache({ ...base, classId: 7 })).toEqual({ revenue: '七班' });
+  });
+
+  it('不同教师不共用一条缓存', async () => {
+    const c = await loadCache({});
+    c.clearReportCache();
+    c.setReportCache({ ...base, teacherId: 1 }, { revenue: 'A' });
+    expect(c.getReportCache({ ...base, teacherId: 2 })).toBeNull();
+  });
+
+  // 按教师清理只能清掉他自己的：连别人的一起清不会出错，只是白白把别人的缓存丢掉，
+  // 而这个函数在每次写操作后都会跑。
+  it('按教师清理不碰别的教师', async () => {
+    const c = await loadCache({});
+    c.clearReportCache();
+    c.setReportCache({ ...base, teacherId: 1 }, { revenue: 'A' });
+    c.setReportCache({ ...base, teacherId: 2 }, { revenue: 'B' });
+
+    c.clearReportCache(1);
+    expect(c.getReportCache({ ...base, teacherId: 1 })).toBeNull();
+    expect(c.getReportCache({ ...base, teacherId: 2 })).toEqual({ revenue: 'B' });
+  });
+});

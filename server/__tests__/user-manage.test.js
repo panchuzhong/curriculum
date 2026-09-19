@@ -7,6 +7,10 @@ import Database from 'better-sqlite3';
 import bcrypt from 'bcryptjs';
 import { createTestDb } from './setup.js';
 
+// 这个用例要 spawn 四次 bash，而脚本里的 bcrypt 是故意设成慢的（算上本文件里的
+// compareSync 一共六轮）。空机器上跑完大约 1 秒，vitest 默认的 5 秒只留了五倍余量：
+// 机器上同时跑着另一份完整测试时，它就会因为抢不到 CPU 而超时，报成一个和
+// 代码无关的失败。显式给到 30 秒：够挡负载，也还拦得住真死循环。
 it('manages users from outside the project with a relative DB_PATH', async () => {
   const dir = mkdtempSync(join(tmpdir(), 'curriculum-cli-test-'));
   const { db: seed } = createTestDb();
@@ -38,4 +42,4 @@ it('manages users from outside the project with a relative DB_PATH', async () =>
     db?.close();
     rmSync(dir, { recursive: true, force: true });
   }
-});
+}, 30000);

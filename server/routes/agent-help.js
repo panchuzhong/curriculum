@@ -1,10 +1,17 @@
 import { Router } from 'express';
+import { createRequire } from 'node:module';
 import { authMiddleware } from '../middleware/auth.js';
+import { DATE_MIN, DATE_MAX } from '../validations/dates.js';
+
+// 版本号从 package.json 读，不再手抄一份：这里原本写死 '1.9.0'，而包已经到 1.10.2 了。
+// 拿 API Key 的客户端只看得到这个字段，抄错了它就按一个不存在的版本去猜有哪些接口。
+const { version: APP_VERSION } = createRequire(import.meta.url)('../../package.json');
+
 const router = Router();
 router.get('/help', authMiddleware, (req, res) => {
   res.json({
     name: '课表管理系统 API',
-    version: '1.9.0',
+    version: APP_VERSION,
     description: '面向私人教师的课表管理平台 API，供 AI Agent 访问',
     auth: {
       type: 'API Key 或 JWT Token',
@@ -109,7 +116,7 @@ router.get('/help', authMiddleware, (req, res) => {
       },
       backup: {
         'GET /api/backup': '导出教师全量数据为 JSON，返回 {version:1, timestamp, classes, pricingTiers, students, classStudents, schedules, holidays, semesters, classPricing, auditLog}，触发浏览器下载',
-        'POST /api/backup/restore': '从备份 JSON 原子还原（先清空再分批写入，事务保证）；校验 version 字段必须为 1；teacherId 强制覆盖为当前认证教师；所有数据库 ID 重新分配并自动重映射班级/学生关系，避免与其他账号冲突；还原范围包括 classes、pricingTiers、students、classStudents、schedules、holidays、semesters、classPricing、auditLog；自动校验 schedules、classStudents、classPricing 关联的 classId 是否存在于恢复后的班级中，classStudents 同时校验 studentId 是否存在，无效关联自动跳过;非数组字段按空数组处理;事务失败返回 500（原数据保留）;成功返回 {ok:true, restored:{classes,students,schedules,semesters,auditLog}}（restored 仅统计这 5 项，其余表同样已还原但不计数字段中）',
+        'POST /api/backup/restore': '从备份 JSON 原子还原（先清空再分批写入，事务保证）；校验 version 字段必须为 1；teacherId 强制覆盖为当前认证教师；所有数据库 ID 重新分配并自动重映射班级/学生关系，避免与其他账号冲突；还原范围包括 classes、pricingTiers、students、classStudents、schedules、holidays、semesters、classPricing、auditLog；自动校验 schedules、classStudents、classPricing 关联的 classId 是否存在于恢复后的班级中，classStudents 同时校验 studentId 是否存在，无效关联自动跳过（连同日期越界/非法的 schedules、holidays 行一并丢弃；semesters、classPricing 不丢，详见 notes）;非数组字段按空数组处理;事务失败返回 500（原数据保留）;成功返回 {ok:true, preRestoreSnapshot:"<UUID>", restored:{classes,students,classStudents,schedules,semesters,holidays,classPricing,pricingTiers,auditLog}}，被丢弃的行按表计入 skipped、被清空的学生 birthDate 计入 cleared（两者无内容时不出现）；快照写入后大于 50 MB 时撤销接口读不回来，此时不返回 preRestoreSnapshot，改为返回 preRestoreSnapshotUnavailable 说明原因（文件仍在磁盘上，只是不能通过接口撤销）',
       },
       auditLog: {
         'GET /api/audit-log': '查询操作日志（默认最新 100 条,按 id 倒序;返回的 beforeData/afterData 已 JSON.parse 还原为对象）',
@@ -117,6 +124,10 @@ router.get('/help', authMiddleware, (req, res) => {
         'GET /api/audit-log?table=X': '按数据表过滤,枚举: schedules/classes/students/holidays/class_students/pricing_tiers/semesters/teachers/class_pricing;非法值返回 400',
         'GET /api/audit-log?action=X': '按操作类型过滤,枚举: CREATE/UPDATE/DELETE/BATCH_CREATE/BATCH_UPDATE/BATCH_DELETE;非法值返回 400',
         'DELETE /api/audit-log/cleanup?keep=N': '清理当前教师较旧操作日志,默认保留最近 10000 条;keep 须为非负整数',
+      },
+      geocode: {
+        'GET /api/geocode?address=X': '地址转经纬度（高德 API 代理）；address 必填且不超过 200 字符，否则 400；地址含「线上/网课/在线/online」时不请求上游，直接返回 {lat:null, lng:null}；查不到时仍是 200，返回 {lat:null, lng:null, error:"<原因>"}；上游异常或未配置 AMAP_KEY 返回 502 {error:"Geocoding service unavailable"}',
+        'GET /api/geocode/status': '查询服务端是否配置了 AMAP_KEY，返回 {available:boolean}；false 时除上述线上关键词外一律返回 502',
       },
     },
     batchScheduleModes: {
@@ -264,13 +275,15 @@ router.get('/help', authMiddleware, (req, res) => {
     notes: [
       '【写接口返回体约定】单资源 POST/PUT 统一返回完整资源对象（含 id 与所有派生字段，如 classes 的 isDeleted、students 的 classIds、schedules 的 class 与 warnings）；DELETE 单资源返回 {ok:true}；批量端点（POST/PUT/DELETE /api/*/batch、POST /api/holidays/batch）返回 {count, ids?, ...}；前端不依赖 ok 字段，只看 HTTP 状态码',
       '所有 JSON 响应的 Content-Type 均为 application/json; charset=utf-8（CSV 导出时为 text/csv; charset=utf-8）',
+      `日期一律为 YYYY-MM-DD，且须落在 ${DATE_MIN} ~ ${DATE_MAX} 之间（含两端），越界返回 400。前端所有视图都按区间查询，范围之外的行写进去也看不到、删不掉。唯一的例外是学生的 birthDate：它只用于展示、不参与区间查询，所以只校验日历（或 4 位年份）而不卡上下限，否则旧库里已有的值会让整条学生记录再也存不下来`,
       '请求体大小限制：全局 1 MB，备份还原端点 50 MB（超出返回 413）',
+      'POST /api/backup/restore 不会因个别坏行拒绝整个文件，而是丢弃这些行：引用的班级/学生不在本文件内（schedules/classStudents/classPricing）；schedules.date 或 holidays.date 越界/非法（旧版本服务端曾收过这种值，而这两张表的读取路径全都按区间查，写进去也看不到）。semesters 和 classPricing 的越界日期不丢：它们在学期管理/定价历史里看得见也改得了，而且定价还影响报表收入。撤销一次还原：POST /api/backup/restore {version:1, undoSnapshot:"<快照 UUID>"}——快照内容由服务端从磁盘读，请求体里的其它字段一律忽略，且不剔任何日期（撤销要回到原状）。UUID 就是上一次还原响应里的 preRestoreSnapshot（撤销本身不写新快照，所以那一次的响应不带该字段；源快照留在磁盘上，重复撤销幂等）（触发字段另取一个名字，是为了把快照文件内容直接 POST 回来当普通备份还原的路留着），不存在/已被清理返回 404，格式不对返回 400；每个教师最多保留 5 份快照，互不影响。skipped 按表给出被丢弃的总条数，不区分这两类原因（全部保留时不带该字段）；学生的 birthDate 非法时（日历上不存在或压根不是日期；它不卡上下限，所以越界的旧值会原样保留）只清空该字段、不丢学生，计入另一个字段 cleared.studentBirthDates（skipped 的每个 key 都是表名，都能在 restored 里找到对应总数）',
       '排课冲突不会被服务端阻止，前端并排显示并红色高亮；可用 GET /api/schedules/conflicts 查询已有冲突',
       'GET /api/schedules、summary、export 均支持 range=today|tomorrow|week|month 快捷参数（与 start/end 互斥），week=本周周一到周日',
       '日期相关接口（range、free-slots、conflicts 的 today 默认值等）基于服务器系统时区；部署时请确认 TZ=Asia/Shanghai 或等值中国时区。所有"今天"判断(批量排课、图片高亮、备份文件名)统一使用本地时区,不依赖 UTC',
       'free-slots 支持 after/before 参数限制查询时段（如 after=14:00&before=21:00），优先级高于 dayStart/dayEnd；支持 minDuration=N 过滤（只返回连续可用 ≥N 分钟的时段）',
       'POST/PUT /api/schedules 返回的排课对象可能含 warnings 字段（数组），包含同一时段的冲突排课信息（id/classId/className/startTime/endTime），不阻止创建/更新',
-      'conflicts 返回 {total, groups:[{date, schedules:[...]}]}，total = groups.length（冲突组数量,不是涉事排课条数）；schedules 为同一天内互相重叠的排课组（每组至少 2 条）',
+      'conflicts 返回 {total, groups:[{date, schedules:[...]}]}，total = groups.length（冲突组数量,不是涉事排课条数）；schedules 为互相重叠的排课组（每组至少 2 条，含完整 class 对象）。跨零点的课会和次日清晨的课分到同一组，此时 date 是组内第一条的日期',
       'POST /api/schedules 和 PUT /api/schedules/:id 均返回完整排课对象（含 class 字段），可直接判断是否存在冲突',
       'durationBilling 默认由 endTime - startTime 自动计算，跨午夜时自动处理；排课时长须 >0 且 <24 小时，开始时间等于结束时间或跨度满 24 小时返回 400 {error:"排课时长须大于 0 且小于 24 小时"}',
       '法定节假日数据可通过 POST /api/holidays/batch 批量导入，批量排课（学期模式）自动跳过',
@@ -280,7 +293,7 @@ router.get('/help', authMiddleware, (req, res) => {
       '周课表图片导出范围最多 31 天；生成失败时返回 JSON {error}（不含内部 detail）；rowH 范围 16-60，默认 40；班级名/地点名等用户输入在生成 HTML 时统一 HTML 转义,无 XSS 风险',
       'PUT /api/schedules/batch 只允许修改时间和地点字段，classId/date 等核心字段不可批量篡改',
       'GET /api/schedules/summary 和 GET /api/schedules/export 均支持 &format=csv，响应含 UTF-8 BOM，Excel 直接打开不乱码;以 = + - @ \\t \\r 开头的单元格自动加单引号前缀防御 CSV 公式注入',
-      'GET /api/backup 返回全量 JSON（含 version 字段，当前为 1）；POST /api/backup/restore 校验 version 必须匹配，不匹配返回 400；恢复前必须成功保存快照到 ./data/.backup_pre_restore_<uuid>.json，否则返回 500 并中止还原；恢复过程中 teacherId 强制绑定当前账号并重新分配数据库 ID；schedules、classStudents、classPricing 关联会校验并重映射 classId，classStudents 额外校验并重映射 studentId，无效关联自动跳过',
+      'GET /api/backup 返回全量 JSON（含 version 字段，当前为 1）；POST /api/backup/restore 校验 version 必须匹配，不匹配返回 400；恢复前必须成功保存快照到 ./data/.backup_pre_restore_<teacherId>_<uuid>.json（按教师分目录名、按教师各保留 5 份），否则返回 500 并中止还原；该 uuid 在还原响应的 preRestoreSnapshot 里返回，拿它做 undoSnapshot 即可撤销本次还原（详见上文）；恢复过程中 teacherId 强制绑定当前账号并重新分配数据库 ID；schedules、classStudents、classPricing 关联会校验并重映射 classId，classStudents 额外校验并重映射 studentId，无效关联自动跳过',
       '学生可属于多个班级，通过 classIds 数组关联；DELETE /api/students/:id 删除学生实体并清理所有关联，DELETE /api/classes/:classId/students/:studentId 仅从指定班级移除。POST /api/classes/:classId/students 接受 name/birthDate/phone/parentPhone/parentName/note 字段（与 POST /api/students 一致，但不接受 classIds）',
       'PUT /api/students/:id 采用部分更新语义：仅写入请求体中包含且值非 undefined 的字段，未传字段保持原值；classIds 传入时全量替换班级关联',
       'POST/PUT /api/holidays 变更日期时会检查是否与已有节假日记录重复，重复则返回 409 {error:"该日期已有记录"}',
@@ -294,7 +307,7 @@ router.get('/help', authMiddleware, (req, res) => {
       'DELETE /api/schedules/batch 支持三种模式：byIds（ID数组）、byClassId（班级+起始日期+学期保护，默认仅删学期内排课）、byDateRange（日期范围，可选 classId，默认学期保护）；三种模式均支持 dryRun=true 仅预览不删除；所有模式均返回 {count, ids}',
       'GET /api/holidays/:year 返回指定年份的节假日记录',
       '批量排课学期模式起始日：max(今天, 学期开始日期)，确保不会生成历史排课',
-      '学生创建/更新接口的可选字符串字段（phone、parentPhone、birthDate）接受空字符串 ""，等同于不传',
+      '学生创建/更新接口的可选字符串字段（phone、parentPhone、birthDate）接受空字符串 ""，等同于不传；birthDate 另兼容四位数字年份（如 1990）',
       '班级创建时自动生成一条 class_pricing 初始记录（effectiveFrom=当天）；定价版本按 effectiveFrom 日期匹配排课收入计算，支持班级定价随时间分段变更；修改定价不会影响历史收入',
       'class_pricing 变更时自动同步到 classes 表：新增/修改/删除定价记录时自动更新班级表的当前定价字段；班级表字段仅作展示和默认值使用，收入计算以 class_pricing 为准',
     ],

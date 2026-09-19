@@ -2,6 +2,41 @@ import { test, expect, ensureTestUser } from './auth';
 import Database from 'better-sqlite3';
 import type { Route } from '@playwright/test';
 
+test('a pending or failed report never presents the previous period totals as current', async ({ authenticatedPage: page }) => {
+  await page.goto('/reports');
+  await expect(page.getByRole('table').getByText('E2E数学班')).toBeVisible();
+  let releaseFailure!: () => void;
+  const heldFailure = new Promise<void>(resolve => { releaseFailure = resolve; });
+  let fail = true;
+  await page.route('**/api/schedules/summary?**', async route => {
+    if (fail) {
+      await heldFailure;
+      await route.fulfill({ status: 503, json: { error: '报表服务暂不可用' } });
+    } else {
+      await route.fulfill({ json: {
+        count: 2, hours: 2, revenue: 1234,
+        byClass: [{ classId: 9999, name: 'E2E恢复报表', subject: '数学', grade: '高一', count: 2, hours: 2, revenue: 1234 }],
+        bySubject: [], byGrade: [], byMonth: [],
+      } });
+    }
+  });
+  await page.getByRole('button', { name: '▶', exact: true }).click();
+  try {
+    await expect(page.getByRole('status')).toHaveText('正在加载报表…');
+    await expect(page.getByRole('table')).toHaveCount(0);
+    releaseFailure();
+    await expect(page.getByRole('alert')).toContainText('报表服务暂不可用');
+    await expect(page.getByRole('table')).toHaveCount(0);
+    await expect(page.getByText('该时段无排课记录')).toHaveCount(0);
+    fail = false;
+    await page.getByRole('button', { name: '▶', exact: true }).click();
+    await expect(page.getByRole('table').getByText('E2E恢复报表')).toBeVisible();
+    await expect(page.getByRole('alert')).toHaveCount(0);
+  } finally {
+    releaseFailure();
+  }
+});
+
 const E2E_DB_PATH = process.env.DB_PATH || './data/e2e.db';
 
 function pad2(n: number) { return String(n).padStart(2, '0'); }
@@ -9,6 +44,33 @@ function pad2(n: number) { return String(n).padStart(2, '0'); }
 // Guarantees the unfiltered year report spans ≥2 months while E2E英语班
 // (seeded with only current-week schedules) spans exactly 1 month. This makes
 // the month-chart filter assertion date-independent.
+// 在「今年」和「去年」的同一个月各放一节课（幂等），用来验证跨年的自定义区间
+// 不会把两条不同年份的柱子都标成「5月」。
+function ensureTwoYearData() {
+  const teacherId = ensureTestUser();
+  const db = new Database(E2E_DB_PATH);
+  try {
+    const math = db.prepare("SELECT id FROM classes WHERE teacher_id = ? AND name = 'E2E数学班' AND deleted = 0")
+      .get(teacherId) as { id: number };
+    if (!math) throw new Error('E2E数学班 seed missing');
+    const y = new Date().getFullYear();
+    // 日子要避开别的用例钉住的种子日期（2026-05-13 被排课历史用例按单元格精确匹配，
+    // 同一天多插一行会让那边的 getByRole('cell') 命中两个元素）。
+    for (const year of [y - 1, y]) {
+      const date = `${year}-04-13`;
+      const existing = db.prepare('SELECT id FROM schedules WHERE class_id = ? AND date = ? AND start_time = ?')
+        .get(math.id, date, '07:00');
+      if (!existing) {
+        db.prepare('INSERT INTO schedules (class_id, date, start_time, end_time, duration_billing, location_name) VALUES (?, ?, ?, ?, ?, ?)')
+          .run(math.id, date, '07:00', '08:00', 60, 'E2E教室');
+      }
+    }
+    return y;
+  } finally {
+    db.close();
+  }
+}
+
 function ensureMonthFilterData() {
   const teacherId = ensureTestUser(); // also seeds E2E英语班 (current week only)
   const db = new Database(E2E_DB_PATH);
@@ -96,8 +158,13 @@ test.describe('统计报表', () => {
   test('切换到月报', async ({ authenticatedPage: page }) => {
     await page.goto('/reports');
     await expect(page.getByRole('heading', { name: '统计报表' })).toBeVisible();
+    // 「统计报表」这个标题在四个标签页上都在，点完再断言一次它等于什么都没测。
+    // 周报显示的是一段日期区间，月报显示的是「YYYY年M月」——要看的是这个。
+    await expect(page.getByText(todayRangeRegExp())).toBeVisible();
+
     await page.getByRole('button', { name: '月报' }).click();
-    await expect(page.getByRole('heading', { name: '统计报表' })).toBeVisible();
+    await expect(page.getByText(thisMonthStr)).toBeVisible();
+    await expect(page.getByText(todayRangeRegExp())).toHaveCount(0);
   });
 });
 
@@ -110,9 +177,17 @@ test.describe('报表数据验证', () => {
     // expect 轮询替代固定等待
     const card = (label: string) =>
       page.locator('main .text-gray-500').filter({ hasText: label }).locator('..');
-    await expect(card('排课次数')).toContainText(/\d/);
-    await expect(card('教学时长')).toContainText(/\d/);
-    await expect(card('预估收入')).toContainText(/\d/);
+    // 只断言"有数字"是不够的：summary 还没到货、或者整个 getScheduleSummary
+    // 调用被删掉时，Reports 会把三项都默认成 0 并照常渲染，而 /\d/ 正好匹配那个 0。
+    // 用例名说的是"实际数字"，种子数据本周非空，所以要断言是正数。
+    const numberIn = async (label: string) => {
+      const txt = await card(label).innerText();
+      const m = txt.replace(/[,，]/g, '').match(/\d+(?:\.\d+)?/);
+      return m ? Number(m[0]) : NaN;
+    };
+    await expect.poll(() => numberIn('排课次数')).toBeGreaterThan(0);
+    await expect.poll(() => numberIn('教学时长')).toBeGreaterThan(0);
+    await expect.poll(() => numberIn('预估收入')).toBeGreaterThan(0);
   });
 
   test('切换班级筛选改变数据', async ({ authenticatedPage: page }) => {
@@ -313,5 +388,89 @@ test.describe('自定义区间倒挂提示', () => {
     expect(await start.inputValue()).toMatch(/^[01]\d{3}-\d{2}-\d{2}$/);
     await expect(page.getByText('日期无效')).toBeVisible();
     expect(summaryUrls.filter(u => /start=[01]\d{3}-/.test(u))).toEqual([]);
+  });
+});
+
+// 自定义区间被拒时不发请求，下面的卡片仍显示上一个有效区间的数字——不给一句
+// 说明的话，那些数字看起来就像当前区间的结果。这一段整个改动里原本一条用例都没有。
+test.describe('自定义区间被拒时要说明', () => {
+  test.use({ baseURL: 'http://127.0.0.1:5174' });
+
+  test('倒挂的自定义区间给出理由，而不是静默沿用上一段数据', async ({ authenticatedPage: page }) => {
+    await page.goto('/reports');
+    await page.getByRole('button', { name: '自定义' }).click();
+    const inputs = page.locator('input[type="date"]');
+    await inputs.first().fill('2026-06-10');
+    await inputs.nth(1).fill('2026-06-01');
+    // 连理由一起钉：只断言共用的后半句的话，把 `${customRangeError}，` 整个去掉
+    // 两条用例的输出一模一样，分开写两条就没意义了。
+    await expect(page.getByText('开始日期晚于结束日期，图表为上一有效区间的数据')).toBeVisible();
+  });
+
+  test('清空一端同样给出理由', async ({ authenticatedPage: page }) => {
+    await page.goto('/reports');
+    await page.getByRole('button', { name: '自定义' }).click();
+    const inputs = page.locator('input[type="date"]');
+    await inputs.nth(1).fill('');
+    await expect(page.getByText('请填写完整的日期区间，图表为上一有效区间的数据')).toBeVisible();
+  });
+});
+
+// 此前我以为这一段沟不到（从今年往上翻到 2999 要九百多下），其实往下翻到 1900
+// 只需一百二十多下。下限上的三件事一起钉：按钮置灰、键盘路径抦住、而且抦了要说理由。
+test.describe('年报翻到下限', () => {
+  test.use({ baseURL: 'http://127.0.0.1:5174' });
+
+  test('翻到 1900 后按钮置灰，键盘再翻会说明原因', async ({ authenticatedPage: page }) => {
+    await page.goto('/reports');
+    await page.getByRole('button', { name: '年报' }).click();
+
+    const prev = page.getByRole('button', { name: '◀' });
+    const steps = new Date().getFullYear() - 1900;
+    for (let i = 0; i < steps; i++) await prev.click();
+
+    await expect(page.getByText('1900年')).toBeVisible();
+    await expect(prev).toBeDisabled();
+
+    // 键盘没有「按钮变灰」这个提示，得自己说一句
+    await page.keyboard.press('ArrowLeft');
+    await expect(page.getByText(/已到可用日期范围的最早一年/).first()).toBeVisible();
+    await expect(page.getByText('1900年')).toBeVisible();
+  });
+});
+
+test.describe('跨年的自定义区间', () => {
+  test.use({ baseURL: 'http://127.0.0.1:5174' });
+
+  // byMonth 的标签原来只写「M月」，年份被丢掉：区间跨两个自然年时会出现两条
+  // 一模一样的「5月」，老师分不出哪条是哪年。而 BarChart 的 key 取
+  // item.key ?? item.label，这两条还会共用同一个 React key。
+  test('按月份统计要把年份写出来，两条不同年的同月不能重名', async ({ authenticatedPage: page }) => {
+    const y = ensureTwoYearData();
+    await page.goto('/reports');
+    await page.getByRole('button', { name: '自定义' }).click();
+
+    const dates = page.locator('input[type="date"]');
+    await dates.first().fill(`${y - 1}-01-01`);
+    await dates.nth(1).fill(`${y}-12-31`);
+
+    const chart = page.locator('main');
+    await expect(chart.getByText(`${y - 1}年4月`)).toBeVisible();
+    await expect(chart.getByText(`${y}年4月`)).toBeVisible();
+    // 不该再出现不带年份的裸「5月」
+    expect(await chart.getByText('4月', { exact: true }).count()).toBe(0);
+  });
+
+  // 对照：区间没跨年时仍然只写「M月」，不必啰嗦
+  test('区间不跨年时标签仍然只写月份', async ({ authenticatedPage: page }) => {
+    const y = ensureTwoYearData();
+    await page.goto('/reports');
+    await page.getByRole('button', { name: '自定义' }).click();
+
+    const dates = page.locator('input[type="date"]');
+    await dates.first().fill(`${y}-01-01`);
+    await dates.nth(1).fill(`${y}-12-31`);
+
+    await expect(page.locator('main').getByText('4月', { exact: true })).toBeVisible();
   });
 });

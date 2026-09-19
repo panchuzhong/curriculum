@@ -1,9 +1,13 @@
-import { drizzleDb } from '../db/index.js';
 import { schedules, classes, semesters } from '../db/schema.js';
 import { eq } from 'drizzle-orm';
 
+// 年份补到 4 位，和前端的 fmt() 一致。不补的话年份小于 1000 会算出 '261-04-30'，
+// 而库里存的是 '0261-05-01'——按字符串比大小 '0261-...' 反而小于 '261-...'。
+// getConflictsForSchedule 拿 shiftDate(s.date, ±1) 当区间端点，而 s.date 是直接从库里
+// 读的、不经校验：旧库里那些被原生控件左移成 0261 的行，区间一算就什么都匹配不到，
+// 接口会报「没有冲突」而不是真实的冲突。
 export function toLocalDateStr(d) {
-  const y = d.getFullYear();
+  const y = String(d.getFullYear()).padStart(4, '0');
   const m = String(d.getMonth() + 1).padStart(2, '0');
   const day = String(d.getDate()).padStart(2, '0');
   return `${y}-${m}-${day}`;
@@ -71,6 +75,49 @@ export function duration(startTime, endTime) {
   const e = toMin(endTime);
   if (s === e) return 0;
   return e > s ? e - s : e + 24 * 60 - s;
+}
+
+// 课程块的位置和高度。网页（ScheduleBlock.jsx）和导出的 PNG（image-gen.js）必须
+// 给同一节课算出同一个块，所以这段只在这里写一次，两边都调它。
+// 之前 image-gen.js 把时长公式抄了一遍、漏掉 duration() 的 s === e 分支，
+// 于是 08:00~08:00 在网页上是一行高，在 PNG 里却画成覆盖整天的一条。
+// 高度有 rowHeight - 1 的下限：0 时长的课也得留得下一行文字，否则点不到也看不见。
+export function blockGeometry(startTime, endTime, { rowHeight, topGapHeight, firstLabelMin }) {
+  const top = topGapHeight + (toMin(startTime) - firstLabelMin) / 60 * rowHeight + 1;
+  const height = Math.max(duration(startTime, endTime) / 60 * rowHeight - 1, rowHeight - 1);
+  return { top, height };
+}
+
+// 月历里一天的时间窗。默认画 08:00~22:30，有课越出去就把窗口撑到那节课。
+// 网页（MonthlySchedule.jsx）和导出的月历 PNG（image-gen-monthly.js）必须算出
+// 同一个窗口，所以只写这一次，两边都调它（由 data-consistency 钉着）。
+// latest 用 duration()：自己写 et > st ? et : et + 1440 的话，08:00~08:00 会被
+// 当成上到次日 08:00，把窗口拉到 32 点，当天其它课的条形全被压扁。
+export const MONTH_DAY_START = 8 * 60;
+export const MONTH_DAY_END = 22 * 60 + 30;
+
+export function monthDayWindow(daySchedules) {
+  const earliest = Math.min(...daySchedules.map(s => toMin(s.startTime)));
+  const latest = Math.max(...daySchedules.map(s => toMin(s.startTime) + duration(s.startTime, s.endTime)));
+  const hasEarly = earliest < MONTH_DAY_START;
+  const hasLate = latest > MONTH_DAY_END;
+  const dayStart = hasEarly ? earliest : MONTH_DAY_START;
+  const dayEnd = hasLate ? latest : MONTH_DAY_END;
+  return { dayStart, dayEnd, dayTotal: dayEnd - dayStart };
+}
+
+// 一节课在那个窗口里的位置和长度，按百分比给（两边的容器单位不同：
+// 网页用 %，出图再乘像素高度）。
+export function monthBarPct(startTime, endTime, { dayStart, dayTotal }) {
+  const startMin = toMin(startTime);
+  const dur = duration(startTime, endTime);
+  const endMin = startMin + dur;
+  return {
+    topPct: (startMin - dayStart) / dayTotal * 100,
+    heightPct: dur / dayTotal * 100,
+    isEarly: startMin < MONTH_DAY_START,
+    isLate: endMin > MONTH_DAY_END,
+  };
 }
 
 export function detectConflictGroups(daySchedules) {
@@ -146,10 +193,10 @@ export function assignColumns(group) {
   });
 }
 
-export function getScheduleWithClass(id, teacherId) {
-  const s = drizzleDb.select().from(schedules).where(eq(schedules.id, id)).get();
+export function getScheduleWithClass(db, id, teacherId) {
+  const s = db.select().from(schedules).where(eq(schedules.id, id)).get();
   if (!s) return null;
-  const cls = drizzleDb.select().from(classes).where(eq(classes.id, s.classId)).get();
+  const cls = db.select().from(classes).where(eq(classes.id, s.classId)).get();
   if (cls?.teacherId !== teacherId) return null;
   return { ...s, class: cls || null };
 }

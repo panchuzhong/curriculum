@@ -20,6 +20,21 @@ function todayWeekRegExp() {
 }
 
 test.describe('跨视图键盘导航', () => {
+  test('同一轮事件内跨年、月、周导航也保留目标日期', async ({ authenticatedPage: page }) => {
+    await page.goto('/yearly?year=2029');
+    await expect(page.getByRole('heading', { name: '2029年' })).toBeVisible();
+    await expect(page.getByText('1月', { exact: true })).toBeVisible();
+    const urls = await page.evaluate(() => ['ArrowUp', 'ArrowUp', 'ArrowDown', 'ArrowDown'].map(key => {
+      window.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true }));
+      return location.pathname + location.search;
+    }));
+    expect(urls[0]).toMatch(/^\/monthly\?year=2029&month=/);
+    expect(urls[1]).toMatch(/^\/\?(date|week)=2029-/);
+    expect(urls[2]).toMatch(/^\/monthly\?year=2029&month=/);
+    expect(urls[3]).toBe('/yearly?year=2029');
+    await expect(page.getByRole('heading', { name: '2029年' })).toBeVisible();
+  });
+
   test('方向键上下切换周/月视图并保持月份上下文', async ({ authenticatedPage: page }) => {
     // Navigate to a specific week
     await page.goto('/?date=2026-07-20');
@@ -95,16 +110,26 @@ test.describe('跨视图键盘导航', () => {
   });
 
   test('年视图切换到周视图再回到年视图保持年份', async ({ authenticatedPage: page }) => {
-    await page.goto('/yearly?year=2026');
-    await expect(page.getByRole('heading', { name: '2026年' })).toBeVisible();
+    // 年份必须挑一个不等于今年的，否则"保留了原年份"和"重置成今年"两种结果
+    // 长得一模一样，这条用例什么都证明不了（原来用的正是当年的 2026）。
+    await page.goto('/yearly?year=2029');
+    await expect(page.getByRole('heading', { name: '2029年' })).toBeVisible();
+    expect(2029).not.toBe(new Date().getFullYear());
 
-    // ArrowDown to week (should use today-in-year)
-    await page.keyboard.press('ArrowDown');
+    // 侧边栏顺序是 周/月/年/班级…，所以往周视图走的是 ArrowUp。原来这里按的是
+    // ArrowDown——实测落到「班级管理」（不是周视图），于是这条用例走的是
+    // "非课表页回年视图"那条兜底分支，跟名字说的「切换到周视图再回来」根本不是一回事，
+    // 而真正的"周→年"分支（navTarget 里 weekTouchesYear 那一支）一直没人走。
+    await page.keyboard.press('ArrowUp'); // → 月课表
+    await expect(page).toHaveURL(/\/monthly/);
+    await page.keyboard.press('ArrowUp'); // → 周课表
+    await expect(page).toHaveURL(/\/(\?|$)/);
 
-    // ArrowUp back to year
-    await page.keyboard.press('ArrowUp');
-    await expect(page).toHaveURL(/\/yearly\?year=2026/);
-    await expect(page.getByRole('heading', { name: '2026年' })).toBeVisible();
+    await page.keyboard.press('ArrowDown'); // → 月课表
+    await expect(page).toHaveURL(/\/monthly/);
+    await page.keyboard.press('ArrowDown'); // → 年课表
+    await expect(page).toHaveURL(/\/yearly\?year=2029/);
+    await expect(page.getByRole('heading', { name: '2029年' })).toBeVisible();
   });
 });
 
@@ -336,11 +361,21 @@ test.describe('方向键完整循环所有侧边栏链接', () => {
   });
 
   test('从学生管理方向键上到班级管理再到年课表保留年份', async ({ authenticatedPage: page }) => {
-    await page.goto('/students');
+    // 用例名说的是"保留年份"，就得先真的有一个年份可保留。直接 goto('/students')
+    // 出发时 getViewDate('year') 是 null（store 是模块内存，整页加载就清空），
+    // getNavTarget 返回的是光秃秃的 /yearly——只断言 /yearly 的话，把保留逻辑
+    // 整个删掉也照样绿。所以先在年视图落一个年份，再走客户端跳转过去。
+    await page.goto('/yearly?year=2029');
+    await expect(page.getByRole('heading', { name: '2029年' })).toBeVisible();
+
+    // 侧边栏点击是客户端跳转，不重载页面，viewDate 才留得住
+    await page.getByRole('link', { name: '学生管理' }).click();
+    await expect(page).toHaveURL(/\/students/);
+
     await page.keyboard.press('ArrowUp'); // → classes
     await expect(page).toHaveURL(/\/classes/);
     await page.keyboard.press('ArrowUp'); // → yearly
-    await expect(page).toHaveURL(/\/yearly/);
+    await expect(page).toHaveURL(/\/yearly\?year=2029/);
   });
 });
 

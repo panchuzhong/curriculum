@@ -24,7 +24,7 @@ export { db };
 // Adding an existing column is the expected "already applied" case; every
 // other failure (busy, full disk) must abort the migration instead of being
 // recorded as applied.
-function addColumn(db, table, column) {
+export function addColumn(db, table, column) {
   try {
     db.exec(`ALTER TABLE ${table} ADD COLUMN ${column}`);
   } catch (e) {

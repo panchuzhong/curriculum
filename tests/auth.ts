@@ -20,6 +20,19 @@ const DEFAULT_TIERS = [
 ];
 
 const E2E_DB_PATH = process.env.DB_PATH || './data/e2e.db';
+
+// 这套夹具会改密码、删数据，而 TEST_USER.username 就是真实账号名 'pcz'：
+//   · 密码对不上时直接 UPDATE teachers SET password_hash（把真人密码换成仓库里写死的那个）
+//   · 清理时按前缀删 semesters / students / classes 及其子表
+// DB_PATH 是可以覆盖的，而 playwright.config 的 `??=` 不会盖掉显式设的值，
+// 所以 `DB_PATH=./data/data.db npx playwright test`（调试时很自然的一步）
+// 会让上面这些操作全部落在真实数据上。先确认打开的确实是测试库再说。
+if (!/e2e/i.test(E2E_DB_PATH)) {
+  throw new Error(
+    `E2E 夹具拒绝在 ${E2E_DB_PATH} 上运行：它会重置密码并删除数据。` +
+    'DB_PATH 必须指向测试库（路径中需包含 "e2e"）。',
+  );
+}
 let preparedTeacherId: number | null = null;
 let prunedStaleRows = false;
 
@@ -141,15 +154,33 @@ function ensureSeedData(db: Database.Database, teacherId: number) {
   // defaults it with `??=`), and a bare `name <> seed` condition would wipe the
   // real teacher's roster if the suite were ever pointed at another database.
   if (!prunedStaleRows) {
-    db.prepare('DELETE FROM semesters WHERE teacher_id = ? AND name <> ?')
-      .run(teacherId, 'E2E春季学期');
+    // 必须按名字前缀限定，不能只写 name <> 种子名。上面那段注释正是在说这件事，
+    // 而这一条当初漏掉了：TEST_USER.username 是 'pcz'，也就是真实账号，
+    // 一旦有人用 DB_PATH 指向正式库跑一次 E2E（调试时很自然的做法），
+    // 这句就会把该教师**全部**真实学期删光，只留下一个 E2E春季学期。
+    // 其余几条删除都带着 name LIKE 'E2E%' / 'E2E测试班%'，唯独这里没有。
+    // 约定：本目录里新建学期的名字必须命中下面某个前缀，否则这里收不走。
+    // 收不走的后果不是脏数据而已：semesters.spec.ts 的年份取自
+    // 2400 + Date.now()%300、固定 2/1~6/30，攒够两行就会日期重叠，
+    // 之后每次跑都在建学期那步 409「该教师已有日期重叠的学期」，永久卡住。
+    // 当初只写了 E2E%/待删除%，漏掉了 semesters.spec.ts 的 待编辑_ 和它改名后的 编辑后_
+    // ——那条用例只要中途失败，末尾的清理就不会跑，留下的正是这两种行。
+    const SEMESTER_FIXTURE_PREFIXES = ['E2E', '待删除', '待编辑', '编辑后'];
+    db.prepare(`DELETE FROM semesters WHERE teacher_id = ? AND name <> ?
+      AND (${SEMESTER_FIXTURE_PREFIXES.map(() => 'name LIKE ?').join(' OR ')})`)
+      .run(teacherId, 'E2E春季学期', ...SEMESTER_FIXTURE_PREFIXES.map(p => `${p}%`));
     db.prepare(`DELETE FROM class_students WHERE student_id IN
       (SELECT id FROM students WHERE teacher_id = ? AND name LIKE 'E2E%' AND name <> ?)`)
       .run(teacherId, 'E2E学生');
     db.prepare("DELETE FROM students WHERE teacher_id = ? AND name LIKE 'E2E%' AND name <> ?")
       .run(teacherId, 'E2E学生');
-    // 一次性班级只带一条自动生成的定价，没有排课也没有学生关联（先删定价再删班级）。
+    // 先删指向班级的子表再删班级。schedules / class_students / class_pricing 三张表都
+    // 外键引用 classes.id，而本文件的 better-sqlite3 连接没有开 foreign_keys（服务端
+    // 在另一条连接上开了）：少删一张不会报错，只会静默留下指向已删班级的孤儿行，
+    // 而真正开了外键的服务端的行为和这里就对不上了。
     const junkClasses = "SELECT id FROM classes WHERE teacher_id = ? AND name LIKE 'E2E测试班%'";
+    db.prepare(`DELETE FROM schedules WHERE class_id IN (${junkClasses})`).run(teacherId);
+    db.prepare(`DELETE FROM class_students WHERE class_id IN (${junkClasses})`).run(teacherId);
     db.prepare(`DELETE FROM class_pricing WHERE class_id IN (${junkClasses})`).run(teacherId);
     db.prepare(`DELETE FROM classes WHERE id IN (${junkClasses})`).run(teacherId);
     prunedStaleRows = true;

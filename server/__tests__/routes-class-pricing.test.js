@@ -39,6 +39,21 @@ describe('GET /api/classes/:classId/pricing', () => {
 });
 
 describe('POST /api/classes/:classId/pricing', () => {
+  it.each([
+    ['unitPrice', '1e309'], ['discountAmount', '1e309'],
+    ['unitPrice', [100]], ['discountAmount', [100]],
+  ])('rejects non-finite or composite %s on create and update (%j)', async (field, value) => {
+    const before = await request(app).get(`/api/classes/${classId}/pricing`).set(auth(token));
+    const created = await request(app).post(`/api/classes/${classId}/pricing`).set(auth(token))
+      .send({ studentCount: 3, unitPrice: 250, effectiveFrom: '2099-06-01', [field]: value });
+    expect(created.status).toBe(400);
+    const updated = await request(app).put(`/api/classes/${classId}/pricing/${before.body[0].id}`).set(auth(token))
+      .send({ [field]: value });
+    expect(updated.status).toBe(400);
+    const after = await request(app).get(`/api/classes/${classId}/pricing`).set(auth(token));
+    expect(after.body).toEqual(before.body);
+  });
+
   it('adds a new pricing version and syncs class table', async () => {
     const res = await request(app).post(`/api/classes/${classId}/pricing`).set(auth(token))
       .send({ studentCount: 3, unitPrice: 250, effectiveFrom: '2099-06-01' });

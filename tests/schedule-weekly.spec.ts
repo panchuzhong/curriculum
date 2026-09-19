@@ -89,9 +89,18 @@ test.describe('周课表', () => {
   });
 
   test('点击本周回到当前周', async ({ authenticatedPage: page }) => {
+    // 不能拿「今天」这个角标当判据：网格一共渲染 21 列（前后各 7 天缓冲），
+    // 往前翻一周之后今天仍在右侧的缓冲列里，DayHeader 照样给它打角标，
+    // 而 overflow 裁剪不影响 Playwright 的可见性判断——把「本周」按钮做成空操作
+    // 这条断言也照样通过（已实测）。改成看顶部那段日期区间。
+    const range = page.locator('main').getByText(/\d{4}-\d{2}-\d{2} ~ \d{4}-\d{2}-\d{2}/).first();
+    const thisWeek = await range.textContent();
+
     await page.getByRole('button', { name: '上一周' }).click();
+    await expect(range).not.toHaveText(thisWeek!);
+
     await page.getByRole('button', { name: '本周' }).click();
-    await expect(page.getByText('今天')).toBeVisible();
+    await expect(range).toHaveText(thisWeek!);
   });
 
   test('排课弹窗显示班级选择、日期、时间、地点', async ({ authenticatedPage: page }) => {
@@ -110,13 +119,21 @@ test.describe('排课操作', () => {
   test('编辑排课修改地点', async ({ authenticatedPage: page }) => {
     await clickFirstScheduleCard(page);
     await expect(page.getByRole('heading', { name: '编辑排课' })).toBeVisible();
+    // 原来整段改地点都包在 if (await locationInput.isVisible()) 里，唯一的断言是
+    // 「弹窗关掉了」——地点输入框哪天不渲染了，这条用例会安静地跳过编辑并照样通过，
+    // 而用例名说的正是"修改地点"。改成：输入框必须在，改完要真的存下来。
     const locationInput = page.getByPlaceholder(/地点/);
-    if (await locationInput.isVisible()) {
-      await locationInput.clear();
-      await locationInput.fill(`E2E地点_${Date.now()}`);
-    }
+    await expect(locationInput).toBeVisible();
+    const newLocation = `E2E地点_${Date.now()}`;
+    await locationInput.clear();
+    await locationInput.fill(newLocation);
     await page.getByRole('button', { name: '保存' }).click();
     await expect(page.getByRole('heading', { name: '编辑排课' })).not.toBeVisible();
+
+    // 重新打开同一条排课，地点应当是刚才填的那个
+    await clickFirstScheduleCard(page);
+    await expect(page.getByRole('heading', { name: '编辑排课' })).toBeVisible();
+    await expect(page.getByPlaceholder(/地点/)).toHaveValue(newLocation);
   });
 
   test('取消删除确认后保留排课弹窗', async ({ authenticatedPage: page }) => {
@@ -133,7 +150,9 @@ test.describe('排课操作', () => {
     // Count cards before
     await page.waitForSelector(scheduleCard, { timeout: 10000 });
     const countBefore = await page.locator(scheduleCard).count();
-    if (countBefore === 0) return; // No schedules to delete
+    // 原来是 if (countBefore === 0) return——种子数据哪天没排上课，这条用例就
+    // 一声不响地通过了，而它本该是失败。种子保证本周有课，所以直接断言。
+    expect(countBefore).toBeGreaterThan(0);
 
     await clickFirstScheduleCard(page);
     await expect(page.getByRole('heading', { name: '编辑排课' })).toBeVisible();
@@ -361,3 +380,115 @@ function ensureDeletePreviewData() {
     db.close();
   }
 }
+
+// 预览删除按钮一直可点，没选班级时如果默默返回，点下去就像页面卡死了。
+test.describe('批量删课的前置条件提示', () => {
+  test.use({ baseURL: 'http://127.0.0.1:5174' });
+
+  test('未选班级就点预览删除时给出提示', async ({ authenticatedPage: page }) => {
+    await page.getByRole('button', { name: '批量操作' }).click();
+    const dialog = page.getByRole('dialog', { name: '批量排课' });
+    await dialog.getByRole('button', { name: '批量删课' }).click();
+    await dialog.getByRole('button', { name: '预览删除' }).click();
+
+    await expect(page.getByText('请先选择班级').first()).toBeVisible();
+  });
+});
+
+// 用户刚切到删课页时两个日期还没填完，那一眼看到的红框就是唯一的保险丝：
+// 它得说清这个操作是什么、不可撤销，而不是只催人把日期填完。
+test.describe('批量删课的空状态警示', () => {
+  test.use({ baseURL: 'http://127.0.0.1:5174' });
+
+  test('日期还没填完时仍说明操作不可撤销', async ({ authenticatedPage: page }) => {
+    await page.getByRole('button', { name: '批量操作' }).click();
+    const dialog = page.getByRole('dialog', { name: '批量排课' });
+    await dialog.getByRole('button', { name: '批量删课' }).click();
+    await dialog.getByRole('button', { name: '日期范围' }).click();
+
+    await expect(dialog.getByText(/将删除该范围内该班级的全部排课，操作不可撤销/)).toBeVisible();
+  });
+});
+
+// 学期模式的删除范围是「今天（或学期开始，取晚的）到学期结束」，所以已经结束的学期
+// 算出来必然倒挂。拿这个倒挂去报「请先修正该学期的起止日期」，等于逼着用户去改
+// 一个完全正确的学期。红框里直说「已经结束」，预览按钮置灰——不可撤销的操作
+// 没必要把人领进一个删 0 条的确认流程。
+test.describe('已结束学期的批量删课', () => {
+  test.use({ baseURL: 'http://127.0.0.1:5174' });
+
+  test('已结束的学期报「已经结束」而不是日期错误，并置灰预览', async ({ authenticatedPage: page }) => {
+    const name = `E2E已结束_${Date.now()}`;
+    // 年份随机且在过去：写死的话，上一轮漏删的那一行会让这一轮在「保存」就撞上
+    // 学期重叠 409，而不是停在真正要断言的地方。
+    const year = 1950 + Math.floor(Date.now() % 50);
+
+    try {
+      await page.goto('/semesters');
+      await page.getByRole('button', { name: '新建学期' }).click();
+      await page.getByPlaceholder('如：2026春季').fill(name);
+      await page.locator('input[type="date"]').first().fill(`${year}-02-01`);
+      await page.locator('input[type="date"]').last().fill(`${year}-06-30`);
+      await page.getByRole('button', { name: '保存' }).click();
+      await expect(page.getByText(name)).toBeVisible();
+
+      await page.goto('/');
+      await page.getByRole('button', { name: '批量操作' }).click();
+      const dialog = page.getByRole('dialog', { name: '批量排课' });
+      await dialog.getByRole('button', { name: '批量删课' }).click();
+      await dialog.getByRole('button', { name: '学期模式' }).click();
+      await dialog.getByRole('combobox').first().selectOption({ label: 'E2E数学班 (高一 数学)' });
+      await dialog.getByRole('combobox').nth(1).selectOption({ label: `${name} (${year}-02-01 ~ ${year}-06-30)` });
+
+      // 不得把这个学期说成日期有误
+      await expect(dialog.getByText(/请先修正该学期的起止日期/)).toHaveCount(0);
+      await expect(dialog.getByText(/已经结束，从今天起没有可删除的排课/)).toBeVisible();
+
+      // 不可撤销的操作没必要把人领进一个删 0 条的确认流程：红框已经说清楚了
+      await expect(dialog.getByRole('button', { name: '预览删除' })).toBeDisabled();
+
+      // 排课侧同理：服务端只会回一句生硬的 No valid dates to schedule
+      await dialog.getByRole('button', { name: '批量排课' }).first().click();
+      await expect(dialog.getByText(/已经结束，从今天起没有可排课的日期/)).toBeVisible();
+      await expect(dialog.getByRole('button', { name: '批量排课' }).last()).toBeDisabled();
+    } finally {
+      // 残留的学期会干扰后续用例（默认区间、学期预选），用完就删。
+      // 创建失败时这里找不到行，跳过即可。
+      await page.goto('/semesters');
+      const row = page.locator('div.flex.items-center').filter({ hasText: name });
+      if (await row.count() > 0) {
+        await row.getByRole('button', { name: '删除' }).click();
+        await page.getByRole('button', { name: '确认' }).click();
+        await expect(page.getByText(name)).not.toBeVisible();
+      }
+    }
+  });
+});
+
+// handleSubmit 里两条新加的空值守卫，之前一条用例都没有。
+// （同一个函数里的 rangeStep <= 0 不写用例：间隔来自只有正数选项的 select，
+//  源码注释已声明这一步今天走不到，它是防循环不推进的兜底。）
+test.describe('批量排课没填完时各报各的理由', () => {
+  test.use({ baseURL: 'http://127.0.0.1:5174' });
+
+  test('日期列表空着提交时说清楚', async ({ authenticatedPage: page }) => {
+    await page.goto('/');
+    await page.getByRole('button', { name: '批量操作' }).click();
+    const dialog = page.getByRole('dialog', { name: '批量排课' });
+    await dialog.getByRole('combobox').first().selectOption({ label: 'E2E数学班 (高一 数学)' });
+    await dialog.getByRole('button', { name: '指定日期' }).click();
+    await dialog.getByRole('button', { name: '批量排课' }).last().click();
+    await expect(page.getByText('请先生成或填写日期列表').first()).toBeVisible();
+  });
+
+  test('上课时间被清空时说清楚', async ({ authenticatedPage: page }) => {
+    await page.goto('/');
+    await page.getByRole('button', { name: '批量操作' }).click();
+    const dialog = page.getByRole('dialog', { name: '批量排课' });
+    await dialog.getByRole('combobox').first().selectOption({ label: 'E2E数学班 (高一 数学)' });
+    // 时间在 mode 分支之前就判，所以哪个模式都行
+    await dialog.locator('input[type="time"]').first().fill('');
+    await dialog.getByRole('button', { name: '批量排课' }).last().click();
+    await expect(page.getByText('请先填写上课时间').first()).toBeVisible();
+  });
+});

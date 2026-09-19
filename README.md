@@ -129,6 +129,10 @@ ALLOW_REGISTRATION=true node server/index.js
 
 访问 http://localhost:8443，注册第一个账号后系统自动关闭注册。
 
+部署到子目录时，在 `.env` 中设置 `BASE=/curriculum/` 后重新构建并重启服务，
+通过 `http://localhost:8443/curriculum/` 访问。构建和运行须使用同一个 `BASE`。
+API 仍位于同源的 `/api`；反向代理需同时转发 `/curriculum/` 和 `/api/`，保留路径前缀。
+
 ### 测试
 
 ```bash
@@ -415,7 +419,21 @@ curl -X POST -H "X-API-Key: <key>" -H "Content-Type: application/json" \
   http://localhost:8443/api/backup/restore -d @backup.json
 ```
 
-还原为事务原子操作：先删除当前教师所有数据，再分批写入并为记录分配新 ID，班级、学生、排课和定价之间的关联会自动重映射，因此不会与其他账号的全局 ID 冲突。还原时 `teacherId` 强制覆盖为当前认证账号。成功返回 `{ok: true, restored: {classes, students, schedules, semesters, auditLog}}`。还原前必须成功保存当前数据快照到 `data/.backup_pre_restore_<uuid>.json`，快照失败会返回 500 并中止还原。
+还原为事务原子操作：先删除当前教师所有数据，再分批写入并为记录分配新 ID，班级、学生、排课和定价之间的关联会自动重映射，因此不会与其他账号的全局 ID 冲突。还原时 `teacherId` 强制覆盖为当前认证账号。成功返回 `{ok: true, preRestoreSnapshot, restored: {classes, students, classStudents, schedules, semesters, holidays, classPricing, pricingTiers, auditLog}}`。还原前必须成功保存当前数据快照到 `data/.backup_pre_restore_<teacherId>_<uuid>.json`，快照失败会返回 500 并中止还原（每个教师最多保留 5 份，互不影响）。写快照不卡大小，但撤销要把它整个读回内存，那一侧卡 50 MB：快照超过这个数时响应不带 `preRestoreSnapshot`，改为带 `preRestoreSnapshotUnavailable`——发一个拿回来只会换 413 的句柄，比直说没有可用撤销点更坏（文件仍在磁盘上）。
+
+还原不会因个别坏行拒绝整个文件，而是丢弃这些行并把条数按表放在 `skipped` 里：引用的班级/学生不在本文件内，或 `schedules.date`/`holidays.date` 越界、非法（日期范围为 1900-01-01 ~ 2999-12-31；这两张表的读取路径全都按区间查，写进去也看不到）。`semesters` 和 `classPricing` 的越界日期不丢（界面上改得了，而且定价影响报表收入）；学生的 `birthDate` 非法时只清空该字段，计入 `cleared`。缺整列（如 `schedules` 没有 `date`）仍会回滚并返回 500。
+
+撤销一次还原：
+
+```bash
+curl -X POST -H "X-API-Key: <key>" -H "Content-Type: application/json" \
+  http://localhost:8443/api/backup/restore \
+  -d '{"version":1,"undoSnapshot":"<上一次还原返回的 preRestoreSnapshot>"}'
+```
+
+快照内容由服务端从磁盘读，请求体里的其它字段一律忽略，且不剔任何日期——撤销要回到原状。快照不存在或已被清理返回 404。
+
+撤销本身不再写快照（它替掉的状态就是你刚还原的那份备份），所以撤销的响应不带 `preRestoreSnapshot`；源快照留在磁盘上，同一个 id 重复提交是幂等的。
 
 ### 汇总统计响应示例
 

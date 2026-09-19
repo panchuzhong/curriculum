@@ -38,7 +38,10 @@ function SubjectSection() {
 
   function add() {
     const s = newSubject.trim();
-    if (!s || subjects.includes(s)) return;
+    // 「添加」没有置灰态，两种拦截都得自己报出来：重名尤其容易让人以为是点击没生效，
+    // 因为已有的那一个就在上面列着，看不出新的为什么没进去。
+    if (!s) { toast('请先填写学科名称'); return; }
+    if (subjects.includes(s)) { toast(`「${s}」已在列表中`); return; }
     setSubjects([...subjects, s]);
     setNewSubject('');
   }

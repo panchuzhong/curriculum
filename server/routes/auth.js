@@ -15,7 +15,7 @@ import { validateRegister, validateLogin, validateChangePassword, validateUpdate
 
 const router = Router();
 
-const DEFAULT_SUBJECTS = ['数学', '物理', '化学', '英语', '语文', '生物', '历史', '地理', '政治'];
+export const DEFAULT_SUBJECTS = ['数学', '物理', '化学', '英语', '语文', '生物', '历史', '地理', '政治'];
 
 const authLimiter = rateLimit({
   windowMs: 60 * 1000,

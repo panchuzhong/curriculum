@@ -818,6 +818,20 @@ describe('POST /api/schedules/batch — cross-semester check', () => {
       .send({ classId, dates: ['2026-05-20', '2026-06-10'], startTime: '08:00', endTime: '09:00' });
     expect(res.status).toBe(400);
     expect(res.body.error).toContain('跨学期');
+    // 光看错误文案不够：客户端分支看的是这个 crossSemester 标志（api.js 把它挂到
+    // err 上，BatchScheduleDialog 据此才显示「确认跨学期排课」那个出口）。
+    // 标志丢了的话，用户拿到的就是一句死路 400——想继续也没有办法继续。
+    expect(res.body.crossSemester).toBe(true);
+    expect(res.body.inSemester).toBe(1);
+    expect(res.body.outSemester).toBe(1);
+  });
+
+  // 传了 crossSemester:true 就该放行——这是上面那个出口按钮真正会发的请求。
+  it('accepts cross-semester dates when crossSemester is set', async () => {
+    const res = await request(app).post('/api/schedules/batch').set(auth(token))
+      .send({ classId, dates: ['2026-05-21', '2026-06-11'], startTime: '08:00', endTime: '09:00', crossSemester: true });
+    expect(res.status).toBe(200);
+    expect(res.body.count).toBe(2);
   });
 
   it('allows dates all inside semester', async () => {
@@ -1208,6 +1222,47 @@ describe('PUT /api/schedules/:id — duplicate conflict returns 409', () => {
     // Failed update must not modify the record
     const check = await request(app).get(`/api/schedules/${second.body.id}`).set(auth(token));
     expect(check.body.startTime).toBe('10:00');
+  });
+});
+
+// 学期模式的排课日期是从学期行推算的，dates.* 那套校验校不到。旧服务端收下的
+// 越界学期在原地升级的库里仍然存在，按它批量排课就会写出一批看不到也删不掉的行。
+describe('学期模式的日期上下限', () => {
+  it.each([
+    ['开始日期越界', '0261-09-01', '0261-12-31'],
+    ['结束日期越界', '2999-12-01', '3000-01-31'],
+  ])('%s 的学期拒绝批量排课', async (_label, startDate, endDate) => {
+    const { semesters, schedules } = await import('../db/schema.js');
+    const before = drizzleDb.select().from(schedules).all().length;
+    // 绕过写入校验直接落库，模拟旧服务端留下的行
+    const r = drizzleDb.insert(semesters).values({
+      teacherId, name: '越界学期', type: 'spring', startDate, endDate,
+    }).run();
+
+    const res = await request(app).post('/api/schedules/batch').set(auth(token))
+      .send({ classId, semesterId: Number(r.lastInsertRowid), weekday: 1, startTime: '09:00', endTime: '10:00' });
+
+    expect(res.status).toBe(400);
+    expect(res.body.error).toContain('1900-01-01 ~ 2999-12-31');
+    expect(drizzleDb.select().from(schedules).all().length).toBe(before);
+  });
+
+  // 卡的是循环真正用到的区间：开始已经取过今天，所以 startDate 越界、
+  // endDate 在未来的学期，生成的每一天都在范围内，没理由拦。
+  it('startDate 越界但实际区间正常的学期照常排课', async () => {
+    const { semesters } = await import('../db/schema.js');
+    const nextYear = new Date();
+    nextYear.setMonth(nextYear.getMonth() + 3);
+    const endDate = nextYear.toISOString().slice(0, 10);
+    const r = drizzleDb.insert(semesters).values({
+      teacherId, name: '旧库学期', type: 'spring', startDate: '1899-09-01', endDate,
+    }).run();
+
+    const res = await request(app).post('/api/schedules/batch').set(auth(token))
+      .send({ classId, semesterId: Number(r.lastInsertRowid), weekday: 1, startTime: '09:00', endTime: '10:00' });
+
+    expect(res.status).toBe(200);
+    expect(res.body.count).toBeGreaterThanOrEqual(1);
   });
 });
 

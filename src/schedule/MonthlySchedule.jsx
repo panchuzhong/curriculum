@@ -3,17 +3,21 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { api } from '../api';
 import { getClassColor, getTextColor, DarkContext } from '../utils/colors';
 import { isHoliday, getHolidayName, isWorkday, subscribeHolidays } from '../utils/holidays';
-import { todayStr, getMonday, intParam } from '../utils/date';
-import { toMin, findConflictGroups, assignColumns } from '../utils/schedule';
+import { todayStr, getMonday, intParam, YEAR_MIN, YEAR_MAX } from '../utils/date';
+import { monthDayWindow, monthBarPct, findConflictGroups, assignColumns } from '../utils/schedule';
 import { setViewDate } from '../utils/viewDate';
 import { useSimpleSwipe } from '../hooks/useSimpleSwipe';
 import { useToast } from '../components/ToastProvider';
+import useBoundWarning from '../hooks/useBoundWarning';
 import BatchScheduleDialog from './BatchScheduleDialog';
 import ExportDialog from './ExportDialog';
 import useScheduleExport from './useScheduleExport';
 import { shortcutBlocked } from '../utils/keys';
 
-function getMonthDates(year, month) {
+// 导出仅为可测：这段和 server/services/image-gen-monthly.js 的同名函数逐字相同，
+// 网页日历和导出 PNG 各用一份。此前只有服务端那份有用例——正是 assignColumns
+// 当初分叉的同一种不对称。由 data-consistency 把两边钉在一起。
+export function getMonthDates(year, month) {
   const first = new Date(year, month, 1);
   const startDay = first.getDay() || 7; // 1=Mon
   const last = new Date(year, month + 1, 0);
@@ -24,16 +28,20 @@ function getMonthDates(year, month) {
 }
 
 function formatDate(y, m, d) {
-  return `${y}-${String(m + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+  // 年份也补齐，和 src/utils/date.js 的 fmt 一致：位数不对的年份字符串排序上会
+  // 落在上下限之内，让 clampDate 看不出它越界。
+  return `${String(y).padStart(4, '0')}-${String(m + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
 }
 
 export default function MonthlySchedule() {
   const navigate = useNavigate();
   const dark = useContext(DarkContext);
   const toast = useToast();
+  // 按钮会变灰，但方向键和滑动走的是同一个 prevMonth/nextMonth，得自己说一声。
+  const warnAtBound = useBoundWarning();
   const [searchParams, setSearchParams] = useSearchParams();
   const now = new Date();
-  const [year, setYear] = useState(() => intParam(searchParams.get('year'), now.getFullYear(), { min: 1000, max: 9999 }));
+  const [year, setYear] = useState(() => intParam(searchParams.get('year'), now.getFullYear(), { min: YEAR_MIN, max: YEAR_MAX }));
   const [month, setMonth] = useState(() => intParam(searchParams.get('month'), now.getMonth(), { min: 0, max: 11 }));
   const [schedules, setSchedules] = useState([]);
   const [animKey, setAnimKey] = useState(0);
@@ -96,24 +104,31 @@ export default function MonthlySchedule() {
   }, [year, month, schedules]);
 
   function prevMonth() {
-    animDir.current = -1;
     const nm = month === 0 ? 11 : month - 1;
     const ny = month === 0 ? year - 1 : year;
+    // 服务端的 isValidDate 带着同一对上下限，翻出去之后区间查询直接 400：
+    // 不如翻不动，而不是给一屏空课表加一条「加载课表失败」。
+    if (ny < YEAR_MIN) { warnAtBound('已到可用日期范围的最早一个月'); return; }
+    animDir.current = -1;
     setViewDate('month', `${ny}-${nm}`);
     setSearchParams({ year: String(ny), month: String(nm) }, { replace: true });
-    if (month === 0) { setYear(y => y - 1); setMonth(11); }
-    else setMonth(m => m - 1);
+    // 提交的就是刚刚卡过、也写进 URL 和 viewDate 的那对值。用 setMonth(m => m - 1)
+    // 的话，两次点击被批到一起时两次都拿同一个渲染时的 month 过卡，却减了两次，
+    // month 会变成 -1（拼出 '1900-00-01'），而守卫自己拦不住这一步。
+    setYear(ny);
+    setMonth(nm);
     setAnimKey(k => k + 1);
   }
 
   function nextMonth() {
-    animDir.current = 1;
     const nm = month === 11 ? 0 : month + 1;
     const ny = month === 11 ? year + 1 : year;
+    if (ny > YEAR_MAX) { warnAtBound('已到可用日期范围的最晚一个月'); return; }
+    animDir.current = 1;
     setViewDate('month', `${ny}-${nm}`);
     setSearchParams({ year: String(ny), month: String(nm) }, { replace: true });
-    if (month === 11) { setYear(y => y + 1); setMonth(0); }
-    else setMonth(m => m + 1);
+    setYear(ny);
+    setMonth(nm);
     setAnimKey(k => k + 1);
   }
 
@@ -128,20 +143,23 @@ export default function MonthlySchedule() {
   const swipe = useSimpleSwipe({ onPrev: prevMonth, onNext: nextMonth });
 
   // Sync year/month to viewDate store for cross-view navigation
-  useEffect(() => {
+  useLayoutEffect(() => {
     setViewDate('month', `${year}-${month}`);
   }, [year, month]);
 
   const dayRows = Math.ceil(dates.length / 7);
+  // 越界时 prevMonth/nextMonth 直接不走；按钮还亮着的话点下去毫无反应，和卡死了没区别。
+  const canPrev = (month === 0 ? year - 1 : year) >= YEAR_MIN;
+  const canNext = (month === 11 ? year + 1 : year) <= YEAR_MAX;
 
   return (
     <div ref={containerRef} tabIndex={-1} className="outline-none h-full flex flex-col" {...swipe}>
       <div className="flex items-center justify-between mb-2 shrink-0">
-        <button onClick={prevMonth} className={navBtn}><span className="sm:hidden">‹</span><span className="hidden sm:inline">上月</span></button>
+        <button onClick={prevMonth} disabled={!canPrev} className={`${navBtn} disabled:opacity-40`}><span className="sm:hidden">‹</span><span className="hidden sm:inline">上月</span></button>
         <h2 className="text-base sm:text-xl font-medium">{year}年{month + 1}月</h2>
         <div className="flex gap-1 sm:gap-2">
           <button onClick={goToThisMonth} className={`${navBtn} px-3 sm:px-4`}>本月</button>
-          <button onClick={nextMonth} className={navBtn}><span className="sm:hidden">›</span><span className="hidden sm:inline">下月</span></button>
+          <button onClick={nextMonth} disabled={!canNext} className={`${navBtn} disabled:opacity-40`}><span className="sm:hidden">›</span><span className="hidden sm:inline">下月</span></button>
           <div className="flex gap-1 ml-1 sm:ml-2">
             <button onClick={() => setShowBatch(true)} className={actBtn + ' bg-green-600 hover:bg-green-700'}>
               <span className="sm:hidden">批量</span><span className="hidden sm:inline">批量操作</span>
@@ -187,19 +205,8 @@ export default function MonthlySchedule() {
                 {workday && <span className="text-[8px] sm:text-[9px] bg-orange-500 text-white px-0.5 rounded">班</span>}
               </div>
               {daySchedules.length > 0 && (() => {
-                const DEFAULT_START = 8 * 60;
-                const DEFAULT_END = 22 * 60 + 30;
-                const earliest = Math.min(...daySchedules.map(s => toMin(s.startTime)));
-                const latest = Math.max(...daySchedules.map(s => {
-                  const st = toMin(s.startTime);
-                  const et = toMin(s.endTime);
-                  return et > st ? et : et + 24 * 60;
-                }));
-                const hasEarly = earliest < DEFAULT_START;
-                const hasLate = latest > DEFAULT_END;
-                const dayStart = hasEarly ? earliest : DEFAULT_START;
-                const dayEnd = hasLate ? latest : DEFAULT_END;
-                const dayTotal = dayEnd - dayStart;
+                // 时间窗和条形位置都走共享实现，导出月历 PNG 那份调的是同一个函数。
+                const { dayStart, dayTotal } = monthDayWindow(daySchedules);
                 const groups = findConflictGroups(daySchedules);
                 const els = [];
                 for (const group of groups) {
@@ -207,16 +214,10 @@ export default function MonthlySchedule() {
                   const items = hasConflict ? assignColumns(group) : group.map(s => ({ ...s, _col: 0 }));
                   const totalCols = Math.max(...items.map(it => (it._col || 0))) + 1;
                   for (const item of items) {
-                    const startMin = toMin(item.startTime);
-                    const endMinRaw = toMin(item.endTime);
-                    const endMin = endMinRaw > startMin ? endMinRaw : endMinRaw + 24 * 60;
-                    const dur = endMin - startMin;
-                    const topPct = (startMin - dayStart) / dayTotal * 100;
-                    const heightPct = dur / dayTotal * 100;
+                    const { topPct, heightPct, isEarly, isLate } =
+                      monthBarPct(item.startTime, item.endTime, { dayStart, dayTotal });
                     const widthPct = hasConflict ? 100 / totalCols : 100;
                     const leftPct = hasConflict ? (item._col || 0) * widthPct : 0;
-                    const isEarly = startMin < DEFAULT_START;
-                    const isLate = endMin > DEFAULT_END;
                     const isOvertime = isEarly || isLate;
                     const rounded = isEarly && isLate ? 'rounded-none' : isEarly ? 'rounded-b' : isLate ? 'rounded-t' : 'rounded';
                     els.push(

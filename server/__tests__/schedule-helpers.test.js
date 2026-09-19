@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { toMin, calcDurationBilling, resolveRange, toCSV, detectConflictGroups, detectDatedConflictGroups, schedulesOverlap } from '../services/schedule-helpers.js';
+import { toMin, duration, calcDurationBilling, resolveRange, toCSV, detectConflictGroups, detectDatedConflictGroups, schedulesOverlap, toLocalDateStr, buildPricingLookup, escapeHtml, scheduleBounds } from '../services/schedule-helpers.js';
 
 // ── toMin ──
 
@@ -65,6 +65,21 @@ describe('resolveRange', () => {
     expect(tomorrowDate - todayDate).toBe(86400000);
   });
 
+  // durationBilling: 0 是合法输入——四个校验器写的都是 isInt({ min: 0 })，
+  // 表示这节课不计费（试听、补课等）。守卫写成 `if (manual)` 的话 0 会被当成"没给"，
+  // 悄悄换成按时长算出来的分钟数，报表里的课时和金额就都变了，而且没有任何提示。
+  it.each([
+    ['显式 0 表示不计费，要原样保留', 0],
+    ['显式 30 覆盖算出来的 120', 30],
+  ])('%s', (_label, manual) => {
+    expect(calcDurationBilling('09:00', '11:00', manual)).toBe(manual);
+  });
+
+  it('没给 manual 时才按起止时间算', () => {
+    expect(calcDurationBilling('09:00', '11:00', null)).toBe(120);
+    expect(calcDurationBilling('09:00', '11:00', undefined)).toBe(120);
+  });
+
   it('resolves range=week', () => {
     const q = { range: 'week' };
     const result = resolveRange(q);
@@ -75,6 +90,26 @@ describe('resolveRange', () => {
     expect(start.getDay()).toBe(1);
     // End should be Sunday
     expect(end.getDay()).toBe(0);
+  });
+
+  // 上面那条只断言「周一开头、周日结尾、跨 6 天」——把 day===0 那一支去掉
+  // （星期天算成下一周）这三条依然全部成立，用例照样绿。真正缺的那条是
+  // 「今天必须落在这个区间里」：少了它，星期天打开课表或导出 range=week 的图，
+  // 拿到的是下一周的课，页面上看不出任何异常。
+  it('任意一天的 range=week 都包含当天，并且从周一开始', () => {
+    // 连扫 14 天，七种星期几都覆盖到，不用手算哪天是星期天
+    for (let i = 0; i < 14; i++) {
+      const iso = new Date(Date.UTC(2026, 8, 14 + i)).toISOString().slice(0, 10);
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date(`${iso}T12:00:00`));
+      try {
+        const r = resolveRange({ range: 'week' });
+        expect({ iso, contains: r.start <= iso && iso <= r.end }).toEqual({ iso, contains: true });
+        expect(new Date(`${r.start}T00:00:00`).getDay()).toBe(1);
+      } finally {
+        vi.useRealTimers();
+      }
+    }
   });
 
   it('resolves range=month', () => {
@@ -272,5 +307,139 @@ describe('getTeacherSemesters cache', () => {
       t.db.close();
       vi.useRealTimers();
     }
+  });
+});
+
+// 年份不补到 4 位的话，年份小于 1000 会算出 '261-04-30'，而库里存的是 '0261-05-01'：
+// 按字符串比大小 '0261-...' 反而小于 '261-...'，拿它当区间端点就什么都匹配不到。
+// getConflictsForSchedule 正是这么用的，而它的输入是直接从库里读的、不经校验。
+describe('toLocalDateStr', () => {
+  it('年份补齐到 4 位', () => {
+    const d = new Date(2000, 0, 1);
+    d.setFullYear(261, 4, 1);
+    expect(toLocalDateStr(d)).toBe('0261-05-01');
+  });
+
+  it('普通年份不受影响', () => {
+    expect(toLocalDateStr(new Date(2026, 8, 17))).toBe('2026-09-17');
+  });
+
+  // 按字符串比大小才是真正要守的性质：区间查询全靠它。
+  it('补齐后的端点能把同年的日期圈进来', () => {
+    const d = new Date(2000, 0, 1);
+    d.setFullYear(261, 3, 30);
+    const lo = toLocalDateStr(d);
+    expect('0261-05-01' >= lo).toBe(true);
+  });
+});
+
+// ── buildPricingLookup ──
+//
+// 这个函数此前没有任何直接用例，而它决定每节课按多少钱结算（/api/schedules/summary
+// 的报表和 CSV 导出都走它）。算错不会报错，只会给出一个看着正常的金额。
+describe('buildPricingLookup', () => {
+  const p = (classId, effectiveFrom, unitPrice) => ({ classId, effectiveFrom, unitPrice, studentCount: 1, discountAmount: 0 });
+
+  // 生效当天就该按新价：老师改价时填的是「从今天起」，而 <= 写成 < 的话，
+  // 当天那节课仍按旧价结算，差额悄无声息。已有的路由用例排的课都严格晚于生效日。
+  it('生效当天用新价，不是旧价', () => {
+    const match = buildPricingLookup([p(1, '2026-01-01', 200), p(1, '2026-06-15', 300)]);
+    expect(match(1, '2026-06-14').unitPrice).toBe(200);
+    expect(match(1, '2026-06-15').unitPrice).toBe(300);  // 边界当天
+    expect(match(1, '2026-06-16').unitPrice).toBe(300);
+  });
+
+  // matchPricing 顺序扫描并提前 break，所以依赖排序。查询没有 ORDER BY，行按 rowid 回来，
+  // 老师一旦「补录」一条更早生效的价格，数组就是乱序的。
+  it('补录的早期定价（输入乱序）也能算对', () => {
+    const match = buildPricingLookup([p(1, '2026-09-18', 900), p(1, '2026-01-01', 1000)]);
+    expect(match(1, '2026-06-01').unitPrice).toBe(1000);  // 不排序的话这里会是 null
+    expect(match(1, '2026-10-01').unitPrice).toBe(900);   // 不排序的话这里会是 1000
+  });
+
+  it('早于最早一条生效日时没有匹配，交给调用方回落到班级默认价', () => {
+    const match = buildPricingLookup([p(1, '2026-06-15', 300)]);
+    expect(match(1, '2026-01-01')).toBeNull();
+    expect(match(99, '2026-07-01')).toBeNull();
+  });
+
+  it('不同班级互不串档', () => {
+    const match = buildPricingLookup([p(1, '2026-01-01', 200), p(2, '2026-01-01', 500)]);
+    expect(match(1, '2026-07-01').unitPrice).toBe(200);
+    expect(match(2, '2026-07-01').unitPrice).toBe(500);
+  });
+});
+
+// ── escapeHtml ──
+//
+// 导出的 PNG 是拿字符串拼 HTML 再截图的。少一个转义项不会报错：正则照样匹配，
+// 查表得到 undefined，替换出来就是字面量 'undefined'——班级名「李's 冲刺班」
+// 会在每张导出图上印成「李undefineds 冲刺班」。已有的那条 XSS 用例只试了双引号。
+describe('escapeHtml', () => {
+  it.each([
+    ['&', '&amp;'],
+    ['<', '&lt;'],
+    ['>', '&gt;'],
+    ['"', '&quot;'],
+    ["'", '&#39;'],
+  ])('转义 %s', (raw, encoded) => {
+    expect(escapeHtml(raw)).toBe(encoded);
+  });
+
+  it('真实班级名里的单引号不会变成 undefined', () => {
+    expect(escapeHtml("李's 冲刺班")).toBe('李&#39;s 冲刺班');
+  });
+});
+
+// scheduleBounds 把 YYYY-MM-DD 折成一个分钟数，用来跨天比较。月份要减一（JS 的月是 0 起）。
+// 减错了在同一个月内看不出来——所有日期一起平移，先后次序不变；可一旦跨月，
+// 次序会颠倒（2026-01-31 会算成 3 月 3 日，而 2026-02-01 算成 3 月 1 日），
+// 于是"月末那节跨午夜的课"和"次月 1 号一早的课"之间的冲突就检测不出来。
+// 已有用例全都落在同一个月里，所以这条路一直没走到过。
+describe('跨月 / 跨年的冲突检测', () => {
+  const s = (date, startTime, endTime, id) => ({ id, date, startTime, endTime });
+
+  it.each([
+    ['跨月', s('2026-01-31', '23:00', '01:00', 1), s('2026-02-01', '00:30', '01:30', 2)],
+    ['跨年', s('2026-12-31', '23:00', '01:00', 1), s('2027-01-01', '00:30', '01:30', 2)],
+  ])('%s的跨午夜课与次日凌晨课算重叠', (_label, a, b) => {
+    expect(schedulesOverlap(a, b)).toBe(true);
+    expect(schedulesOverlap(b, a)).toBe(true);
+    // 顺序颠倒也要归成同一组
+    expect(detectDatedConflictGroups([b, a])).toHaveLength(1);
+    expect(detectDatedConflictGroups([a, b])[0]).toHaveLength(2);
+  });
+
+  it.each([
+    ['跨月', s('2026-01-31', '20:00', '21:00', 1), s('2026-02-01', '09:00', '10:00', 2)],
+    ['跨年', s('2026-12-31', '20:00', '21:00', 1), s('2027-01-01', '09:00', '10:00', 2)],
+  ])('%s但不挨着的两节课不算重叠', (_label, a, b) => {
+    expect(schedulesOverlap(a, b)).toBe(false);
+    // 这个函数返回所有分组（含只有一条的），所以"不冲突"表现为两个各含一条的组，
+    // 而不是空数组。
+    const groups = detectDatedConflictGroups([a, b]);
+    expect(groups.map(g => g.length)).toEqual([1, 1]);
+  });
+
+  // 排序本身也得对：月末在前、次月在后。
+  it('跨月排序不颠倒', () => {
+    const jan = s('2026-01-31', '09:00', '10:00', 1);
+    const feb = s('2026-02-01', '09:00', '10:00', 2);
+    expect(scheduleBounds(jan)[0]).toBeLessThan(scheduleBounds(feb)[0]);
+  });
+});
+
+// image-gen.js 曾经把这段算式抄在自己文件里，而且漏了 s === e 那一支：
+// 08:00~08:00 在网页上是 0（一行高的块），在导出的 PNG 里却算成 1440，
+// 画出一条覆盖整天的条。现在它直接用这个函数，所以这里直接把行为钉住。
+describe('duration', () => {
+  it.each([
+    ['08:00', '10:00', 120],
+    ['08:00', '09:30', 90],
+    ['22:00', '08:00', 600],   // 跨午夜
+    ['22:00', '25:00', 180],   // 24:00~47:59 的写法
+    ['08:00', '08:00', 0],     // 零长度：不是整整一天
+  ])('%s ~ %s = %i 分钟', (a, b, expected) => {
+    expect(duration(a, b)).toBe(expected);
   });
 });

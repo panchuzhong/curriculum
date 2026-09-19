@@ -1,8 +1,11 @@
 import { isDarkTheme, withBrowserPage, buildDbHolidayHelpers } from './image-helpers.js';
 import { getColor, getTextColor } from './colors.js';
-import { toMin, toLocalDateStr, escapeHtml, detectConflictGroups, assignColumns } from './schedule-helpers.js';
+import { monthDayWindow, monthBarPct, toLocalDateStr, escapeHtml, detectConflictGroups, assignColumns } from './schedule-helpers.js';
 
-function getMonthDates(year, month) {
+// 导出仅为可测：月历是周一开头的，getDay() 的 0=周日要映射到第 7 列，
+// 否则整个月的每一天都会落到错误的星期列上（以周日开头的月份更是整体错一周）。
+// 这段纯逻辑此前一行都没跑过——generateMonthlyImage 在路由用例里被 vi.mock 掉了。
+export function getMonthDates(year, month) {
   const first = new Date(year, month, 1);
   const startDay = first.getDay() || 7;
   const last = new Date(year, month + 1, 0);
@@ -74,10 +77,6 @@ function renderMonthHtml(schedulesWithClasses, year, month, { theme, checkIsHoli
   const GAP = 4;
   const PAD = 10;
 
-  const DEFAULT_START = 8 * 60;
-  const DEFAULT_END = 22 * 60 + 30;
-  const DEFAULT_TOTAL = DEFAULT_END - DEFAULT_START;
-
   function renderDayCell(day) {
     if (day === null) {
       return `<div style="width:${CELL_W}px;height:${CELL_H}px;background:${c.cellEmptyBg};border-radius:6px"></div>`;
@@ -102,18 +101,8 @@ function renderMonthHtml(schedulesWithClasses, year, month, { theme, checkIsHoli
 
     let barsHtml = '';
     if (daySchedules.length > 0) {
-      // Check if any schedule extends beyond default range
-      const earliest = Math.min(...daySchedules.map(s => toMin(s.startTime)));
-      const latest = Math.max(...daySchedules.map(s => {
-        const st = toMin(s.startTime);
-        const et = toMin(s.endTime);
-        return et > st ? et : et + 24 * 60;
-      }));
-      const hasEarly = earliest < DEFAULT_START;
-      const hasLate = latest > DEFAULT_END;
-      const dayStart = hasEarly ? earliest : DEFAULT_START;
-      const dayEnd = hasLate ? latest : DEFAULT_END;
-      const dayTotal = dayEnd - dayStart;
+      // 时间窗和条形位置都走共享实现，网页那份调的是同一个函数。
+      const { dayStart, dayTotal } = monthDayWindow(daySchedules);
 
       const groups = detectConflictGroups(daySchedules);
       for (const group of groups) {
@@ -121,16 +110,10 @@ function renderMonthHtml(schedulesWithClasses, year, month, { theme, checkIsHoli
         const items = hasConflict ? assignColumns(group) : group.map(s => ({ ...s, _col: 0 }));
         const totalCols = Math.max(...items.map(it => (it._col || 0))) + 1;
         for (const item of items) {
-          const startMin = toMin(item.startTime);
-          const endMinRaw = toMin(item.endTime);
-          const endMin = endMinRaw > startMin ? endMinRaw : endMinRaw + 24 * 60;
-          const dur = endMin - startMin;
-          const topPct = (startMin - dayStart) / dayTotal * 100;
-          const heightPct = dur / dayTotal * 100;
+          const { topPct, heightPct, isEarly, isLate } =
+            monthBarPct(item.startTime, item.endTime, { dayStart, dayTotal });
           const barTop = HEADER_H_CELL + topPct / 100 * CONTENT_H;
           const barH = Math.max(6, heightPct / 100 * CONTENT_H);
-          const isEarly = startMin < DEFAULT_START;
-          const isLate = endMin > DEFAULT_END;
           const isOvertime = isEarly || isLate;
           const widthPct = hasConflict ? 100 / totalCols : 100;
           const leftPct = hasConflict ? (item._col || 0) * widthPct : 0;

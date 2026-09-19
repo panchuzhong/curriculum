@@ -8,6 +8,7 @@ import { tmpdir } from 'os';
 import express from 'express';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
+import errorHandler from '../error-handler.js';
 
 const container = { drizzleDb: null, db: null };
 const snapshotDir = mkdtempSync(join(tmpdir(), 'curriculum-route-test-'));
@@ -20,30 +21,18 @@ vi.mock('../db/index.js', () => ({
   // backup.js writes pre-restore snapshots beside the database file.
   get dbDir() { return snapshotDir; },
 }));
-vi.mock('../db/seed.js', () => ({
-  seedPricingTiers: vi.fn(),
-  getDefaultPrice: vi.fn(() => 100),
+// 用真的：这里原本把 getDefaultPrice 打成固定返回 100，于是唯一一条
+// 「按定价阶梯自动填单价」的用例断言的其实是这个 100 本身——阶梯逻辑一行都没跑过，
+// 把 getDefaultPrice 的区间判断放宽成开区间（每档默认阶梯都是 min===max）也全绿。
+vi.mock('../db/seed.js', async () => ({
+  ...(await vi.importActual('../db/seed.js')),
 }));
-vi.mock('../services/audit.js', () => ({
+vi.mock('../services/audit.js', async () => ({
+  // trimAuditLog 用真的：它此前被这里手抄了一份 SQL，于是每条清理用例验的都是
+  // 抄件，生产实现一行都没跑过（把它的 ORDER BY 改反，整个套件照样全绿）。
+  ...(await vi.importActual('../services/audit.js')),
+  // logAudit 仍然打掉：它会往每个路由用例里写审计行，而那些用例在数各自表的条数。
   logAudit: vi.fn(),
-  MAX_AUDIT_ROWS: 10000,
-  trimAuditLog: vi.fn(({ teacherId, keep = 10000 }) => {
-    const keepCount = Math.max(0, Math.min(Number(keep) || 0, 10000));
-    const count = container.db.prepare('SELECT COUNT(*) as c FROM audit_log WHERE teacher_id = ?').get(teacherId).c;
-    const deleteCount = Math.max(0, count - keepCount);
-    if (deleteCount > 0) {
-      container.db.prepare(
-        `DELETE FROM audit_log
-         WHERE id IN (
-           SELECT id FROM audit_log
-           WHERE teacher_id = ?
-           ORDER BY id ASC
-           LIMIT ?
-         )`
-      ).run(teacherId, deleteCount);
-    }
-    return { keep: keepCount, before: count, deleted: deleteCount, remaining: count - deleteCount };
-  }),
 }));
 
 function signToken(teacherId) {
@@ -62,6 +51,9 @@ export async function setupApp(routePath, routeModuleImport) {
   const app = express();
   app.use(express.json());
   app.use(routePath, routes);
+  // 和 server/index.js 挂同一个：不挂的话测试里的 500 是 Express 默认的 HTML 错误页，
+  // 跟生产返回的 JSON 不是一回事，这个处理器也就没有任何用例盯得住。
+  app.use(errorHandler);
   return { app, drizzleDb: t.drizzleDb };
 }
 

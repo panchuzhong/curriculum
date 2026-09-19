@@ -96,4 +96,26 @@ test.describe('学生CRUD', () => {
     await confirmDialog.getByRole('button', { name: '取消' }).click();
     await expect(editDialog).toBeVisible();
   });
+
+  test('姓名只打空格时保存会说明原因', async ({ authenticatedPage: page }) => {
+    await page.goto('/students');
+    await page.getByRole('button', { name: '新建' }).click();
+    const form = page.locator('form').filter({ hasText: '姓名' });
+    // 空着提交有 required 兜底，只打空格却过得了 required：
+    // 修复前走到 handleSubmit 里 trim 完为空，直接 return，点「保存」毫无反应。
+    // 「拦住了」要靠「请求没发出去」来证。只断言提示可见 + 弹窗还开着是不够的：
+    // 守卫改成「弹提示但照样提交」时这两条仍然成立（服务端会回一句别的话再把
+    // 弹窗留在原地），于是用例全绿，而用户白跑一趟往返。
+    let posts = 0;
+    await page.route('**/api/students', route => {
+      if (route.request().method() === 'POST') { posts++; return route.abort(); }
+      return route.continue();
+    });
+
+    await form.locator('input[required]').fill('   ');
+    await page.getByRole('button', { name: '保存' }).click();
+    await expect(page.getByText('请先填写学生姓名').first()).toBeVisible();
+    expect(posts).toBe(0);
+    await expect(page.getByRole('heading', { name: '新建学生' })).toBeVisible();
+  });
 });

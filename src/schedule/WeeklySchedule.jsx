@@ -8,8 +8,11 @@ import useWeekNavigation from './useWeekNavigation';
 import useScheduleExport from './useScheduleExport';
 import WeekNavBar from './WeekNavBar';
 import { shortcutBlocked } from '../utils/keys';
+import { isUsableDate, DATE_INVALID_HINT } from '../utils/date';
+import { useToast } from '../components/ToastProvider';
 
 export default function WeeklySchedule() {
+  const toast = useToast();
   const [searchParams, setSearchParams] = useSearchParams();
   const containerRef = useRef(null);
 
@@ -62,7 +65,12 @@ export default function WeeklySchedule() {
           visibleDays={visibleDays}
           weekStart={weekStart}
           onScheduleClick={handleScheduleClick}
-          onCellClick={(date, startTime) => setDialog({ date, startTime })}
+          onCellClick={(date, startTime) => {
+            // 最后一屏的尾巴上排着 DATE_MAX 之后的空格子，那些日期存不下排课：
+            // 开个弹窗让人填完再报「日期无效」，不如当场说清楚。
+            if (!isUsableDate(date)) { toast(DATE_INVALID_HINT); return; }
+            setDialog({ date, startTime });
+          }}
         />
       </div>
 

@@ -114,6 +114,31 @@ describe('getNavTarget', () => {
       expect(result).toBe('/?date=2026-05-26');
     });
 
+    // weekAnchor 里的 clampDate 在别处一条用例都没盖到：把它整句删掉，
+    // 整套用例全绿。而它拦的是一个真实的跨视图跳转：周视图停在最后一天时，
+    // 锚点再往后推就出界，算出 year=3000；intParam 只能把它丢掉、退回今年。
+    it('week → year: 锚点超出上限时夹回 2999，而不是算出 3000', () => {
+      expect(getNavTarget('/yearly', '/', dates({ week: '2999-12-31' }))).toBe('/yearly?year=2999');
+    });
+
+    it('week → month: 锚点超出上限时夹回 2999-11', () => {
+      expect(getNavTarget('/monthly', '/', dates({ week: '2999-12-31' }))).toBe('/monthly?year=2999&month=11');
+    });
+
+    it('year → week: 闰日贴到平年时收回到 2 月 28 日，而不是造出 2027-02-29', () => {
+      vi.setSystemTime(new Date(2028, 1, 29));
+      // 修复前拼出 '2027-02-29'——日历上不存在，dateParam 拒掉之后周视图
+      // 静默停在本周，用户点的却是 2027 年。
+      const result = getNavTarget('/', cp, dates({ year: '2027' }));
+      expect(result).toBe('/?date=2027-02-28');
+    });
+
+    it('year → week: 闰年到闰年不收', () => {
+      vi.setSystemTime(new Date(2028, 1, 29));
+      const result = getNavTarget('/', cp, dates({ year: '2032' }));
+      expect(result).toBe('/?date=2032-02-29');
+    });
+
     it('year → month: prefers stored month in same year', () => {
       const result = getNavTarget('/monthly', cp, dates({ year: '2026', month: '2026-7' }));
       expect(result).toBe('/monthly?year=2026&month=7'); // August preserved

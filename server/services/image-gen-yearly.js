@@ -3,7 +3,10 @@ import { getCategoryColor } from './colors.js';
 import { escapeHtml } from './schedule-helpers.js';
 
 // ── Category logic — mirrors frontend YearlySchedule ──────────────
-function getCategory(cls) {
+// 这四个函数和 src/schedule/YearlySchedule.jsx 里的同名函数必须完全一致，
+// 由 data-consistency 测试钉着：网页上的年度格子和导出的年度 PNG 不能
+// 对同一年给出不同的分类、分组或颜色。导出是为了给测试比对，别在别处引用。
+export function getCategory(cls) {
   if (!cls) return '未知';
   const s = cls.subject || '未知';
   const g = cls.grade || '';
@@ -14,12 +17,12 @@ function getCategory(cls) {
   return prefix ? `${prefix}${s}` : s;
 }
 
-function getGradeLevel(cat) {
+export function getGradeLevel(cat) {
   const match = cat.match(/^(初中竞赛|高中竞赛|初中|高中|大学)/);
   return match ? match[1] : '其他';
 }
 
-function groupByGrade(entries) {
+export function groupByGrade(entries) {
   const grouped = {};
   entries.forEach(([cat, h]) => {
     const level = getGradeLevel(cat);
@@ -35,16 +38,22 @@ function groupByGrade(entries) {
     .sort((a, b) => b[1] - a[1]);
 }
 
-function resolveColor(label, dominantCategory, dark) {
-  return getCategoryColor(label, dark) || getCategoryColor(dominantCategory, dark) || 'hsl(0,0%,50%)';
+export const FALLBACK_COLOR = 'hsl(0, 0%, 50%)';
+
+export function resolveColor(label, dominantCategory, dark) {
+  return getCategoryColor(label, dark) || getCategoryColor(dominantCategory, dark) || FALLBACK_COLOR;
 }
 
-function toHoursAbs(durationBilling) {
-  if (durationBilling != null) return +durationBilling / 60;
-  return 0;
+// 和 src/utils/date.js 的同名函数保持一致（由 data-consistency 测试钉着）：
+// 名字里的 Abs 就是取绝对值。原先这一份没取，于是同一条负的 durationBilling
+// （只有还原备份能塞进来，scheduleFields 原样透传）在网页上显示 +h、
+// 在导出的年度图里是 −h——条形宽度为负，yearTotalHours > 0 的判断还会把整块统计吞掉。
+export function toHoursAbs(durationBilling) {
+  if (durationBilling == null) return 0;
+  return Math.abs(durationBilling) / 60;
 }
 
-const COLLAPSE_LIMIT = 9;
+export const COLLAPSE_LIMIT = 9;
 
 // ── Build year list from range ────────────────────────────────────
 function buildYearList(startYear, endYear) {

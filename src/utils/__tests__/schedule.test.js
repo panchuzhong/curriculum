@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { toMin, duration, findConflictGroups, assignColumns, clipBlock, isAutoBilling } from '../schedule';
+import { toMin, duration, findConflictGroups, assignColumns, clipBlock, isAutoBilling, blockGeometry } from '../schedule';
 
 describe('toMin', () => {
   it('converts HH:mm to minutes', () => {
@@ -189,5 +189,54 @@ describe('isAutoBilling', () => {
 
   it('is false for a manual override', () => {
     expect(isAutoBilling({ startTime: '08:00', endTime: '10:00', durationBilling: 90 })).toBe(false);
+  });
+});
+
+// data-consistency 只把两份 blockGeometry 互相比对，所以同一处改动在两边同时做
+// 就全绿了（第 28 轮验证：+1 改成 +9，两边一起改，1226 全过）。这里写死绝对值，
+// 让公式本身也动不了。
+describe('blockGeometry', () => {
+  const OPTS = { rowHeight: 40, topGapHeight: 40 * 5 / 60, firstLabelMin: 8 * 60 };
+
+  it('首行那节课的绝对位置和高度', () => {
+    // topGapHeight(10/3) + 0 + 1 ；一小时 = 一行 40，减 1 条边线
+    expect(blockGeometry('08:00', '09:00', OPTS)).toEqual({ top: 40 * 5 / 60 + 1, height: 39 });
+  });
+
+  it('两小时的块正好两行高', () => {
+    expect(blockGeometry('09:00', '11:00', OPTS).height).toBe(79);
+  });
+
+  it('一个半小时的块是一行半高', () => {
+    expect(blockGeometry('09:00', '10:30', OPTS).height).toBe(59);
+  });
+
+  // 不足一行的一律抬到一行：半小时算出来是 19，但那样放不下文字。
+  it('半小时的块被抬到一行高', () => {
+    expect(blockGeometry('09:00', '09:30', OPTS).height).toBe(39);
+  });
+
+  it('晚一小时开始的块正好下移一行', () => {
+    const a = blockGeometry('09:00', '10:00', OPTS).top;
+    const b = blockGeometry('10:00', '11:00', OPTS).top;
+    expect(b - a).toBeCloseTo(40, 9);
+  });
+
+  it('起止相同的块退到一行高，而不是整天', () => {
+    expect(blockGeometry('08:00', '08:00', OPTS).height).toBe(39);
+  });
+
+  it('跨零点按补满 24 小时算', () => {
+    expect(blockGeometry('23:00', '01:00', OPTS).height).toBe(79);
+  });
+
+  it('比一行还短的课仍占满一行', () => {
+    expect(blockGeometry('09:00', '09:05', OPTS).height).toBe(39);
+  });
+
+  it('rowHeight 变了，位置和高度按比例变', () => {
+    const big = blockGeometry('09:00', '10:00', { ...OPTS, rowHeight: 80, topGapHeight: 80 * 5 / 60 });
+    expect(big.height).toBe(79);
+    expect(big.top).toBeCloseTo(80 * 5 / 60 + 80 + 1, 9);
   });
 });

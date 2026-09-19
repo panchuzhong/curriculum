@@ -1,9 +1,10 @@
 import { useState, useEffect, useLayoutEffect, useContext, useCallback, useMemo, useRef } from 'react';
 import { api } from '../api';
-import { getClassColor, DarkContext } from '../utils/colors';
-import { SUBJECT_HUES, DATE_MIN, DATE_MAX } from '../utils/constants';
-import { todayStr, getMonday, addDays, getMonthRange, getYearRange, isUsableDate } from '../utils/date';
+import { getClassColor, subjectHue, DarkContext } from '../utils/colors';
+import { DATE_MIN, DATE_MAX } from '../utils/constants';
+import { todayStr, getMonday, addDays, getMonthRange, getYearRange, dateRangeError, isUsableDate, clampDate, clampYear, stepMonthTarget, YEAR_MIN, YEAR_MAX } from '../utils/date';
 import { useToast } from '../components/ToastProvider';
+import useBoundWarning from '../hooks/useBoundWarning';
 import { shortcutBlocked } from '../utils/keys';
 
 function groupBy(arr, fn) {
@@ -63,9 +64,13 @@ function BarChart({ data, maxVal }) {
 export default function Reports() {
   const dark = useContext(DarkContext);
   const toast = useToast();
+  // 按钮会变灰，但方向键走的是同一组 step 函数，得自己说一声。
+  const warnAtBound = useBoundWarning();
   const [tab, setTab] = useState('week'); // week | month | year | custom
   const [classes, setClasses] = useState([]);
   const [summary, setSummary] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [reportError, setReportError] = useState('');
   const [period, setPeriod] = useState(null);
   const [weekStart, setWeekStart] = useState(() => getMonday(todayStr()));
   const [year, setYear] = useState(new Date().getFullYear());
@@ -79,12 +84,14 @@ export default function Reports() {
   useEffect(() => { api.getClasses().then(setClasses).catch(e => toast(e.message || '加载班级失败')); }, []);
 
   useEffect(() => {
+    const gen = ++fetchGenRef.current;
     let start, end;
-    const today = todayStr();
 
     if (tab === 'week') {
       start = weekStart;
-      end = addDays(start, 6);
+      // 最后一周的尾巴会超出 DATE_MAX；不夹的话整个区间被判为无效，连请求都不发，
+      // 而周报没有提示语（那是自定义 tab 才有的），按钮就成了一个死键。
+      end = clampDate(addDays(start, 6));
     } else if (tab === 'month') {
       const r = getMonthRange(year, month);
       start = r.start;
@@ -100,14 +107,21 @@ export default function Reports() {
 
     // 原生年份段多打一位会把年份左移（2026 → 0261）：位数正确、比大小也"正常"，
     // 区间却变成 0261 至今，卡片会显示一个看似合理的全历史聚合。用不了的日期不发请求。
-    if (!start || !end || !isUsableDate(start) || !isUsableDate(end) || start > end) return;
+    // 拒绝的理由要原样显给用户，所以和下面的提示共用 dateRangeError。
+    if (dateRangeError(start, end)) {
+      setLoading(false);
+      return;
+    }
     setPeriod({ start, end });
-    const gen = ++fetchGenRef.current;
+    setLoading(true);
+    setReportError('');
     // Filter server-side so every dimension (including byMonth) follows the
     // class filter — byMonth cannot be filtered client-side.
     api.getScheduleSummary(start, end, filterClassId || undefined)
       .then(data => { if (gen === fetchGenRef.current) setSummary(data); })
-      .catch(e => toast(e.message || '加载报表失败'));
+      .catch(e => { if (gen === fetchGenRef.current) setReportError(e.message || '加载报表失败'); })
+      .finally(() => { if (gen === fetchGenRef.current) setLoading(false); });
+    return () => { fetchGenRef.current++; };
   }, [tab, weekStart, year, month, customStart, customEnd, filterClassId]);
 
   const loadWeek = useCallback((monday) => {
@@ -116,8 +130,47 @@ export default function Reports() {
     // state. Waiting for the fetch effect to copy weekStart into period leaves
     // one render where the navigation action has completed but the old range
     // is still shown.
-    setPeriod({ start: monday, end: addDays(monday, 6) });
+    setPeriod({ start: monday, end: clampDate(addDays(monday, 6)) });
   }, []);
+
+  // 周/月/年的区间是翻页翻出来的，不是打出来的：翻到上下限之外，拉数据的 effect
+  // 会拒掉这个区间、连请求都不发，而标题照常显示「1899年」，下面还摆着 1900 年的卡片。
+  // 自定义 tab 靠提示语说明原因，这三个 tab 用户改不了区间，干脆翻不出去。
+  // 从 weekStart 推，不从 period.start：period 是四个 tab 共用的，切回周报的那一帧里
+  // 它还装着月/年的区间（要等拉数据的 effect 落地才同步）。拿月首去加一周，
+  // 落点根本不是周一，之后翻页就一直歪着。weekStart 始终是周一（初始值过 getMonday，
+  // 之后只由 loadWeek 写），也不需要等请求回来。
+  const stepWeek = useCallback((delta) => {
+    // 夹周首会得到一个周二开头的「一天周」（2999-12-31 是周二），再往回翻就一路
+    // 变成周二~周一。周首出界就不翻；区间的尾巴由 loadWeek 和上面的 effect 夹回去，
+    // 所以最后一个完整周（周一 2999-12-30）仍然翻得到。
+    const monday = addDays(weekStart, delta * 7);
+    if (!isUsableDate(monday)) {
+      warnAtBound(`已到可用日期范围的${delta < 0 ? '最早' : '最晚'}一周`);
+      return;
+    }
+    loadWeek(monday);
+  }, [weekStart, loadWeek, warnAtBound]);
+
+  const stepMonth = useCallback((delta) => {
+    const next = stepMonthTarget(year, month, delta);
+    if (!next) {
+      warnAtBound(`已到可用日期范围的${delta < 0 ? '最早' : '最晚'}一个月`);
+      return;
+    }
+    setYear(next.year);
+    setMonth(next.month);
+  }, [year, month, warnAtBound]);
+
+  // 夹而不拒的话，到了 2999 再按右方向键就是一次静默的原地踏步。
+  const stepYear = useCallback((delta) => {
+    const next = clampYear(year + delta);
+    if (next === year) {
+      warnAtBound(`已到可用日期范围的${delta < 0 ? '最早' : '最晚'}一年`);
+      return;
+    }
+    setYear(next);
+  }, [year, warnAtBound]);
 
   useLayoutEffect(() => {
     const onKey = (e) => {
@@ -131,19 +184,19 @@ export default function Reports() {
         return;
       }
       if (tab === 'week' && period) {
-        if (e.key === 'ArrowLeft') { e.preventDefault(); loadWeek(addDays(period.start, -7)); }
-        if (e.key === 'ArrowRight') { e.preventDefault(); loadWeek(addDays(period.start, 7)); }
+        if (e.key === 'ArrowLeft') { e.preventDefault(); stepWeek(-1); }
+        if (e.key === 'ArrowRight') { e.preventDefault(); stepWeek(1); }
       } else if (tab === 'month') {
-        if (e.key === 'ArrowLeft') { e.preventDefault(); if (month === 0) { setYear(y => y - 1); setMonth(11); } else setMonth(m => m - 1); }
-        if (e.key === 'ArrowRight') { e.preventDefault(); if (month === 11) { setYear(y => y + 1); setMonth(0); } else setMonth(m => m + 1); }
+        if (e.key === 'ArrowLeft') { e.preventDefault(); stepMonth(-1); }
+        if (e.key === 'ArrowRight') { e.preventDefault(); stepMonth(1); }
       } else if (tab === 'year') {
-        if (e.key === 'ArrowLeft') { e.preventDefault(); setYear(y => y - 1); }
-        if (e.key === 'ArrowRight') { e.preventDefault(); setYear(y => y + 1); }
+        if (e.key === 'ArrowLeft') { e.preventDefault(); stepYear(-1); }
+        if (e.key === 'ArrowRight') { e.preventDefault(); stepYear(1); }
       }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [tab, period, year, month, loadWeek]);
+  }, [tab, period, loadWeek, stepWeek, stepMonth, stepYear]);
 
   const classMap = useMemo(() => {
     const m = {};
@@ -168,7 +221,11 @@ export default function Reports() {
       .map(([label, items]) => {
         const subject = items[0].subject;
         const comp = items[0].isCompetition;
-        const hue = Object.hasOwn(SUBJECT_HUES, subject) ? SUBJECT_HUES[subject] : { h: 0, s: 0 };
+        // 必须走 colors.js 的 subjectHue：它对预设之外的学科有哈希兜底。
+        // 这里原本自己查了一遍 SUBJECT_HUES，查不到就回落成 {h:0,s:0}——
+        // 于是老师在设置里自定义的学科（编程、美术、奥数…）在这张图上全是同一个灰，
+        // 彼此分不开，也和课表方块、设置页色块、导出 PNG 里的颜色对不上。
+        const hue = subjectHue(subject);
         return {
           label,
           value: items.reduce((s, b) => s + b.count, 0),
@@ -207,24 +264,35 @@ export default function Reports() {
       .sort((a, b) => b.revenue - a.revenue);
 
     // By month — use byMonth from summary
-    const monthData = (summary.byMonth || []).map(m => ({
-      label: `${parseInt(m.month.split('-')[1])}月`,
-      value: m.count,
-      hours: m.hours,
-      revenue: m.revenue,
-      color: '#6366f1',
-      sortKey: m.month,
-    }));
+    // 标签只写「5月」的话，自定义区间跨了两个自然年时会出现两条一模一样的「5月」，
+    // 老师分不出哪条是哪年；而 BarChart 的 key 取的是 item.key ?? item.label，
+    // 于是这两条还共用同一个 React key——切换班级筛选时可能把彼此的宽度/文案串了。
+    // 跨年时把年份写进标签，并且始终给一个唯一的 key（月份本身）。
+    // （原来这里挂的 sortKey 没人读：服务端返回的 byMonth 已经按月份升序排好了。）
+    const months = summary.byMonth || [];
+    const multiYear = new Set(months.map(m => m.month.slice(0, 4))).size > 1;
+    const monthData = months.map(m => {
+      const [y, mo] = m.month.split('-');
+      return {
+        key: m.month,
+        label: multiYear ? `${y}年${parseInt(mo)}月` : `${parseInt(mo)}月`,
+        value: m.count,
+        hours: m.hours,
+        revenue: m.revenue,
+        color: '#6366f1',
+      };
+    });
 
     return { totalCount, totalHours, totalRevenue, subjectData, gradeData, classData, monthData };
   }, [summary, filterClassId, classMap, dark]);
 
-  // 自定义区间被拒时的说明：填了但用不了（含年份段被原生控件左移的情况），或倒挂。
-  const customRangeHint = customStart && customEnd
-    ? (!isUsableDate(customStart) || !isUsableDate(customEnd)
-      ? '日期无效，图表为上一有效区间的数据'
-      : customStart > customEnd ? '开始日期晚于结束日期，图表为上一有效区间的数据' : null)
-    : null;
+  // 越界的一步 stepWeek 直接不走；按钮还亮着的话点下去毫无反应，和卡死了没区别。
+  const canStepWeek = (delta) => isUsableDate(addDays(weekStart, delta * 7));
+
+  // 自定义区间被拒时的说明：填了但用不了（含年份段被原生控件左移的情况）、
+  // 倒挂，或清空了其中一端——三种情况上面都不发请求，都得有说法。
+  const customRangeError = dateRangeError(customStart, customEnd);
+  const customRangeHint = customRangeError && `${customRangeError}，图表为上一有效区间的数据`;
 
   if (!period) return null;
 
@@ -258,30 +326,30 @@ export default function Reports() {
         </select>
         {tab === 'week' && period && (
           <div className="flex items-center gap-1 sm:gap-2">
-            <button onClick={() => loadWeek(addDays(period.start, -7))} className="px-2 py-1 bg-gray-200 dark:bg-gray-700 rounded hover:bg-gray-300 dark:hover:bg-gray-600 active:scale-95 transition-transform text-sm">◀</button>
+            <button onClick={() => stepWeek(-1)} disabled={!canStepWeek(-1)} className="px-2 py-1 bg-gray-200 dark:bg-gray-700 rounded hover:bg-gray-300 dark:hover:bg-gray-600 active:scale-95 transition-transform text-sm disabled:opacity-40">◀</button>
             <span className="text-xs sm:text-sm tabular-nums text-center min-w-[140px] sm:w-48">{period.start} ~ {period.end}</span>
-            <button onClick={() => loadWeek(addDays(period.start, 7))} className="px-2 py-1 bg-gray-200 dark:bg-gray-700 rounded hover:bg-gray-300 dark:hover:bg-gray-600 active:scale-95 transition-transform text-sm">▶</button>
+            <button onClick={() => stepWeek(1)} disabled={!canStepWeek(1)} className="px-2 py-1 bg-gray-200 dark:bg-gray-700 rounded hover:bg-gray-300 dark:hover:bg-gray-600 active:scale-95 transition-transform text-sm disabled:opacity-40">▶</button>
             <button onClick={() => loadWeek(getMonday(todayStr()))} className="px-2 sm:px-3 py-1 bg-gray-200 dark:bg-gray-700 rounded text-xs sm:text-sm hover:bg-gray-300 dark:hover:bg-gray-600 active:scale-95 transition-transform">本周</button>
           </div>
         )}
         {tab === 'month' && (
           <div className="flex items-center gap-1 sm:gap-2">
-            <button onClick={() => { if (month === 0) { setYear(y => y - 1); setMonth(11); } else setMonth(m => m - 1); }}
-              className="px-2 py-1 bg-gray-200 dark:bg-gray-700 rounded hover:bg-gray-300 dark:hover:bg-gray-600 active:scale-95 transition-transform">◀</button>
+            <button onClick={() => stepMonth(-1)} disabled={year <= YEAR_MIN && month === 0}
+              className="px-2 py-1 bg-gray-200 dark:bg-gray-700 rounded hover:bg-gray-300 dark:hover:bg-gray-600 active:scale-95 transition-transform disabled:opacity-40">◀</button>
             <span className="text-xs sm:text-sm text-center min-w-[80px] sm:w-32">{year}年{month + 1}月</span>
-            <button onClick={() => { if (month === 11) { setYear(y => y + 1); setMonth(0); } else setMonth(m => m + 1); }}
-              className="px-2 py-1 bg-gray-200 dark:bg-gray-700 rounded hover:bg-gray-300 dark:hover:bg-gray-600 active:scale-95 transition-transform">▶</button>
+            <button onClick={() => stepMonth(1)} disabled={year >= YEAR_MAX && month === 11}
+              className="px-2 py-1 bg-gray-200 dark:bg-gray-700 rounded hover:bg-gray-300 dark:hover:bg-gray-600 active:scale-95 transition-transform disabled:opacity-40">▶</button>
             <button onClick={() => { const n = new Date(); setYear(n.getFullYear()); setMonth(n.getMonth()); }}
               className="px-2 sm:px-3 py-1 bg-gray-200 dark:bg-gray-700 rounded text-xs sm:text-sm hover:bg-gray-300 dark:hover:bg-gray-600 active:scale-95 transition-transform">本月</button>
           </div>
         )}
         {tab === 'year' && (
           <div className="flex items-center gap-1 sm:gap-2">
-            <button onClick={() => setYear(y => y - 1)}
-              className="px-2 py-1 bg-gray-200 dark:bg-gray-700 rounded hover:bg-gray-300 dark:hover:bg-gray-600 active:scale-95 transition-transform">◀</button>
+            <button onClick={() => stepYear(-1)} disabled={year <= YEAR_MIN}
+              className="px-2 py-1 bg-gray-200 dark:bg-gray-700 rounded hover:bg-gray-300 dark:hover:bg-gray-600 active:scale-95 transition-transform disabled:opacity-40">◀</button>
             <span className="text-xs sm:text-sm text-center min-w-[60px] sm:w-20">{year}年</span>
-            <button onClick={() => setYear(y => y + 1)}
-              className="px-2 py-1 bg-gray-200 dark:bg-gray-700 rounded hover:bg-gray-300 dark:hover:bg-gray-600 active:scale-95 transition-transform">▶</button>
+            <button onClick={() => stepYear(1)} disabled={year >= YEAR_MAX}
+              className="px-2 py-1 bg-gray-200 dark:bg-gray-700 rounded hover:bg-gray-300 dark:hover:bg-gray-600 active:scale-95 transition-transform disabled:opacity-40">▶</button>
             <button onClick={() => setYear(new Date().getFullYear())}
               className="px-2 sm:px-3 py-1 bg-gray-200 dark:bg-gray-700 rounded text-xs sm:text-sm hover:bg-gray-300 dark:hover:bg-gray-600 active:scale-95 transition-transform">今年</button>
           </div>
@@ -302,6 +370,11 @@ export default function Reports() {
         )}
       </div>
 
+      {loading ? (
+        <p role="status" className="text-center py-16 text-gray-500">正在加载报表…</p>
+      ) : reportError ? (
+        <p role="alert" className="text-center py-16 text-red-500">报表加载失败：{reportError}</p>
+      ) : <>
       {/* Summary cards */}
       <div className="grid grid-cols-3 gap-2 sm:gap-4 mb-3 sm:mb-6">
         <StatCard label="排课次数" value={totalCount} unit="次" accent="#3b82f6" icon="📅" />
@@ -397,6 +470,7 @@ export default function Reports() {
           </div>
         </div>
       )}
+      </>}
     </div>
   );
 }

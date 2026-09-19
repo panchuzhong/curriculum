@@ -1,5 +1,5 @@
 import { isDarkTheme, withBrowserPage, buildDbHolidayHelpers } from './image-helpers.js';
-import { toMin, detectConflictGroups, assignColumns, toLocalDateStr, escapeHtml } from './schedule-helpers.js';
+import { toMin, blockGeometry, detectConflictGroups, assignColumns, toLocalDateStr, escapeHtml } from './schedule-helpers.js';
 import { getColor, getTextColor } from './colors.js';
 
 // ── Schedule helpers ─────────────────────────────────────────────
@@ -154,11 +154,14 @@ export async function generateScheduleImage(schedulesWithClasses, startDate, end
       const items = assignColumns(group);
       const totalCols = Math.max(...items.map(it => it._col)) + 1;
       items.forEach(item => {
-        const startMin = toMin(item.startTime);
-        const endMin = toMin(item.endTime);
-        const durMin = endMin > startMin ? endMin - startMin : endMin + 24 * 60 - startMin;
-        const top = TOP_GAP + (startMin - firstLabelHour * 60) / 60 * rowHSafe + 1;
-        const h = Math.max(durMin / 60 * rowHSafe - 1, rowHSafe - 1);
+        // 位置和高度走共享的 blockGeometry()，别在这里重写一遍：原来这里抄了一份
+        // 时长公式，少了 duration() 的 s === e 分支，于是 08:00~08:00 在网页上是
+        // 0（一行高的块），在导出的 PNG 里却算成 1440，画出一条覆盖整天的条。
+        // 这种排课只有还原备份塞得进来（普通路由有 isValidScheduleSpan 拦着），
+        // 但两份实现对同一节课给出不同答案本身就是问题。
+        const { top, height: h } = blockGeometry(item.startTime, item.endTime, {
+          rowHeight: rowHSafe, topGapHeight: TOP_GAP, firstLabelMin: firstLabelHour * 60,
+        });
         const clippedTop = Math.max(0, top);
         const clippedH = Math.min(h, totalH - clippedTop);
         const itemColW = colW / totalCols;

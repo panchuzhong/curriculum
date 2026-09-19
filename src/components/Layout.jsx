@@ -2,9 +2,11 @@ import { useState, useEffect, useLayoutEffect, useRef } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { clearToken, loginUrl } from '../api';
 import { setDarkMode, DarkContext } from '../utils/colors';
-import { getViewDate } from '../utils/viewDate';
+import { getViewDate, setViewDate } from '../utils/viewDate';
+import { getMonday } from '../utils/date';
 import { getNavTarget as computeNavTarget } from '../utils/navTarget';
 import { shortcutBlocked } from '../utils/keys';
+import { useDialogFocusTrap } from '../hooks/useDialogFocusTrap';
 
 const NAV_LINKS = [
   { to: '/', label: '周课表', color: 'bg-blue-500', icon: 'M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z' },
@@ -19,10 +21,31 @@ const NAV_LINKS = [
 
 const SCHEDULE_PATHS = ['/', '/monthly', '/yearly'];
 
-function getNavTarget(path) {
+function getCurrentPath() {
+  // Browser history updates before React commits a route transition. Read it
+  // at keypress time so rapid presses advance from the last navigation, then
+  // remove BASE to give the date-navigation helper router-relative paths.
+  const base = import.meta.env.BASE_URL.replace(/\/+$/, '');
+  return window.location.pathname.slice(base.length) || '/';
+}
+
+function prepareNavTarget(path, currentPath) {
   // Same breakpoint as useWeekNavigation: mobile shows 2 days from the stored week.
   const spanDays = window.innerWidth < 768 ? 2 : 7;
-  return computeNavTarget(path, window.location.pathname, getViewDate, spanDays);
+  const target = computeNavTarget(path, currentPath, getViewDate, spanDays);
+  // A second keypress can arrive before the target view mounts. Publish its
+  // date alongside navigation so that keypress cannot use the old view's date.
+  const url = new URL(target, window.location.origin);
+  const params = url.searchParams;
+  if (url.pathname === '/monthly' && params.has('year') && params.has('month')) {
+    setViewDate('month', `${params.get('year')}-${params.get('month')}`);
+  } else if (url.pathname === '/yearly' && params.has('year')) {
+    setViewDate('year', params.get('year'));
+  } else if (url.pathname === '/' && (params.has('week') || params.has('date'))) {
+    const date = params.get('date');
+    setViewDate('week', params.get('week') || (spanDays === 2 ? date : getMonday(date)));
+  }
+  return target;
 }
 
 export default function Layout({ children }) {
@@ -44,6 +67,8 @@ export default function Layout({ children }) {
   const [isMobile, setIsMobile] = useState(() => window.innerWidth < 768);
   const [isTablet, setIsTablet] = useState(() => window.innerWidth >= 768 && window.innerWidth < 1280);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const sidebarRef = useRef(null);
+  useDialogFocusTrap(sidebarRef, isMobile && sidebarOpen);
 
   useLayoutEffect(() => {
     setDarkMode(dark);
@@ -91,13 +116,13 @@ export default function Layout({ children }) {
       if (e.key !== 'ArrowUp' && e.key !== 'ArrowDown') return;
       if (shortcutBlocked(e)) return;
       e.preventDefault();
-      const currentPath = window.location.pathname || '/';
+      const currentPath = getCurrentPath();
       const idx = NAV_LINKS.findIndex(l => l.to === currentPath);
       if (idx === -1) return;
       const next = e.key === 'ArrowUp'
         ? (idx - 1 + NAV_LINKS.length) % NAV_LINKS.length
         : (idx + 1) % NAV_LINKS.length;
-      navigate(getNavTarget(NAV_LINKS[next].to));
+      navigate(prepareNavTarget(NAV_LINKS[next].to, currentPath));
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
@@ -195,7 +220,7 @@ export default function Layout({ children }) {
           )}
         </div>
         {isMobile && (
-          <button onClick={() => setSidebarOpen(false)}
+          <button onClick={() => setSidebarOpen(false)} aria-label="关闭导航"
             className="p-1.5 rounded-lg text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-700 transition">
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -210,7 +235,7 @@ export default function Layout({ children }) {
           const isSchedule = SCHEDULE_PATHS.includes(l.to);
           return (
             <Link key={l.to} to={l.to}
-              onClick={isSchedule ? (e) => { e.preventDefault(); navigate(getNavTarget(l.to)); } : undefined}
+              onClick={isSchedule ? (e) => { e.preventDefault(); navigate(prepareNavTarget(l.to, getCurrentPath())); } : undefined}
               className={`flex items-center gap-3 pr-3 py-2.5 rounded-xl text-sm transition-all duration-150 ${
                 active
                   ? 'pl-[9px] border-l-[3px] border-blue-500 bg-blue-50 dark:bg-blue-900/20 font-semibold text-blue-700 dark:text-blue-300'
@@ -272,6 +297,11 @@ export default function Layout({ children }) {
 
       {isMobile ? (
         <nav
+          id="mobile-navigation" ref={sidebarRef} tabIndex={-1}
+          role={sidebarOpen ? 'dialog' : undefined} aria-label="主导航"
+          aria-modal={sidebarOpen ? true : undefined}
+          inert={!sidebarOpen} aria-hidden={!sidebarOpen}
+          onKeyDown={e => { if (e.key === 'Escape') setSidebarOpen(false); }}
           className={`fixed inset-y-0 left-0 z-50 w-64 flex flex-col bg-white dark:bg-gray-800 border-r border-gray-200 dark:border-gray-700 shadow-xl transition-transform duration-200 ${
             sidebarOpen ? 'translate-x-0' : '-translate-x-full'
           }`}>
@@ -292,10 +322,11 @@ export default function Layout({ children }) {
         </nav>
       )}
 
-      <div className="flex-1 flex flex-col min-w-0 min-h-0">
+      <div className="flex-1 flex flex-col min-w-0 min-h-0" inert={isMobile && sidebarOpen}>
         {isMobile && (
           <div className="flex items-center h-11 px-2 border-b border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 shrink-0">
             <button
+              aria-label="打开导航" aria-expanded={sidebarOpen} aria-controls="mobile-navigation"
               onClick={() => setSidebarOpen(true)}
               className="p-2 rounded-lg text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition active:scale-90">
               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">

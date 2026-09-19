@@ -170,7 +170,7 @@ export default function ScheduleGrid({ dates, schedules, visibleDays = 7, weekSt
             const daySchedules = byDate[date] || [];
 
             return (
-              <div key={date} style={{ width: `${100 / N}%`, flexShrink: 0 }} className="flex flex-col">
+              <div key={date} data-date={date} style={{ width: `${100 / N}%`, flexShrink: 0 }} className="flex flex-col">
                 <DayHeader date={date} isToday={isToday} HEADER_HEIGHT={HEADER_HEIGHT} />
 
                 {/* Day body — touch handlers for long-press-to-create on mobile */}

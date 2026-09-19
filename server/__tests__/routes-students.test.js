@@ -1,17 +1,56 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach } from 'vitest';
 import request from 'supertest';
 import { setupApp, makeUser, auth } from './route-helpers.js';
 import { logAudit } from '../services/audit.js';
 
-let app, drizzleDb, token;
+let app, drizzleDb, token, teacherId;
 
 beforeEach(async () => {
   ({ app, drizzleDb } = await setupApp('/api/students', '../routes/students.js'));
-  ({ token } = await makeUser(drizzleDb));
+  ({ token, id: teacherId } = await makeUser(drizzleDb));
   logAudit.mockClear();
 });
 
 describe('POST /api/students', () => {
+  // 旧接口靠正则的隐式转换接受过数字年份；加类型守卫时一刀切掉的话，
+  // 这些客户端连改个电话号码都会 400。
+  it('birthDate 接受四位数字年份，但拒绝非标量', async () => {
+    const ok = await request(app).post('/api/students').set(auth(token))
+      .send({ name: '数字年份', birthDate: 1990 });
+    expect(ok.status).toBe(200);
+    // 光看 200 是不够的：数字会被绑成 REAL、按 TEXT 亲和性存成 "1990.0"，
+    // 接口照样返回 200，坏在存下来的值上。
+    expect(ok.body.birthDate).toBe('1990');
+
+    // 而且要能原样改回去——客户端把读到的值再提交一次是最普通的操作，
+    // 存成 "1990.0" 的话这一步会 400，那条记录从此改不动。
+    const again = await request(app).put(`/api/students/${ok.body.id}`).set(auth(token))
+      .send({ birthDate: ok.body.birthDate, phone: '13800000001' });
+    expect(again.status).toBe(200);
+
+    const bad = await request(app).post('/api/students').set(auth(token))
+      .send({ name: '数组', birthDate: ['1990'] });
+    expect(bad.status).toBe(400);
+
+    // 小数年份不是"年份"，仍要拒
+    const frac = await request(app).post('/api/students').set(auth(token))
+      .send({ name: '小数', birthDate: 1990.5 });
+    expect(frac.status).toBe(400);
+  });
+
+  // 同一个坑：手机号也是 TEXT 列，数字绑进去会存成 "13800000000.0"，
+  // 接口返回 200，而客户端把读回来的值再提交一次就 400「手机号格式不正确」。
+  it.each([['phone'], ['parentPhone']])('%s 收到数字时按字符串存，能原样改回去', async (field) => {
+    const created = await request(app).post('/api/students').set(auth(token))
+      .send({ name: `数字${field}`, [field]: 13800000000 });
+    expect(created.status).toBe(200);
+    expect(created.body[field]).toBe('13800000000');
+
+    const again = await request(app).put(`/api/students/${created.body.id}`).set(auth(token))
+      .send({ [field]: created.body[field], parentName: '改一下别的' });
+    expect(again.status).toBe(200);
+  });
+
   it('creates a student and returns full object', async () => {
     const res = await request(app).post('/api/students').set(auth(token))
       .send({ name: '张三', phone: '13800138000' });
@@ -249,5 +288,45 @@ describe('classIds given as numeric strings', () => {
       .send({ name: '张三丰', classIds: [String(classId)] });
     expect(updated.status).toBe(200);
     expect(updated.body.classIds).toEqual([classId]);
+  });
+});
+
+// classIds 里指向已软删班级的条目必须被丢掉。软删的班在列表、报表、冲突检测里
+// 都当不存在，把学生挂上去等于建了一条谁也看不见、也删不掉的关系。
+describe('建学生时 classIds 不认已删除的班', () => {
+  it('指向软删班级的 classIds 被丢掉', async () => {
+    const { classes, classStudents } = await import('../db/schema.js');
+    const live = drizzleDb.insert(classes).values({
+      teacherId, name: '在用的班', grade: '高一', subject: '数学', studentCount: 1, unitPrice: 100,
+    }).run();
+    const dead = drizzleDb.insert(classes).values({
+      teacherId, name: '已删的班', grade: '高一', subject: '数学', studentCount: 1, unitPrice: 100, deleted: true,
+    }).run();
+    const liveId = Number(live.lastInsertRowid);
+    const deadId = Number(dead.lastInsertRowid);
+
+    const res = await request(app).post('/api/students').set(auth(token))
+      .send({ name: '新学生', classIds: [liveId, deadId] });
+    expect(res.status).toBe(200);
+
+    const links = drizzleDb.select().from(classStudents).all()
+      .filter(l => l.studentId === res.body.id);
+    expect(links.map(l => l.classId)).toEqual([liveId]);
+  });
+});
+
+// 手机号的号段（1[3-9]）是有意义的：放宽成 1\d{10} 之后 12345678901 也会被收下。
+describe('手机号号段校验', () => {
+  it.each(['12000000000', '10000000000', '11111111111'])('%s 被拒', async (phone) => {
+    const res = await request(app).post('/api/students').set(auth(token))
+      .send({ name: 'X', phone });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toBe('手机号格式不正确');
+  });
+
+  it.each(['13800138000', '19900199000', '15012345678'])('%s 被接受', async (phone) => {
+    const res = await request(app).post('/api/students').set(auth(token))
+      .send({ name: 'X', phone });
+    expect(res.status).toBe(200);
   });
 });
