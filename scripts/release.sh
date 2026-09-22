@@ -75,6 +75,12 @@ After=network.target
 
 [Service]
 Type=simple
+# Without User=/Group= systemd runs this as root — including the Puppeteer
+# Chromium the image endpoints spawn. The deploy steps below create the
+# account and hand it the install directory (the server writes data/ and the
+# pre-restore snapshots next to the database, so it needs to own them).
+User=curriculum
+Group=curriculum
 WorkingDirectory=/opt/curriculum-scheduler
 EnvironmentFile=/opt/curriculum-scheduler/.env
 ExecStart=/usr/bin/env node /opt/curriculum-scheduler/server/index.js
@@ -99,10 +105,12 @@ echo "  2. 编辑 .env 文件（修改 JWT_SECRET）"
 echo "  3. 运行 ./start.sh"
 echo ""
 echo "或使用 systemd:"
+echo "  sudo useradd --system --no-create-home --shell /usr/sbin/nologin curriculum"
 echo "  sudo mkdir -p /opt/curriculum-scheduler"
 echo "  sudo cp -r curriculum-scheduler-v${VERSION}/. /opt/curriculum-scheduler/"
 echo "  sudo vim /opt/curriculum-scheduler/.env"
 echo "  sudo npm ci --omit=dev --prefix /opt/curriculum-scheduler"
+echo "  sudo chown -R curriculum:curriculum /opt/curriculum-scheduler"
 echo "  sudo cp /opt/curriculum-scheduler/curriculum-scheduler.service /etc/systemd/system/"
 echo "  sudo systemctl daemon-reload"
 echo "  sudo systemctl enable curriculum-scheduler"

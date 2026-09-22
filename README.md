@@ -133,6 +133,11 @@ ALLOW_REGISTRATION=true node server/index.js
 通过 `http://localhost:8443/curriculum/` 访问。构建和运行须使用同一个 `BASE`。
 API 仍位于同源的 `/api`；反向代理需同时转发 `/curriculum/` 和 `/api/`，保留路径前缀。
 
+反向代理必须转发客户端 IP：服务端设置了 `trust proxy = 1`，把 `X-Forwarded-For`
+的最后一项当作客户端地址用于限流。nginx 加上
+`proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;` 即可；不加的话
+所有请求共用一个限流桶，任何人连错 10 次密码就会把全部用户挡在门外 15 分钟。
+
 ### 测试
 
 ```bash
@@ -171,16 +176,24 @@ vim .env        # 修改 JWT_SECRET
 
 ### systemd 服务
 
+服务单元里写的是 `User=curriculum`，所以要先建好这个账号并把安装目录交给它
+（服务端要在 `data/` 下写数据库和还原前快照）：
+
 ```bash
+sudo useradd --system --no-create-home --shell /usr/sbin/nologin curriculum
 sudo mkdir -p /opt/curriculum-scheduler
 sudo cp -r curriculum-scheduler-v*/. /opt/curriculum-scheduler/
 sudo vim /opt/curriculum-scheduler/.env
 sudo npm ci --omit=dev --prefix /opt/curriculum-scheduler
+sudo chown -R curriculum:curriculum /opt/curriculum-scheduler
 sudo cp /opt/curriculum-scheduler/curriculum-scheduler.service /etc/systemd/system/
 sudo systemctl daemon-reload
 sudo systemctl enable curriculum-scheduler
 sudo systemctl start curriculum-scheduler
 ```
+
+已经以 root 跑着的旧部署，升级时补上 `useradd` 和 `chown -R` 两步再
+`systemctl daemon-reload && systemctl restart`，否则服务会因为写不了 `data/` 而起不来。
 
 ## API 文档
 

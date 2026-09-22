@@ -124,11 +124,3 @@ export function getHolidayName(dateStr) {
   if (!(BUILT_IN_HOLIDAYS[year] || []).includes(mmDd)) return '节假日';
   return HOLIDAY_NAMES[mmDd] || '节假日';
 }
-
-export function getWorkdayReason(dateStr) {
-  if (dbLoaded && dbHolidays) {
-    const dbMatch = dbHolidays.find(h => h.date === dateStr && h.type === 'workday');
-    if (dbMatch && dbMatch.name) return dbMatch.name;
-  }
-  return '调休';
-}

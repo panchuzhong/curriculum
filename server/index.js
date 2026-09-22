@@ -19,6 +19,17 @@ import errorHandler from './error-handler.js';
 
 const app = express();
 
+// nginx terminates in front of this server, so every socket address is the
+// proxy's: with the default (off), express-rate-limit keys every client into
+// one bucket and ten bad logins from anyone lock out everyone for fifteen
+// minutes. 1 = trust exactly one hop, which makes req.ip the LAST
+// X-Forwarded-For entry — the one nginx appends. `true` would take the FIRST
+// entry instead, which the client sends and can therefore forge, handing each
+// attacker a fresh bucket. The proxy must set the header (nginx:
+// proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for); without it
+// req.ip falls back to the socket address, i.e. the old behaviour.
+app.set('trust proxy', 1);
+
 // Backup restore payloads may be up to 50MB. That parser lives in backup.js
 // behind its authMiddleware, so an anonymous client never gets a large body
 // parsed; the global 1MB parser must skip the path or it would reject first.
