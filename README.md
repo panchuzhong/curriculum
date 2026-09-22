@@ -278,7 +278,7 @@ sudo systemctl start curriculum-scheduler
 | DELETE | /api/schedules/:id | 删除单条排课 |
 | DELETE | /api/schedules/batch | 批量删除（byIds / byClassId+fromDate / byDateRange 三种模式） |
 | POST | /api/schedules/batch | 批量创建（学期模式/日期模式） |
-| PUT | /api/schedules/batch | 批量调整时间/地点（同班级同星期几，指定日期起） |
+| PUT | /api/schedules/batch | 批量调整时间/地点，或用 `dayShift` 整体平移日期（同班级同星期几，指定日期起）；支持 `dryRun` 预览 |
 | GET | /api/schedules/summary?start=&end= | 课时与收入汇总统计（同样支持 range 快捷参数；可加 &classId=1,2,3 按班级过滤、&format=csv 导出） |
 | GET | /api/schedules/export?start=&end= | 排课明细导出（同样支持 range 快捷参数；可加 &classId=1,2,3 按班级过滤、&format=csv 导出） |
 | GET | /api/schedules/free-slots?date= | 查询单日空闲时段（可加 after=&before= 或 dayStart=&dayEnd= 限制时段、&minDuration=N 过滤最短时长） |
@@ -389,7 +389,7 @@ DELETE /api/schedules/batch
 
 ### 批量调整排课
 
-修改同一班级在指定范围内课程的时间或地点：
+修改同一班级在指定范围内课程的时间、地点，或把日期整体平移：
 
 ```json
 PUT /api/schedules/batch
@@ -408,9 +408,25 @@ PUT /api/schedules/batch
 - `weekday`（可选）：0=周日，1=周一…6=周六；省略时匹配所有星期几
 - `fromDate`、`toDate` 与 `weekday` 至少传一个,防止误改全部
 - `semesterOnly`（默认 `true`）：跨学期保护开关。**仅在候选记录跨学期(部分在内、部分在外)时生效**,过滤掉学期外的部分；全部在学期内或全部在学期外时本参数不影响结果。设为 `false` 强制不过滤
-- `updates` 只允许：`startTime`, `endTime`, `durationBilling`, `locationName`, `locationLat`, `locationLng`
+- `updates` 只允许：`startTime`, `endTime`, `durationBilling`, `locationName`, `locationLat`, `locationLng`, `dayShift`
 - 修改时间时自动重算 `durationBilling`
 - 跨学期被过滤时返回体附加 `semesterFiltered`(过滤数量)与 `hint`(提示文案)
+- `dryRun`（默认 `false`）：只预览不写库，返回体与真实调用一致（`dayShift` 时另含 `dates:[{id,from,to}]`）。校验和冲突检查照常执行，所以预览看到的 400/409 就是真跑一次的结果
+
+#### dayShift：整体平移日期
+
+没有 `date` 字段可以批量赋值——`updates` 是「一组常量套到所有匹配行」，把日期当常量写就是把整学期的课压到同一天。要表达「周四的课统一改到周五」，用相对位移：
+
+```json
+PUT /api/schedules/batch
+{ "classId": 1, "weekday": 4, "dryRun": true, "updates": { "dayShift": 1 } }
+```
+
+- `dayShift`：整数，-3650 ~ 3650，正数往后挪、负数往前挪。`weekday:4 + dayShift:1` = 周四改周五；`dayShift:7` = 整体推迟一周
+- 排课 **id 保持不变**（不是删了重建），挂在这些 id 上的东西不会断
+- 位移后跑出学期的那几节按 `semesterOnly` 规则**留在原地**，计入 `semesterFiltered`
+- 位移目标与该班级已有的课（同日期同开始时间）重复时返回 **409 且一行都不改**，错误信息里带上冲突日期
+- 位移后有课落在节假日时，返回体附加 `holidayDates`（日期数组）——只提示，不拦截
 
 ### 导出排课明细
 

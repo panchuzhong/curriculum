@@ -16,7 +16,13 @@ test('a saving dialog cycles focus past disabled footer buttons', async ({ authe
   await dialog.getByRole('button', { name: '保存', exact: true }).click();
   try {
     await expect(dialog.getByRole('button', { name: '取消' })).toBeDisabled();
-    const lastEnabled = dialog.getByRole('button', { name: 'E2E英语班', exact: true });
+    // 不能写死某个班名：弹窗里每个班都是一个切换按钮，而 E2E 库里的班级会随着
+    // 别的 spec（classes / schedule-monthly-yearly 各自按需建的长期夹具）累积，
+    // 于是这条用例只在「从没跑过这套 E2E 的干净库」上成立，第二次跑必挂。
+    // 这里要的本来就是「最后一个可聚焦的控件」——保存/取消此刻是禁用的。
+    // :visible 不能省：useConfirm 的 <dialog> 也渲染在这个子树里，关闭时它的按钮
+    // 仍在 DOM 中（display:none），焦点陷阱按 getClientRects 跳过它们，选择器也得跳。
+    const lastEnabled = dialog.locator('button:not([disabled]):visible').last();
     await first.focus();
     await page.keyboard.press('Shift+Tab');
     await expect(lastEnabled).toBeFocused();

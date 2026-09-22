@@ -1477,6 +1477,8 @@ describe('排课写操作会让报表缓存失效', () => {
       .send({ classId, dates: ['2026-05-07'], startTime: '09:00', endTime: '10:30' })],
     ['PUT /batch', () => seedSchedule('2026-05-08'), () => request(app).put('/api/schedules/batch').set(auth(token))
       .send({ classId, fromDate: '2026-05-01', toDate: '2026-05-31', updates: { startTime: '11:00', endTime: '12:00' } })],
+    ['PUT /batch（dayShift）', () => seedSchedule('2026-05-14'), () => request(app).put('/api/schedules/batch').set(auth(token))
+      .send({ classId, fromDate: '2026-05-01', toDate: '2026-05-31', updates: { dayShift: 1 } })],
     ['DELETE /batch（ids）', () => seedSchedule('2026-05-09'), (id) => request(app).delete('/api/schedules/batch')
       .set(auth(token)).send({ ids: [id] })],
     ['DELETE /batch（日期范围）', () => seedSchedule('2026-05-10'), () => request(app).delete('/api/schedules/batch')
@@ -1694,5 +1696,184 @@ describe('/summary 的排序与汇总', () => {
     // 数学：1 节 × 2 小时 = 2 小时。累成节数的话这里是 1。
     expect(math.hours).toBe(2);
     expect(math.count).toBe(1);
+  });
+});
+
+describe('PUT /api/schedules/batch — dayShift', () => {
+  async function seedDates(dates, startTime = '09:00', endTime = '10:30') {
+    for (const date of dates) {
+      const r = await request(app).post('/api/schedules').set(auth(token))
+        .send({ classId, date, startTime, endTime });
+      expect(r.status).toBe(200);
+    }
+  }
+  const listDates = async (start, end) => {
+    const res = await request(app).get(`/api/schedules?start=${start}&end=${end}`).set(auth(token));
+    return res.body.map(r => r.date);
+  };
+
+  it('把周四的课统一挪到周五，排课 id 不变', async () => {
+    await seedDates(['2026-05-07', '2026-05-14', '2026-05-21']); // 均为周四
+    const before = await request(app).get('/api/schedules?start=2026-05-01&end=2026-05-31').set(auth(token));
+    const idsBefore = before.body.map(r => r.id).sort((a, b) => a - b);
+
+    const res = await request(app).put('/api/schedules/batch').set(auth(token))
+      .send({ classId, weekday: 4, updates: { dayShift: 1 } });
+
+    expect(res.status).toBe(200);
+    expect(res.body.count).toBe(3);
+    expect(await listDates('2026-05-01', '2026-05-31'))
+      .toEqual(['2026-05-08', '2026-05-15', '2026-05-22']);
+    // 改期不是删了重建：id 必须原样保留，否则挂在这些 id 上的东西全断了
+    const after = await request(app).get('/api/schedules?start=2026-05-01&end=2026-05-31').set(auth(token));
+    expect(after.body.map(r => r.id).sort((a, b) => a - b)).toEqual(idsBefore);
+  });
+
+  // 整周后移是这个功能最容易写错的一种：一条
+  // `UPDATE ... SET date = date(date,'+7 days')` 会在这里撞 idx_schedules_unique
+  // ——第一节挪到第二节此刻占着的日期就报错，整条语句回滚，一节都没动。
+  // 所以实现必须按方向逐行挪（后移先动最晚的一节）。
+  it('整周后移一周不会撞唯一索引', async () => {
+    await seedDates(['2026-05-07', '2026-05-14', '2026-05-21']);
+
+    const res = await request(app).put('/api/schedules/batch').set(auth(token))
+      .send({ classId, weekday: 4, updates: { dayShift: 7 } });
+
+    expect(res.status).toBe(200);
+    expect(res.body.count).toBe(3);
+    expect(await listDates('2026-05-01', '2026-06-30'))
+      .toEqual(['2026-05-14', '2026-05-21', '2026-05-28']);
+  });
+
+  it('挪到一节不动的课头上时 409 并报出冲突日期，且一行未动', async () => {
+    // 周四 09:00 要挪到周五，而周五 09:00 已经有一节课——它不在 weekday=4 的
+    // 移动集合里，所以不会让开。
+    await seedDates(['2026-05-07', '2026-05-08']);
+
+    const res = await request(app).put('/api/schedules/batch').set(auth(token))
+      .send({ classId, weekday: 4, updates: { dayShift: 1 } });
+
+    expect(res.status).toBe(409);
+    // 只说「有重复」没用：得说清是哪一天，否则调用方只能自己一节节试。
+    expect(res.body.error).toContain('2026-05-08');
+    expect(await listDates('2026-05-01', '2026-05-31'))
+      .toEqual(['2026-05-07', '2026-05-08']);
+  });
+
+  async function addSpringSemester() {
+    const { semesters } = await import('../db/schema.js');
+    drizzleDb.insert(semesters).values({
+      teacherId, name: '春季', type: 'spring', startDate: '2026-03-01', endDate: '2026-07-15',
+    }).run();
+  }
+
+  it('位移后会跑出学期的那几节不动，并计入 semesterFiltered', async () => {
+    await addSpringSemester();
+    // 两节都在学期内，所以位移「之前」的那道学期过滤放行；越界是位移之后才发生的。
+    await seedDates(['2026-07-13', '2026-07-15']);
+
+    const res = await request(app).put('/api/schedules/batch').set(auth(token))
+      .send({ classId, fromDate: '2026-07-01', updates: { dayShift: 1 } });
+
+    expect(res.status).toBe(200);
+    expect(res.body.count).toBe(1);
+    expect(res.body.semesterFiltered).toBe(1);
+    expect(res.body.hint).toContain('semesterOnly=false');
+    // 07-13 挪到 07-14；07-15 会落到学期外的 07-16，原地不动
+    expect(await listDates('2026-07-01', '2026-07-31'))
+      .toEqual(['2026-07-14', '2026-07-15']);
+  });
+
+  it('semesterOnly=false 时越界也照挪', async () => {
+    await addSpringSemester();
+    await seedDates(['2026-07-13', '2026-07-15']);
+
+    const res = await request(app).put('/api/schedules/batch').set(auth(token))
+      .send({ classId, fromDate: '2026-07-01', semesterOnly: false, updates: { dayShift: 1 } });
+
+    expect(res.status).toBe(200);
+    expect(res.body.count).toBe(2);
+    expect(res.body.semesterFiltered).toBeUndefined();
+    expect(await listDates('2026-07-01', '2026-07-31'))
+      .toEqual(['2026-07-14', '2026-07-16']);
+  });
+
+  it('dryRun 给出每节课的 from→to 但不写库', async () => {
+    await seedDates(['2026-05-07', '2026-05-14']);
+
+    const res = await request(app).put('/api/schedules/batch').set(auth(token))
+      .send({ classId, weekday: 4, dryRun: true, updates: { dayShift: 1 } });
+
+    expect(res.status).toBe(200);
+    expect(res.body.count).toBe(2);
+    expect(res.body.dates).toEqual([
+      { id: expect.any(Number), from: '2026-05-07', to: '2026-05-08' },
+      { id: expect.any(Number), from: '2026-05-14', to: '2026-05-15' },
+    ]);
+    expect(await listDates('2026-05-01', '2026-05-31'))
+      .toEqual(['2026-05-07', '2026-05-14']);
+  });
+
+  // dryRun 要是只对 dayShift 生效，带着它改时间就会真写进去——比不支持 dryRun 更糟。
+  it('dryRun 对改时间同样不写库', async () => {
+    await seedDates(['2026-05-07']);
+
+    const res = await request(app).put('/api/schedules/batch').set(auth(token))
+      .send({ classId, weekday: 4, dryRun: true, updates: { startTime: '14:00', endTime: '15:00' } });
+
+    expect(res.status).toBe(200);
+    expect(res.body.count).toBe(1);
+    const rows = await request(app).get('/api/schedules?start=2026-05-01&end=2026-05-31').set(auth(token));
+    expect(rows.body[0].startTime).toBe('09:00');
+  });
+
+  it('挪到节假日上照挪，但把落在节假日的日期报回来', async () => {
+    const { holidays } = await import('../db/schema.js');
+    drizzleDb.insert(holidays).values({
+      teacherId, date: '2026-05-08', type: 'holiday', name: '测试节',
+    }).run();
+    await seedDates(['2026-05-07', '2026-05-14']);
+
+    const res = await request(app).put('/api/schedules/batch').set(auth(token))
+      .send({ classId, weekday: 4, updates: { dayShift: 1 } });
+
+    expect(res.status).toBe(200);
+    expect(res.body.count).toBe(2);
+    // 批量排课会主动跳节假日；位移不拦，但一声不吭把课挪到节假日上同样是静默算错。
+    expect(res.body.holidayDates).toEqual(['2026-05-08']);
+    expect(await listDates('2026-05-01', '2026-05-31'))
+      .toEqual(['2026-05-08', '2026-05-15']);
+  });
+
+  it('位移后越出日期上限时 400，且一行未动', async () => {
+    // 越界的日期写进去就再也看不见也删不掉：所有视图和查询都是按区间过滤的。
+    await seedDates([DATE_MAX]);
+
+    const res = await request(app).put('/api/schedules/batch').set(auth(token))
+      .send({ classId, fromDate: DATE_MAX, toDate: DATE_MAX, updates: { dayShift: 1 } });
+
+    expect(res.status).toBe(400);
+    expect(res.body.error).toContain('3000-01-01');
+    expect(await listDates(DATE_MAX, DATE_MAX)).toEqual([DATE_MAX]);
+  });
+
+  it('审计日志记下位移量和源日期范围', async () => {
+    const { logAudit } = await import('../services/audit.js');
+    await seedDates(['2026-05-07', '2026-05-14']);
+    logAudit.mockClear();
+
+    await request(app).put('/api/schedules/batch').set(auth(token))
+      .send({ classId, weekday: 4, updates: { dayShift: 1 } });
+
+    // dayShift 不在 safeUpdates 里（它不是列），不专门记的话这条审计只剩
+    // 「改了两行，updates 是空的」——事后既看不懂也还原不回去。
+    expect(logAudit).toHaveBeenCalledWith(expect.objectContaining({
+      action: 'BATCH_UPDATE',
+      tableName: 'schedules',
+      after: expect.objectContaining({
+        dayShift: 1,
+        dateRange: { from: '2026-05-07', to: '2026-05-14' },
+      }),
+    }));
   });
 });
