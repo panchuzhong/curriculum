@@ -4,12 +4,16 @@ import { useToast } from '../components/ToastProvider';
 import { WEEKDAYS, DATE_MIN, DATE_MAX } from '../utils/constants';
 import { parseDateStr, todayStr, toHours, dateRangeError, isUsableDate } from '../utils/date';
 import { getDefaultScheduleRange } from '../utils/semesterRange';
+import { DEFAULT_HISTORY_COLUMNS, HISTORY_COLUMNS_KEY, parseHistoryColumns } from '../utils/historyColumns';
 
 // 「全部排课」的查询区间。就是 DATE_MIN/DATE_MAX：服务端的 isValidDate 带着同一对
 // 上下限，超出去的区间参数会被 400 掉，整个排课历史页签变成空列表。
 // 这两个常量本来就是这个接口能接受的全范围，另写一对只会在它们收窄时变成非法值。
 const ALL_START = DATE_MIN;
 const ALL_END = DATE_MAX;
+
+// 表格上方那排「显示」复选框：key 对应 DEFAULT_HISTORY_COLUMNS。
+const COLUMN_TOGGLES = [['year', '年份'], ['weekday', '星期'], ['duration', '时长'], ['location', '地点']];
 
 // WEEKDAYS 从周一起算，getDay() 从周日起算。
 function weekdayOf(dateStr) {
@@ -22,6 +26,15 @@ export default function ScheduleHistory({ classId }) {
   const [range, setRange] = useState(null);
   const [loadError, setLoadError] = useState('');
   const [retry, setRetry] = useState(0);
+  // 显示哪几项是这位用户的习惯，不是这个班的属性：存在本机、所有班级共用。
+  // 读写都可能抛（隐私模式、存储被禁），那就只在这次打开时生效。
+  const [cols, setCols] = useState(() => {
+    try { return parseHistoryColumns(localStorage.getItem(HISTORY_COLUMNS_KEY)); }
+    catch { return { ...DEFAULT_HISTORY_COLUMNS }; }
+  });
+  useEffect(() => {
+    try { localStorage.setItem(HISTORY_COLUMNS_KEY, JSON.stringify(cols)); } catch { /* 见上 */ }
+  }, [cols]);
 
   useEffect(() => {
     let cancelled = false;
@@ -88,6 +101,9 @@ export default function ScheduleHistory({ classId }) {
     return all.filter(s => s.date >= from && s.date <= to);
   }, [all, range, rangeError]);
   const totalHours = rows.reduce((sum, s) => sum + toHours(s.durationBilling), 0);
+  // 跨年的学期是常态（秋季从 9 月到次年 1 月）。日期不带年份时，12-28 和 01-04
+  // 谁先谁后只能靠排列顺序猜，复制出去之后连顺序都可能丢——得说一声。
+  const yearsAmbiguous = !cols.year && new Set(rows.map(s => s.date.slice(0, 4))).size > 1;
 
   if (loadError) return (
     <div className="mt-3 text-sm">
@@ -98,6 +114,7 @@ export default function ScheduleHistory({ classId }) {
   if (!range) return <p role="status" className="mt-3 text-sm text-gray-400 dark:text-gray-500">加载中...</p>;
 
   const inp = 'p-2 text-sm bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded';
+  const locationPad = cols.duration ? 'sm:pl-10' : '';
 
   return (
     <div className="mt-3">
@@ -123,32 +140,54 @@ export default function ScheduleHistory({ classId }) {
         )}
       </div>
 
+      {!rangeError && (
+        // select-none：从表格往上多拖了一点时，这排勾选框的文字不会混进复制内容。
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mb-2 text-sm text-gray-500 dark:text-gray-400 select-none">
+          <span>显示</span>
+          {COLUMN_TOGGLES.map(([key, label]) => (
+            <label key={key} className="inline-flex items-center gap-1 cursor-pointer">
+              <input type="checkbox" checked={cols[key]}
+                onChange={() => setCols(c => ({ ...c, [key]: !c[key] }))} />
+              {label}
+            </label>
+          ))}
+        </div>
+      )}
+      {yearsAmbiguous && (
+        <p className="mb-2 text-xs text-amber-600 dark:text-amber-400">
+          列表跨了不止一年，日期不带年份时分不清是哪一年
+        </p>
+      )}
+
       {rangeError ? null : rows.length === 0 ? (
         <p className="text-sm text-gray-400 dark:text-gray-500">该时段无排课</p>
       ) : (
-        /* 单元格内不嵌套元素，框选复制后粘进表格软件仍保持分列 */
+        /* 单元格内不嵌套元素，框选复制后粘进表格软件仍保持分列。关掉的列直接不渲染
+           而不是用样式藏起来：复制出去的内容就只由渲染出来的格子决定，不必指望每个
+           浏览器都把藏起来的格子剔掉（Chromium 会剔，别的没验证过）。 */
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
               {/* 同定价历史：w-full 的表格把多出来的宽度加在右对齐列文字的左边，
                   「时长 → 地点」这个交界处只剩两侧 padding 之和，得给地点列补一段
-                  左缩进；窄屏整张表本来就密，不加。 */}
+                  左缩进；窄屏整张表本来就密，不加。关掉时长时地点紧跟左对齐的时间，
+                  这段缩进就只剩一截空白，也不加。 */}
               <tr className="text-gray-500 dark:text-gray-400 border-b border-gray-200 dark:border-gray-600">
                 <th className="text-left p-2 font-medium">日期</th>
-                <th className="text-left p-2 font-medium">星期</th>
+                {cols.weekday && <th className="text-left p-2 font-medium">星期</th>}
                 <th className="text-left p-2 font-medium">时间</th>
-                <th className="text-right p-2 font-medium">时长</th>
-                <th className="text-left p-2 sm:pl-10 font-medium">地点</th>
+                {cols.duration && <th className="text-right p-2 font-medium">时长</th>}
+                {cols.location && <th className={`text-left p-2 ${locationPad} font-medium`}>地点</th>}
               </tr>
             </thead>
             <tbody>
               {rows.map(s => (
                 <tr key={s.id} className="border-b border-gray-100 dark:border-gray-700">
-                  <td className="p-2">{s.date}</td>
-                  <td className="p-2">{weekdayOf(s.date)}</td>
+                  <td className="p-2">{cols.year ? s.date : s.date.slice(5)}</td>
+                  {cols.weekday && <td className="p-2">{weekdayOf(s.date)}</td>}
                   <td className="p-2">{`${s.startTime}-${s.endTime}`}</td>
-                  <td className="text-right p-2">{`${toHours(s.durationBilling).toFixed(1)}h`}</td>
-                  <td className="p-2 sm:pl-10">{s.locationName || ''}</td>
+                  {cols.duration && <td className="text-right p-2">{`${toHours(s.durationBilling).toFixed(1)}h`}</td>}
+                  {cols.location && <td className={`p-2 ${locationPad}`}>{s.locationName || ''}</td>}
                 </tr>
               ))}
             </tbody>

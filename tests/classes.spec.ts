@@ -199,6 +199,91 @@ test.describe('排课历史', () => {
     await expect(page.getByText(/共 \d+ 节 · [\d.]+h/)).toBeVisible();
   });
 
+  // 用户实际的复制方式：框选整张表、Ctrl+C。断言的是剪贴板里的纯文本而不是 DOM——
+  // 「依旧方便复制」承诺的是粘出来的东西：关掉的列不能混进去，留下的列要按 Tab 分开。
+  async function copyTable(page: import('@playwright/test').Page) {
+    await page.context().grantPermissions(['clipboard-read', 'clipboard-write']);
+    await page.getByRole('table').evaluate(table => {
+      const range = document.createRange();
+      range.selectNode(table);
+      const selection = window.getSelection()!;
+      selection.removeAllRanges();
+      selection.addRange(range);
+    });
+    await page.keyboard.press('Control+C');
+    return page.evaluate(() => navigator.clipboard.readText());
+  }
+  const copiedRows = (text: string) => text.trim().split('\n').map(line => line.split('\t').map(c => c.trim()));
+
+  test('显示选项默认全勾，复制出来五列都在', async ({ authenticatedPage: page }) => {
+    await openHistory(page);
+    for (const name of ['年份', '星期', '时长', '地点']) {
+      await expect(page.getByRole('checkbox', { name })).toBeChecked();
+    }
+    const monday = toDateString(getCurrentMonday());
+    const rows = copiedRows(await copyTable(page));
+    expect(rows[0]).toEqual(['日期', '星期', '时间', '时长', '地点']);
+    expect(rows.find(r => r[0] === monday)).toEqual([monday, '周一', '09:00-10:30', '1.5h', 'E2E教室']);
+  });
+
+  test('去掉年份后日期只剩月日，复制出来也没有年份', async ({ authenticatedPage: page }) => {
+    await openHistory(page);
+    const monday = toDateString(getCurrentMonday());
+    await page.getByRole('checkbox', { name: '年份' }).uncheck();
+
+    const row = page.getByRole('row').filter({ hasText: '09:00-10:30' }).first();
+    await expect(row.getByRole('cell').first()).toHaveText(/^\d{2}-\d{2}$/);
+    const text = await copyTable(page);
+    expect(text).not.toContain(monday);
+    expect(copiedRows(text).find(r => r[0] === monday.slice(5))).toEqual([monday.slice(5), '周一', '09:00-10:30', '1.5h', 'E2E教室']);
+  });
+
+  test('关掉星期、时长、地点后这几列不渲染，复制出来只剩日期和时间', async ({ authenticatedPage: page }) => {
+    await openHistory(page);
+    for (const name of ['星期', '时长', '地点']) await page.getByRole('checkbox', { name }).uncheck();
+
+    await expect(page.getByRole('columnheader')).toHaveText(['日期', '时间']);
+    const monday = toDateString(getCurrentMonday());
+    const rows = copiedRows(await copyTable(page));
+    expect(rows[0]).toEqual(['日期', '时间']);
+    expect(rows.find(r => r[0] === monday)).toEqual([monday, '09:00-10:30']);
+    // 小计按全部课算，与显示哪几列无关
+    await expect(page.getByText(/共 \d+ 节 · [\d.]+h/)).toBeVisible();
+  });
+
+  test('显示选项刷新后还在', async ({ authenticatedPage: page }) => {
+    await openHistory(page);
+    await page.getByRole('checkbox', { name: '地点' }).uncheck();
+    await page.getByRole('checkbox', { name: '年份' }).uncheck();
+
+    await openHistory(page); // 重新进页面，不是只切一下标签
+    await expect(page.getByRole('checkbox', { name: '地点' })).not.toBeChecked();
+    await expect(page.getByRole('checkbox', { name: '年份' })).not.toBeChecked();
+    await expect(page.getByRole('checkbox', { name: '星期' })).toBeChecked();
+    await expect(page.getByRole('columnheader', { name: '地点' })).toHaveCount(0);
+  });
+
+  test('去掉年份且列表跨年时提示日期会有歧义', async ({ authenticatedPage: page }) => {
+    // 跨年的学期是常态（秋季从 9 月到次年 1 月），不带年份时 12-28 和 01-04 谁先谁后
+    // 只能靠排列顺序猜。用拦截造一个跨年的列表，不往库里写东西。
+    // 排课历史一次拉全部排课，查询下界就是 DATE_MIN。
+    await page.route(url => url.pathname === '/api/schedules' && url.searchParams.get('start') === '1900-01-01',
+      route => route.fulfill({ json: [
+        { id: 9001, classId: 1, date: '2026-12-28', startTime: '09:00', endTime: '10:30', durationBilling: 90, locationName: 'E2E教室' },
+        { id: 9002, classId: 1, date: '2027-01-04', startTime: '09:00', endTime: '10:30', durationBilling: 90, locationName: 'E2E教室' },
+      ] }));
+    await openHistory(page);
+    // 默认区间按学期推，随日历会变；两端清空 = 全部，用例才不会哪天过期。
+    await page.locator('input[type="date"]').nth(0).fill('');
+    await page.locator('input[type="date"]').nth(1).fill('');
+    await expect(page.getByRole('cell', { name: '2027-01-04' })).toBeVisible();
+
+    const hint = page.getByText('不带年份时分不清是哪一年');
+    await expect(hint).toHaveCount(0); // 带着年份时不需要提示
+    await page.getByRole('checkbox', { name: '年份' }).uncheck();
+    await expect(hint).toBeVisible();
+  });
+
   test('时段内没有排课时给出提示', async ({ authenticatedPage: page }) => {
     await openHistory(page);
     await page.locator('input[type="date"]').first().fill('2000-01-01');
