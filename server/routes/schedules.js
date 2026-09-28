@@ -6,11 +6,22 @@ import { authMiddleware } from '../middleware/auth.js';
 import { isHoliday, getHolidaysForYear } from '../services/holidays.js';
 import handle from '../validations/handle.js';
 import { validateCreateSchedule, validateBatchCreate, validateBatchUpdate, validateBatchDelete, validateUpdateSchedule } from '../validations/schedules.js';
-import { isValidDate, isValidScheduleEndTime, isValidScheduleSpan, isValidTime, normalizeScheduleEndTime, DATE_RANGE_SUFFIX } from '../validations/dates.js';
+import { isCalendarDate, isValidDate, isValidScheduleEndTime, isValidScheduleSpan, isValidTime, normalizeScheduleEndTime, DATE_RANGE_SUFFIX } from '../validations/dates.js';
 import { logAudit } from '../services/audit.js';
 import { toLocalDateStr, toMin, resolveRange, toCSV, detectDatedConflictGroups, getScheduleWithClass, calcDurationBilling, getTeacherSemesters, buildPricingLookup, scheduleBounds, schedulesOverlap } from '../services/schedule-helpers.js';
 import { clearReportCache, getReportCache, setReportCache } from '../services/report-cache.js';
 import { students as studentsTable } from '../db/schema.js';
+
+// 「这一天在不在该教师的某个学期里」。filterBySemesters、批量创建的 dates 模式、
+// 批量位移的挪出学期检查问的都是这一句，只能有一份：将来修一处（比如坏掉的学期行）
+// 而漏了另两处，挪之前和挪之后的学期判断就会互相打架。
+function semesterMembership(db, teacherId) {
+  const teacherSemesters = getTeacherSemesters(db, teacherId);
+  return {
+    hasSemesters: teacherSemesters.length > 0,
+    inSemester: (date) => teacherSemesters.some(sem => date >= sem.startDate && date <= sem.endDate),
+  };
+}
 
 function filterBySemesters(candidates, { semesterOnly, drizzleDb, teacherId }) {
   let filtered = 0;
@@ -20,11 +31,9 @@ function filterBySemesters(candidates, { semesterOnly, drizzleDb, teacherId }) {
   // untouched so historical data remains operable. This asymmetry is asserted
   // by the batch update/delete tests in routes-schedules.test.js.
   if (semesterOnly !== false) {
-    const teacherSemesters = getTeacherSemesters(drizzleDb, teacherId);
-    if (teacherSemesters.length > 0) {
-      const inSemester = candidates.filter(s =>
-        teacherSemesters.some(sem => s.date >= sem.startDate && s.date <= sem.endDate)
-      );
+    const membership = semesterMembership(drizzleDb, teacherId);
+    if (membership.hasSemesters) {
+      const inSemester = candidates.filter(s => membership.inSemester(s.date));
       if (inSemester.length > 0 && inSemester.length < candidates.length) {
         filtered = candidates.length - inSemester.length;
         candidates = inSemester;
@@ -35,6 +44,72 @@ function filterBySemesters(candidates, { semesterOnly, drizzleDb, teacherId }) {
 }
 
 const router = Router();
+// PUT /batch 的三个出口（候选为空的提前返回、dryRun 预览、真跑）要挂同一组提示。
+// hint 只有一个字段，所以几件事必须拼在一起：读 hint 的 UI/agent 不该因为学期
+// 那句话就漏掉节假日。
+function attachBatchUpdateWarnings(resp, { semesterFiltered = 0, holidayDates, holidayLessonCount, holidayDataMissing, warnings } = {}) {
+  const hints = [];
+  if (semesterFiltered > 0) {
+    resp.semesterFiltered = semesterFiltered;
+    hints.push(`${semesterFiltered}条记录因不在当前学期内被过滤，如需修改请设置 semesterOnly=false`);
+  }
+  if (holidayDates?.length > 0) {
+    resp.holidayDates = holidayDates;
+    // holidayDates 按日期去重，同一天两节课只算一个日期；这里说的是课数。
+    hints.push(`位移后有 ${holidayLessonCount} 节课落在节假日（${holidayDates.join('、')}），未作拦截`);
+  }
+  if (holidayDataMissing?.length > 0) {
+    resp.holidayDataMissing = holidayDataMissing;
+    hints.push(missingHolidayDataHint(holidayDataMissing, '无法判断位移后是否落在节假日'));
+  }
+  if (warnings?.length > 0) {
+    resp.warnings = warnings;
+    hints.push(`有 ${warnings.length} 节课改完后与其他排课时间重叠（见 warnings），未作拦截`);
+  }
+  if (hints.length > 0) resp.hint = hints.join('；');
+  return resp;
+}
+
+// 与其他排课的时间重叠。单条写入（POST /、PUT /:id）和批量修改共用这一份，报出来
+// 的形状因此天然一致。
+// finals 是「改完之后的样子」（id/classId/date/startTime/endTime），所以写之前就能算，
+// 批量修改的 dryRun 也就能预告重叠。这些 id 在库里的旧位置要从比较对象里剔掉、
+// 换成改完的位置，否则一节课会和自己挪走之前的影子「重叠」。
+// 只取这些课所在日期及前后各一天的排课（schedulesOverlap 要看跨午夜的课），按日期
+// 分组，每节只和同一天及相邻两天比——不是把整段跨度里的每一行两两相比。
+// 按具体日期取、而不是按「最早到最晚」一个区间取，还有一层用处：历史数据里解析
+// 不了的日期（'2026-2-1'）推出来的前后一天是 NaN，放进区间当上界会让整批一行都
+// 取不到；放进日期列表里，只是多了几个匹配不到的键，其余行照常比较。
+function findConflicts(finals, teacherId) {
+  if (finals.length === 0) return [];
+  const teacherClasses = drizzleDb.select().from(classes)
+    .where(and(eq(classes.teacherId, teacherId), eq(classes.deleted, false))).all();
+  if (teacherClasses.length === 0) return [];
+  const classMap = new Map(teacherClasses.map(c => [c.id, c]));
+  const neighbours = (date) => [shiftDate(date, -1), date, shiftDate(date, 1)];
+
+  const byDate = new Map();
+  const add = (row) => {
+    if (!byDate.has(row.date)) byDate.set(row.date, []);
+    byDate.get(row.date).push(row);
+  };
+  const finalIds = new Set(finals.map(r => r.id));
+  drizzleDb.select().from(schedules).where(and(
+    inArray(schedules.date, [...new Set(finals.flatMap(r => neighbours(r.date)))]),
+    inArray(schedules.classId, [...classMap.keys()]),
+  )).all().filter(o => !finalIds.has(o.id)).forEach(add);
+  finals.filter(r => classMap.has(r.classId)).forEach(add);
+
+  const out = [];
+  for (const r of [...finals].sort((a, b) => a.date.localeCompare(b.date) || a.startTime.localeCompare(b.startTime))) {
+    const conflicts = neighbours(r.date).flatMap(d => byDate.get(d) ?? [])
+      .filter(o => o.id !== r.id && schedulesOverlap(r, o))
+      .map(o => ({ id: o.id, classId: o.classId, className: classMap.get(o.classId)?.name, startTime: o.startTime, endTime: o.endTime }));
+    if (conflicts.length > 0) out.push({ id: r.id, date: r.date, conflicts });
+  }
+  return out;
+}
+
 router.use(authMiddleware);
 
 function normalizeMultiParam(value) {
@@ -70,7 +145,17 @@ function buildOffDayCheck(teacherId) {
   const dbYears = new Set(rows.map(h => h.date.slice(0, 4)));
   const isOffDay = (dateStr) => !workDates.has(dateStr)
     && (offDates.has(dateStr) || (!dbYears.has(dateStr.slice(0, 4)) && isHoliday(dateStr)));
-  return { isOffDay, dbYears };
+  // 既无内置也无自定义数据的年份：isOffDay 对它们一律说「不是节假日」，但那不是
+  // 判断出来的，是没有依据。两个调用方都得把这个缺口报出来。
+  const uncoveredYears = (dates) => [...new Set(dates.map(d => d.slice(0, 4)))]
+    .filter(y => !dbYears.has(y) && getHolidaysForYear(y).length === 0)
+    .sort();
+  return { isOffDay, uncoveredYears };
+}
+
+// 同一个缺口，批量创建和批量位移给同一句事实和同一个补救办法，只有后果不同。
+function missingHolidayDataHint(years, consequence) {
+  return `${years.join('、')} 年没有内置或自定义的法定节假日数据，${consequence}，请先通过 POST /api/holidays/batch 导入`;
 }
 
 function shiftDate(date, days) {
@@ -82,26 +167,7 @@ function shiftDate(date, days) {
 function getConflictsForSchedule(scheduleId, teacherId) {
   const s = drizzleDb.select().from(schedules).where(eq(schedules.id, scheduleId)).get();
   if (!s) return [];
-  const teacherClasses = drizzleDb.select().from(classes)
-    .where(and(eq(classes.teacherId, teacherId), eq(classes.deleted, false))).all();
-  const classMap = {};
-  teacherClasses.forEach(c => classMap[c.id] = c);
-  const teacherClassIds = Object.keys(classMap).map(Number);
-  const nearbySchedules = drizzleDb.select().from(schedules)
-    .where(and(
-      gte(schedules.date, shiftDate(s.date, -1)),
-      lte(schedules.date, shiftDate(s.date, 1)),
-      inArray(schedules.classId, teacherClassIds),
-    )).all()
-    .filter(x => x.id !== scheduleId);
-  const conflicts = [];
-  for (const other of nearbySchedules) {
-    if (schedulesOverlap(s, other)) {
-      const cls = classMap[other.classId];
-      conflicts.push({ id: other.id, classId: other.classId, className: cls?.name, startTime: other.startTime, endTime: other.endTime });
-    }
-  }
-  return conflicts;
+  return findConflicts([s], teacherId)[0]?.conflicts ?? [];
 }
 
 // ── CRUD ──
@@ -206,11 +272,9 @@ router.post('/batch', validateBatchCreate, handle, (req, res) => {
   if (manualDates && manualDates.length > 0) {
     targetDates = manualDates;
     // Check that dates mode doesn't cross semester boundaries
-    const teacherSemesters = getTeacherSemesters(drizzleDb, req.teacherId);
-    if (teacherSemesters.length > 0 && !req.body.crossSemester) {
-      const inSemester = targetDates.filter(d =>
-        teacherSemesters.some(sem => d >= sem.startDate && d <= sem.endDate)
-      );
+    const membership = semesterMembership(drizzleDb, req.teacherId);
+    if (membership.hasSemesters && !req.body.crossSemester) {
+      const inSemester = targetDates.filter(d => membership.inSemester(d));
       if (inSemester.length > 0 && inSemester.length < targetDates.length) {
         return res.status(400).json({ error: '日期跨学期边界（部分在学期内、部分在学期外），请分批操作', crossSemester: true, inSemester: inSemester.length, outSemester: targetDates.length - inSemester.length });
       }
@@ -243,7 +307,7 @@ router.post('/batch', validateBatchCreate, handle, (req, res) => {
       return res.status(400).json({ error: '学期跨度过长，请检查学期起止日期' });
     }
 
-    const { isOffDay, dbYears: dbHolidayYears } = buildOffDayCheck(req.teacherId);
+    const { isOffDay, uncoveredYears: findUncoveredYears } = buildOffDayCheck(req.teacherId);
 
     while (current <= end) {
       const dateStr = toLocalDateStr(current);
@@ -257,9 +321,7 @@ router.post('/batch', validateBatchCreate, handle, (req, res) => {
     // neither built-in nor teacher-defined holiday data no skipping happened at
     // all, so the caller would silently get classes booked on 国庆. Report it
     // instead of staying quiet; built-in data only covers published years.
-    uncoveredYears = [...new Set(targetDates.map(d => d.slice(0, 4)))]
-      .filter(y => !dbHolidayYears.has(y) && getHolidaysForYear(y).length === 0)
-      .sort();
+    uncoveredYears = findUncoveredYears(targetDates);
   } else {
     return res.status(400).json({ error: 'Provide semesterId+weekday or dates[]' });
   }
@@ -270,7 +332,7 @@ router.post('/batch', validateBatchCreate, handle, (req, res) => {
 
   const holidayWarning = uncoveredYears.length === 0 ? {} : {
     holidayDataMissing: uncoveredYears,
-    hint: `${uncoveredYears.join('、')} 年没有内置或自定义的法定节假日数据，这些年份的排课未跳过节假日，请先通过 POST /api/holidays/batch 导入`,
+    hint: missingHolidayDataHint(uncoveredYears, '这些年份的排课未跳过节假日'),
   };
 
   if (preview) {
@@ -328,6 +390,15 @@ router.put('/batch', validateBatchUpdate, handle, (req, res) => {
   if (Object.keys(safeUpdates).length === 0 && dayShift === undefined) {
     return res.status(400).json({ error: 'No valid fields in updates' });
   }
+  // 改日期必须有日期下界。只给 weekday 时候选集是该班历史上所有这个星期几的课
+  // （下面的 effectiveFromDate 只在传了 toDate 时才默认为今天），照发一次就会把
+  // 已经上完、已经计费的课一起改期——改地点、改时间顶多是改错，改日期是改写交付
+  // 记录。这条写进文档也拦不住拿 API Key 的客户端，所以在这里拦。
+  if (dayShift !== undefined && !fromDate && !toDate) {
+    return res.status(400).json({
+      error: '改日期（dayShift）必须给出日期下界：请加上 fromDate（或 toDate，此时下界默认为今天）。只给 weekday 会把该班历史上所有这个星期几的课一起改期，包括已经上完的',
+    });
+  }
   if (safeUpdates.locationLat != null) safeUpdates.locationLat = Number(safeUpdates.locationLat);
   if (safeUpdates.locationLng != null) safeUpdates.locationLng = Number(safeUpdates.locationLng);
   // Same rule as the single-item update: clearing the name clears its coordinates.
@@ -368,30 +439,53 @@ router.put('/batch', validateBatchUpdate, handle, (req, res) => {
   candidates = sr.candidates;
   let semesterFiltered = sr.filtered;
 
-  // 上面那道过滤看的是位移「之前」的日期。挪完可能才跑出学期——同一条规则再跑一次，
-  // 这次喂给它位移后的日期，越界的那几节就留在原地（与 semesterOnly 的既有语义一致：
-  // 只有部分越界时才过滤，整批都在学期外时照旧放行）。
-  if (dayShift !== undefined && candidates.length > 0) {
-    const shifted = candidates.map(c => ({ ...c, date: shiftDate(c.date, dayShift) }));
-    const srShifted = filterBySemesters(shifted, { semesterOnly, drizzleDb, teacherId: req.teacherId });
-    if (srShifted.filtered > 0) {
-      const keep = new Set(srShifted.candidates.map(c => c.id));
-      candidates = candidates.filter(c => keep.has(c.id));
-      semesterFiltered += srShifted.filtered;
+  // 源日期先过一遍，而且要排在下面的学期检查之前：isValidDate 只在写入时把关，
+  // 历史/导入的行可能存着 '2026-2-1'。它按字符串比 '2026-12-31' 还大，会被当成在
+  // 秋季学期内；拿去 shiftDate 又得到 Invalid Date，格式化出来是 0NaN-NaN-NaN。
+  // 两者一凑，报错就成了「挪出学期…请设置 semesterOnly=false」——叫人关掉保护，
+  // 而真正的问题是那一行本身。
+  if (dayShift !== undefined) {
+    const unparsable = [...candidates].sort((a, b) => String(a.date).localeCompare(String(b.date)))
+      .find(c => !isCalendarDate(c.date));
+    if (unparsable) {
+      return res.status(400).json({
+        error: `第 ${unparsable.id} 条排课的日期存的是 ${unparsable.date}，解析不了（须为 YYYY-MM-DD），未做任何修改`,
+      });
+    }
+  }
+
+  // 上面那道过滤看的是位移「之前」的日期，跑出学期是挪完才发生的。这里**不**做
+  // 部分过滤：把越界的那几节留在原地，它们会变成拦住其他几节的障碍物（同班同日期
+  // 同开始时间撞唯一索引），而用户看到的是一句讲「重复排课」的 409，完全看不出是
+  // 学期保护造成的——同一个请求加上 semesterOnly=false 反而能成。整单拒绝并说清
+  // 数量，要继续就显式关掉保护。
+  // 只保护「本来在学期内」的课：整批都在学期外的历史数据从来不受这条约束
+  // （filterBySemesters 的同一条豁免，README 也这么写），拿学期去拦它们，等于用
+  // 一句「不在当前学期内」解释一批压根没在学期内的课。
+  if (dayShift !== undefined && semesterOnly !== false && candidates.length > 0) {
+    const { hasSemesters, inSemester } = semesterMembership(drizzleDb, req.teacherId);
+    if (hasSemesters) {
+      const leaving = candidates.filter(c => inSemester(c.date) && !inSemester(shiftDate(c.date, dayShift)))
+        .sort((a, b) => a.date.localeCompare(b.date));
+      if (leaving.length > 0) {
+        return res.status(400).json({
+          error: `位移会把 ${leaving.length} 节课挪出学期（如 ${leaving[0].date} → ${shiftDate(leaving[0].date, dayShift)}），未做任何修改；确实要挪请设置 semesterOnly=false`,
+        });
+      }
     }
   }
 
   if (candidates.length === 0) {
-    const resp = { count: 0, ids: [] };
-    if (semesterFiltered > 0) {
-      resp.semesterFiltered = semesterFiltered;
-      resp.hint = `${semesterFiltered}条记录因不在当前学期内被过滤，如需修改请设置 semesterOnly=false`;
-    }
-    return res.json(resp);
+    // 预览要在每个出口都自报身份，包括这个——否则调用方靠 dryRun 字段区分预览和
+    // 真跑时，恰好在「一节都没匹配上」这一种情况下会读错。
+    const empty = dryRun
+      ? { dryRun: true, count: 0, ids: [], ...(dayShift !== undefined && { dates: [] }) }
+      : { count: 0, ids: [] };
+    return res.json(attachBatchUpdateWarnings(empty, { semesterFiltered }));
   }
 
   const updatedIds = candidates.map(s => s.id);
-  let holidayDates;
+  let holidayDates, holidayLessonCount, holidayDataMissing, targets, warnings;
   if (updatedIds.length > 0) {
     if (safeUpdates.startTime !== undefined || safeUpdates.endTime !== undefined) {
       if (candidates.some(c => !isValidScheduleSpan(
@@ -418,7 +512,7 @@ router.put('/batch', validateBatchUpdate, handle, (req, res) => {
       }
     }
     if (dayShift !== undefined) {
-      const targets = [...candidates].sort((a, b) => a.date.localeCompare(b.date))
+      targets = [...candidates].sort((a, b) => a.date.localeCompare(b.date))
         .map(c => ({ ...c, target: shiftDate(c.date, dayShift) }));
 
       // 越界的日期写进去就再也看不见也删不掉：每条读取路径都是按区间过滤的，
@@ -428,43 +522,85 @@ router.put('/batch', validateBatchUpdate, handle, (req, res) => {
         return res.status(400).json({ error: `位移后的日期 ${outOfRange.target} 超出可用范围${DATE_RANGE_SUFFIX}，未做任何修改` });
       }
 
-      // 目标格子可能被一节「不参与这次移动」的课占着（被 weekday 或学期过滤掉的）。
-      // 交给唯一索引去撞也能拿到 409，但报不出是哪一天，调用方只能一节节试。
-      const movingIds = new Set(updatedIds);
-      const occupied = new Set(
-        drizzleDb.select().from(schedules).where(eq(schedules.classId, classId)).all()
-          .filter(row => !movingIds.has(row.id))
-          .map(row => `${row.date}|${row.startTime}`)
-      );
-      for (const t of targets) {
-        const startTime = safeUpdates.startTime ?? t.startTime;
-        if (occupied.has(`${t.target}|${startTime}`)) {
-          return res.status(409).json({ error: `位移后 ${t.target} ${startTime} 与该班级已有的课重复，未做任何修改` });
-        }
-      }
+    }
 
+    // (class, date, startTime) 是唯一键。改了日期或开始时间，就得在写之前把两种撞法
+    // 都查出来，而不是交给唯一索引——索引只在真跑时才撞得到，dryRun 会看到 200，
+    // 文档承诺的「预览看到的就是真跑的结果」就成了假话：
+    //   · 移动集合内部互撞：同一天 09:00 和 11:00 两节，统一改到 14:00；
+    //   · 撞上一节不参与这次修改的课（被 weekday 或学期过滤掉的）。
+    // 报错只陈述是哪一节，不建议「放宽范围把它一并纳入」：agent 照做去掉 weekday，
+    // 范围内每个星期几的课都会跟着挪——一次安全的拒绝会变成一场没人要的大改期。
+    // 每节课改完之后的样子。唯一键预检、重叠预告都照它算，写入也照它写——
+    // 三处各算一遍就会各自漂。
+    const finals = (targets ?? [...candidates]
+      .sort((a, b) => String(a.date).localeCompare(String(b.date)) || a.startTime.localeCompare(b.startTime))
+      .map(c => ({ ...c, target: c.date })))
+      .map(t => ({
+        id: t.id, classId: t.classId, date: t.target,
+        startTime: safeUpdates.startTime ?? t.startTime,
+        endTime: safeUpdates.endTime ?? t.endTime,
+      }));
+
+    if (dayShift !== undefined || safeUpdates.startTime !== undefined) {
+      const byKey = new Map();
+      for (const f of finals) {
+        const key = `${f.date}|${f.startTime}`;
+        const clash = byKey.get(key);
+        if (clash) {
+          return res.status(409).json({
+            error: `修改后第 ${clash.id} 条和第 ${f.id} 条排课会在 ${f.date} ${f.startTime} 重复排课，未做任何修改`,
+          });
+        }
+        byKey.set(key, f);
+      }
+      const movingIds = new Set(updatedIds);
+      const blocker = drizzleDb.select({ id: schedules.id, date: schedules.date, startTime: schedules.startTime })
+        .from(schedules)
+        .where(and(eq(schedules.classId, classId), inArray(schedules.date, [...new Set(finals.map(f => f.date))])))
+        .orderBy(schedules.date, schedules.startTime).all()
+        .find(row => !movingIds.has(row.id) && byKey.has(`${row.date}|${row.startTime}`));
+      if (blocker) {
+        return res.status(409).json({
+          error: `修改后 ${blocker.date} ${blocker.startTime} 与该班级第 ${blocker.id} 条排课重复（它不在本次修改范围内），未做任何修改`,
+        });
+      }
+    }
+
+    if (dayShift !== undefined) {
       // 落到节假日上不拦，但要说：批量创建会主动跳过节假日，位移一声不吭把课挪到
       // 国庆上，是同一类静默算错。
-      const { isOffDay } = buildOffDayCheck(req.teacherId);
-      const landed = [...new Set(targets.map(t => t.target))].filter(d => isOffDay(d));
-      if (landed.length > 0) holidayDates = landed;
+      const { isOffDay, uncoveredYears } = buildOffDayCheck(req.teacherId);
+      const targetDates = [...new Set(targets.map(t => t.target))];
+      const landed = new Set(targetDates.filter(d => isOffDay(d)));
+      if (landed.size > 0) {
+        holidayDates = [...landed];
+        holidayLessonCount = targets.filter(t => landed.has(t.target)).length;
+      }
+      // 空的 holidayDates 不等于「没课落在节假日」：内置数据只覆盖已公布的年份，
+      // 某一年既无内置也无自定义数据时，上面那句判断压根没有依据。批量创建用
+      // holidayDataMissing 报这个缺口，位移沉默的话，调用方会把「不知道」读成
+      // 「没问题」。
+      holidayDataMissing = uncoveredYears(targetDates);
+    }
+
+    // 改了日期或时间才可能造出新的重叠；只改地点不会。单条写入一直会报 warnings，
+    // 批量改日期/时间一次就能造出一串重叠，没有理由反倒不说。按改完的样子算，
+    // 所以预览里也有。
+    if (dayShift !== undefined || safeUpdates.startTime !== undefined || safeUpdates.endTime !== undefined) {
+      warnings = findConflicts(finals, req.teacherId);
     }
 
     // 预览：校验全部走完之后才返回，所以 dryRun 看到的 400/409 和真跑一次完全一致。
     // 它对所有字段生效，不只是 dayShift——只管 dayShift 的话，带着 dryRun 改时间
     // 会真写进去，比不支持预览更糟。
     if (dryRun) {
-      const preview = { count: updatedIds.length, ids: updatedIds };
-      if (dayShift !== undefined) {
-        preview.dates = [...candidates]
-          .sort((a, b) => a.date.localeCompare(b.date))
-          .map(c => ({ id: c.id, from: c.date, to: shiftDate(c.date, dayShift) }));
-      }
-      if (semesterFiltered > 0) {
-        preview.semesterFiltered = semesterFiltered;
-        preview.hint = `${semesterFiltered}条记录因不在当前学期内被过滤，如需修改请设置 semesterOnly=false`;
-      }
-      if (holidayDates) preview.holidayDates = holidayDates;
+      // dryRun: true 必须回显：形状和真跑一致是好事，但一模一样就不行——忘了去掉
+      // dryRun 的调用方会拿着 count:N 报告「已改期」，而库里一行没动。
+      const preview = { dryRun: true, count: updatedIds.length, ids: updatedIds };
+      // to 和真正写进去的值必须出自同一处，各算一遍就会漂。
+      if (targets) preview.dates = targets.map(t => ({ id: t.id, from: t.date, to: t.target }));
+      attachBatchUpdateWarnings(preview, { semesterFiltered, holidayDates, holidayLessonCount, holidayDataMissing, warnings });
       return res.json(preview);
     }
 
@@ -475,13 +611,12 @@ router.put('/batch', validateBatchUpdate, handle, (req, res) => {
         // 逐行挪，顺序取决于方向。一条 `UPDATE ... SET date = date(date,'+N days')`
         // 在整周序列上会撞 idx_schedules_unique：第一行挪到第二行此刻占着的日期就报错，
         // 整条语句回滚（实测）。往后挪先动最晚的一节、往前挪先动最早的一节，途中不重叠。
-        const ordered = [...candidates].sort((a, b) =>
-          dayShift >= 0 ? b.date.localeCompare(a.date) : a.date.localeCompare(b.date));
+        const ordered = dayShift >= 0 ? [...targets].reverse() : targets;
         db.transaction(() => {
-          for (const c of ordered) {
+          for (const t of ordered) {
             drizzleDb.update(schedules)
-              .set({ ...safeUpdates, date: shiftDate(c.date, dayShift) })
-              .where(eq(schedules.id, c.id)).run();
+              .set({ ...safeUpdates, date: t.target })
+              .where(eq(schedules.id, t.id)).run();
           }
         })();
       }
@@ -508,13 +643,10 @@ router.put('/batch', validateBatchUpdate, handle, (req, res) => {
     after: auditAfter,
   });
   clearReportCache(req.teacherId);
-  const resp = { count: updatedIds.length, ids: updatedIds };
-  if (semesterFiltered > 0) {
-    resp.semesterFiltered = semesterFiltered;
-    resp.hint = `${semesterFiltered}条记录因不在当前学期内被过滤，如需修改请设置 semesterOnly=false`;
-  }
-  if (holidayDates) resp.holidayDates = holidayDates;
-  res.json(resp);
+  res.json(attachBatchUpdateWarnings(
+    { count: updatedIds.length, ids: updatedIds },
+    { semesterFiltered, holidayDates, holidayLessonCount, holidayDataMissing, warnings },
+  ));
 });
 
 router.delete('/batch', validateBatchDelete, handle, (req, res) => {

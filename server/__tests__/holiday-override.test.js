@@ -144,3 +144,39 @@ describe('buildDbHolidayHelpers (image export) per-year semantics', () => {
     expect(checkIsWorkday('2026-10-01')).toBe(true);
   });
 });
+
+// 这个文件不 mock holidays 服务，用的是真的内置数据，所以「某一年压根没有节假日
+// 数据」只能在这里测。年份特意取 2999 而不是「下一年」：内置数据每年都会补上新
+// 公布的一年，拿 2027 写的用例几周后就会因为数据补齐而挂掉，错的却不是代码。
+describe('batch date shift holiday coverage', () => {
+  it('位移到没有节假日数据的年份时报 holidayDataMissing', async () => {
+    const created = await request(app).post('/api/schedules').set(auth(token))
+      .send({ classId, date: '2998-12-30', startTime: '08:00', endTime: '09:00' });
+    expect(created.status).toBe(200);
+
+    const res = await request(app).put('/api/schedules/batch').set(auth(token))
+      .send({ classId, fromDate: '2998-12-01', updates: { dayShift: 7 } });
+
+    expect(res.status).toBe(200);
+    // holidayDates 为空不等于「没课落在节假日」：2999 年一天数据都没有，
+    // 判断本身没跑过。批量创建正是用 holidayDataMissing 报这个缺口的，
+    // 位移沉默的话，调用方会把「不知道」读成「没问题」。
+    expect(res.body.holidayDataMissing).toEqual(['2999']);
+    expect(res.body.hint).toContain('2999');
+    // 同一个缺口，批量创建和批量位移要给同一个补救办法，否则同一件事在 agent
+    // 看来是两种说法。
+    expect(res.body.hint).toContain('POST /api/holidays/batch');
+  });
+
+  it('位移到有数据的年份时不报 holidayDataMissing', async () => {
+    const created = await request(app).post('/api/schedules').set(auth(token))
+      .send({ classId, date: '2026-05-07', startTime: '08:00', endTime: '09:00' });
+    expect(created.status).toBe(200);
+
+    const res = await request(app).put('/api/schedules/batch').set(auth(token))
+      .send({ classId, fromDate: '2026-05-01', updates: { dayShift: 1 } });
+
+    expect(res.status).toBe(200);
+    expect(res.body.holidayDataMissing).toBeUndefined();
+  });
+});

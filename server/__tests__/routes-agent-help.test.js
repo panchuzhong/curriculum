@@ -152,3 +152,44 @@ describe('GET /api/agent/help', () => {
     expect([...real].filter(r => !documented.has(r)).sort()).toEqual([]);
   });
 });
+
+describe('dayShift 的文档示例', () => {
+  const get = () => request(app).get('/api/agent/help').set({ Authorization: `Bearer ${token}` });
+
+  function dayShiftExamples(body) {
+    const fromExamples = Object.entries(body.examples).filter(([, v]) => v.includes('dayShift'));
+    const fromMode = Object.entries(body.batchUpdateMode)
+      .filter(([k, v]) => k.startsWith('example') && typeof v === 'string' && v.includes('dayShift'));
+    return [...fromExamples, ...fromMode];
+  }
+
+  it('每个含 dayShift 的示例都带日期下界', async () => {
+    // 只给 weekday 时，候选集是该班「历史上所有」这个星期几的课——
+    // effectiveFromDate 只在传了 toDate 时才默认为今天。少了下界，照着示例发一次
+    // 就会把已经上完的课一起改期，把交付课时的记录改错。
+    const res = await get();
+    const examples = dayShiftExamples(res.body);
+    expect(examples.length).toBeGreaterThan(0);
+    for (const [key, value] of examples) {
+      expect(value, `示例「${key}」没有日期下界`).toMatch(/fromDate/);
+    }
+  });
+
+  it('semesterOnly 的说明提到 dayShift 下的拒绝规则', async () => {
+    // 它原本写着「全部在学期内或全部在学期外时本参数不影响结果」。带 dayShift 时
+    // 一批全在学期内的课也可能因为会被挪出学期而 400，只有设 false 才能绕过——
+    // 照着旧说明走的 agent 会以为这个开关跟它无关。
+    const res = await get();
+    expect(res.body.batchUpdateMode.params.semesterOnly).toContain('dayShift');
+  });
+
+  it('承诺了预览的示例，值里必须真的有 dryRun', async () => {
+    // 键上写着「先预览」而值里没有 dryRun，等于指挥拿 API Key 的客户端直接写库。
+    const res = await get();
+    const promising = Object.entries(res.body.examples).filter(([k]) => k.includes('dryRun') || k.includes('预览'));
+    expect(promising.length).toBeGreaterThan(0);
+    for (const [key, value] of promising) {
+      expect(value, `示例「${key}」承诺了预览，值里却没有 dryRun`).toContain('dryRun');
+    }
+  });
+});

@@ -407,11 +407,11 @@ PUT /api/schedules/batch
 - `toDate`（可选）：YYYY-MM-DD，只修改该日期及之前的课；未传 `fromDate` 时下界默认为今天
 - `weekday`（可选）：0=周日，1=周一…6=周六；省略时匹配所有星期几
 - `fromDate`、`toDate` 与 `weekday` 至少传一个,防止误改全部
-- `semesterOnly`（默认 `true`）：跨学期保护开关。**仅在候选记录跨学期(部分在内、部分在外)时生效**,过滤掉学期外的部分；全部在学期内或全部在学期外时本参数不影响结果。设为 `false` 强制不过滤
+- `semesterOnly`（默认 `true`）：跨学期保护开关。**仅在候选记录跨学期(部分在内、部分在外)时生效**,过滤掉学期外的部分；全部在学期内或全部在学期外时本参数不影响这道过滤。带 `dayShift` 时另有一条：会把原本在学期内的课挪出学期就整单拒绝，即使候选全在学期内也一样。设为 `false` 同时关掉这两道保护
 - `updates` 只允许：`startTime`, `endTime`, `durationBilling`, `locationName`, `locationLat`, `locationLng`, `dayShift`
 - 修改时间时自动重算 `durationBilling`
 - 跨学期被过滤时返回体附加 `semesterFiltered`(过滤数量)与 `hint`(提示文案)
-- `dryRun`（默认 `false`）：只预览不写库，返回体与真实调用一致（`dayShift` 时另含 `dates:[{id,from,to}]`）。校验和冲突检查照常执行，所以预览看到的 400/409 就是真跑一次的结果
+- `dryRun`（默认 `false`）：只预览不写库。响应带 `dryRun: true` 以区别于真跑，其余字段与真跑一致（`dayShift` 时另含 `dates:[{id,from,to}]`）。校验和冲突检查照常执行，所以预览看到的 400/409 就是真跑一次的结果；`warnings` 也按改完后的样子算好一并返回
 
 #### dayShift：整体平移日期
 
@@ -419,14 +419,23 @@ PUT /api/schedules/batch
 
 ```json
 PUT /api/schedules/batch
-{ "classId": 1, "weekday": 4, "dryRun": true, "updates": { "dayShift": 1 } }
+{ "classId": 1, "fromDate": "2026-09-01", "weekday": 4, "dryRun": true,
+  "updates": { "dayShift": 1 } }
 ```
 
-- `dayShift`：整数，-3650 ~ 3650，正数往后挪、负数往前挪。`weekday:4 + dayShift:1` = 周四改周五；`dayShift:7` = 整体推迟一周
+带 `dayShift` 时必须给出日期下界（`fromDate`，或 `toDate`——此时下界默认为今天），
+否则 400：只给 `weekday` 时候选集是该班**历史上所有**这个星期几的课，会把已经上完、
+已经计费的课一起改期。
+
+- `dayShift`：整数，-3650 ~ 3650，正数往后挪、负数往前挪。`fromDate + weekday:4 + dayShift:1` = 从某天起周四改周五；`fromDate + dayShift:7` = 整体推迟一周
 - 排课 **id 保持不变**（不是删了重建），挂在这些 id 上的东西不会断
-- 位移后跑出学期的那几节按 `semesterOnly` 规则**留在原地**，计入 `semesterFiltered`
-- 位移目标与该班级已有的课（同日期同开始时间）重复时返回 **409 且一行都不改**，错误信息里带上冲突日期
+- 会把原本在学期内的课**挪出学期**时整单拒绝（400，说明数量和示例日期），不做部分移动——留下的那几节会变成拦住其他几节的障碍物。确实要挪请设 `semesterOnly: false`。原本就全在学期外的课不受此约束
+- 改完后（日期, 开始时间）与该班级另一节课重复时返回 **409 且一行都不改**，报错指明是哪几条。两种撞法都查：这批课彼此撞上（例如同一天两节统一改到同一时间），或撞上一节不在本次修改范围内的课。报错**不会**建议放宽范围——那会把无关的课一起挪走，怎么处理由你决定
+- 源日期在库里就解析不了（历史数据里的 `2026-2-1` 之类）时返回 400 并指明是哪一条
 - 位移后有课落在节假日时，返回体附加 `holidayDates`（日期数组）——只提示，不拦截
+- 目标年份既无内置也无自定义节假日数据时附加 `holidayDataMissing`：这时 `holidayDates` 为空**不代表**没落在节假日
+- 改了日期或时间后与其他排课重叠时附加 `warnings`，形状同 `POST /api/schedules`（只提示，不拦截）；按改完后的样子计算，`dryRun` 里也有
+- 以上几项同时出现时，`hint` 用「；」把各项说明拼在一起
 
 ### 导出排课明细
 

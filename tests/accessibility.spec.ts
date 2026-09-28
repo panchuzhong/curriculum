@@ -19,10 +19,20 @@ test('a saving dialog cycles focus past disabled footer buttons', async ({ authe
     // 不能写死某个班名：弹窗里每个班都是一个切换按钮，而 E2E 库里的班级会随着
     // 别的 spec（classes / schedule-monthly-yearly 各自按需建的长期夹具）累积，
     // 于是这条用例只在「从没跑过这套 E2E 的干净库」上成立，第二次跑必挂。
-    // 这里要的本来就是「最后一个可聚焦的控件」——保存/取消此刻是禁用的。
-    // :visible 不能省：useConfirm 的 <dialog> 也渲染在这个子树里，关闭时它的按钮
-    // 仍在 DOM 中（display:none），焦点陷阱按 getClientRects 跳过它们，选择器也得跳。
-    const lastEnabled = dialog.locator('button:not([disabled]):visible').last();
+    // 这里要的是「焦点陷阱眼里的最后一个可聚焦控件」，所以逐条对应它的过滤规则
+    // （src/hooks/useDialogFocusTrap.js，改那边要同步改这里）：
+    //   同一组选择器                 → 下面的 SELECTORS
+    //   tabIndex >= 0                → :not([tabindex^="-"])，任何负值都排除
+    //   !matches(':disabled')        → :not(:disabled)，禁用的 fieldset 里的控件也算
+    //   !closest('[inert]')          → :not([inert]):not([inert] *)
+    //   getClientRects / visibility  → :visible（useConfirm 的 <dialog> 关闭时按钮还在
+    //                                   DOM 里，display:none，靠这一条排除）
+    // 只看 button 不够：哪天末尾是个输入框，用例就会去等一个不存在的按钮。
+    const SELECTORS = ['button', '[href]', 'input', 'select', 'textarea', '[tabindex]'];
+    const FOCUSABLE = SELECTORS
+      .map(sel => `${sel}:not([tabindex^="-"]):not(:disabled):not([inert]):not([inert] *):visible`)
+      .join(', ');
+    const lastEnabled = dialog.locator(FOCUSABLE).last();
     await first.focus();
     await page.keyboard.press('Shift+Tab');
     await expect(lastEnabled).toBeFocused();
