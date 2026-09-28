@@ -84,3 +84,52 @@ describe('没有内置数据的年份不借用别年的节名', () => {
     expect(getHolidayName('2027-05-01')).toBe('自定义劳动节');
   });
 });
+
+// 这条规则在服务端只剩一份（server/services/holiday-calendar.js，排课和导出图共用），
+// 前端这份跑在浏览器里、跨不过去，只能对拍：同一组库记录、同一批日期，标不标节假日、
+// 标不标调休、叫什么名字，两边必须一字不差。否则课表页和导出的图会对不上，
+// 而批量排课跳过的日子又是按服务端那份算的。
+import { buildHolidayCalendar } from '../../../server/services/holiday-calendar.js';
+
+describe('前端与服务端的节假日规则逐条一致', () => {
+  afterEach(() => {
+    delete globalThis.window;
+    delete globalThis.localStorage;
+  });
+
+  // loadWith 拿第一条记录探测加载完成，所以每组的第一条都是节假日。
+  const scenarios = {
+    '库里没有记录': [],
+    '库里有一条 2026 的节假日（2026 内置整年作废）': [
+      { date: '2026-12-25', type: 'holiday', name: '自定义' },
+    ],
+    '同一天既有节假日又有调休（还原的矛盾数据）': [
+      { date: '2027-03-10', type: 'holiday', name: '校庆' },
+      { date: '2027-03-10', type: 'workday', name: '调休上班' },
+    ],
+    '库里的调休落在内置节假日那天': [
+      { date: '2027-03-10', type: 'holiday', name: '' },
+      { date: '2026-10-01', type: 'workday', name: '调休' },
+    ],
+  };
+  const probes = [
+    '2025-01-01', '2025-01-26', '2025-05-01',              // 2025 内置：节假日、调休
+    '2026-01-04', '2026-05-01', '2026-10-01', '2026-10-10', // 2026 内置：节假日、调休
+    '2026-03-15', '2026-12-25',                             // 平日、库里的节假日
+    '2027-03-10', '2027-05-01', '2999-01-01',               // 没有内置数据的年份
+  ];
+
+  for (const [name, dbRows] of Object.entries(scenarios)) {
+    it(name, async () => {
+      const client = await loadWith(dbRows);
+      const server = buildHolidayCalendar(dbRows);
+      for (const date of probes) {
+        expect(client.isHoliday(date), `${date} 是否节假日`).toBe(server.isHoliday(date));
+        expect(client.isWorkday(date), `${date} 是否调休`).toBe(server.isWorkday(date));
+        if (server.isHoliday(date)) {
+          expect(client.getHolidayName(date), `${date} 的节名`).toBe(server.holidayName(date));
+        }
+      }
+    });
+  }
+});

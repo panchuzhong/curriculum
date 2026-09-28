@@ -1,4 +1,5 @@
-import { isDarkTheme, withBrowserPage, buildDbHolidayHelpers } from './image-helpers.js';
+import { isDarkTheme, withBrowserPage } from './image-helpers.js';
+import { buildHolidayCalendar } from './holiday-calendar.js';
 import { toMin, blockGeometry, detectConflictGroups, assignColumns, toLocalDateStr, escapeHtml } from './schedule-helpers.js';
 import { getColor, getTextColor } from './colors.js';
 
@@ -23,7 +24,7 @@ export async function generateScheduleImage(schedulesWithClasses, startDate, end
   const todayStr = toLocalDateStr(new Date());
 
   // Build lookup from DB holidays (teacher-defined), fall back to built-in
-  const { checkIsHoliday, checkIsWorkday, checkHolidayName } = buildDbHolidayHelpers(dbHolidays);
+  const { isHoliday: checkIsHoliday, isWorkday: checkIsWorkday, holidayName: checkHolidayName } = buildHolidayCalendar(dbHolidays);
 
   const byDate = {};
   dates.forEach(d => byDate[d] = []);

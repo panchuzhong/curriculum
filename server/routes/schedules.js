@@ -3,7 +3,7 @@ import { drizzleDb, db } from '../db/index.js';
 import { schedules, classes, semesters, holidays, classStudents, classPricing } from '../db/schema.js';
 import { eq, and, gte, lte, inArray, ne } from 'drizzle-orm';
 import { authMiddleware } from '../middleware/auth.js';
-import { isHoliday, getHolidaysForYear } from '../services/holidays.js';
+import { buildHolidayCalendar } from '../services/holiday-calendar.js';
 import handle from '../validations/handle.js';
 import { validateCreateSchedule, validateBatchCreate, validateBatchUpdate, validateBatchDelete, validateUpdateSchedule } from '../validations/schedules.js';
 import { isCalendarDate, isValidDate, isValidScheduleEndTime, isValidScheduleSpan, isValidTime, normalizeScheduleEndTime, DATE_RANGE_SUFFIX } from '../validations/dates.js';
@@ -133,24 +133,12 @@ function validateRange(start, end, { maxDays } = {}) {
   return null;
 }
 
-// 「这一天不上课吗」：用户自己的调休优先于自己的节假日；某一年只要有用户数据，
-// 内置数据对该年整体让位（与前端 src/utils/holidays.js 同一套规则）。
-// 批量创建靠它跳过节假日，批量位移靠它把挪到节假日上的日期报回调用方——两处必须
-// 是同一份判断，否则「会被跳过的日子」和「会被提醒的日子」对不上。
-function buildOffDayCheck(teacherId) {
-  const rows = drizzleDb.select({ date: holidays.date, type: holidays.type })
+// 该教师的节假日日历（规则只有一份，见 services/holiday-calendar.js）。批量创建靠它
+// 跳过节假日，批量位移靠它把挪到节假日上的日期报回调用方。
+function loadHolidayCalendar(teacherId) {
+  const rows = drizzleDb.select({ date: holidays.date, type: holidays.type, name: holidays.name })
     .from(holidays).where(eq(holidays.teacherId, teacherId)).all();
-  const offDates = new Set(rows.filter(h => h.type === 'holiday').map(h => h.date));
-  const workDates = new Set(rows.filter(h => h.type === 'workday').map(h => h.date));
-  const dbYears = new Set(rows.map(h => h.date.slice(0, 4)));
-  const isOffDay = (dateStr) => !workDates.has(dateStr)
-    && (offDates.has(dateStr) || (!dbYears.has(dateStr.slice(0, 4)) && isHoliday(dateStr)));
-  // 既无内置也无自定义数据的年份：isOffDay 对它们一律说「不是节假日」，但那不是
-  // 判断出来的，是没有依据。两个调用方都得把这个缺口报出来。
-  const uncoveredYears = (dates) => [...new Set(dates.map(d => d.slice(0, 4)))]
-    .filter(y => !dbYears.has(y) && getHolidaysForYear(y).length === 0)
-    .sort();
-  return { isOffDay, uncoveredYears };
+  return buildHolidayCalendar(rows);
 }
 
 // 同一个缺口，批量创建和批量位移给同一句事实和同一个补救办法，只有后果不同。
@@ -307,7 +295,7 @@ router.post('/batch', validateBatchCreate, handle, (req, res) => {
       return res.status(400).json({ error: '学期跨度过长，请检查学期起止日期' });
     }
 
-    const { isOffDay, uncoveredYears: findUncoveredYears } = buildOffDayCheck(req.teacherId);
+    const { isOffDay, uncoveredYears: findUncoveredYears } = loadHolidayCalendar(req.teacherId);
 
     while (current <= end) {
       const dateStr = toLocalDateStr(current);
@@ -570,7 +558,7 @@ router.put('/batch', validateBatchUpdate, handle, (req, res) => {
     if (dayShift !== undefined) {
       // 落到节假日上不拦，但要说：批量创建会主动跳过节假日，位移一声不吭把课挪到
       // 国庆上，是同一类静默算错。
-      const { isOffDay, uncoveredYears } = buildOffDayCheck(req.teacherId);
+      const { isOffDay, uncoveredYears } = loadHolidayCalendar(req.teacherId);
       const targetDates = [...new Set(targets.map(t => t.target))];
       const landed = new Set(targetDates.filter(d => isOffDay(d)));
       if (landed.size > 0) {

@@ -1,4 +1,5 @@
-import { isDarkTheme, withBrowserPage, buildDbHolidayHelpers } from './image-helpers.js';
+import { isDarkTheme, withBrowserPage } from './image-helpers.js';
+import { buildHolidayCalendar } from './holiday-calendar.js';
 import { getColor, getTextColor } from './colors.js';
 import { monthDayWindow, monthBarPct, toLocalDateStr, escapeHtml, detectConflictGroups, assignColumns } from './schedule-helpers.js';
 
@@ -175,7 +176,7 @@ export async function generateMonthlyImage(schedulesWithClasses, year, month, { 
   const todayStr = toLocalDateStr(new Date());
 
   // Build DB holiday overrides (shared across all months)
-  const { checkIsHoliday, checkIsWorkday, checkHolidayName } = buildDbHolidayHelpers(dbHolidays);
+  const { isHoliday: checkIsHoliday, isWorkday: checkIsWorkday, holidayName: checkHolidayName } = buildHolidayCalendar(dbHolidays);
 
   const ey = endYear != null ? endYear : year;
   const em = endMonth != null ? endMonth : month;

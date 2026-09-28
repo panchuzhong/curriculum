@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import request from 'supertest';
 import { setupApp, makeUser, auth } from './route-helpers.js';
 import { clearSemesterCache } from '../services/schedule-helpers.js';
-import { buildDbHolidayHelpers } from '../services/image-helpers.js';
+import { buildHolidayCalendar } from '../services/holiday-calendar.js';
 import { HOLIDAYS, WORKDAYS } from '../services/holidays-data.js';
 
 let app, drizzleDb, token, teacherId, classId;
@@ -121,9 +121,9 @@ describe('batch create holiday precedence (per-year DB override)', () => {
   });
 });
 
-describe('buildDbHolidayHelpers (image export) per-year semantics', () => {
+describe('buildHolidayCalendar (image export labels) per-year semantics', () => {
   it('matches the frontend: DB data for a year suppresses built-in data for that year', () => {
-    const { checkIsHoliday, checkIsWorkday } = buildDbHolidayHelpers([
+    const { isHoliday: checkIsHoliday, isWorkday: checkIsWorkday } = buildHolidayCalendar([
       { date: '2026-12-25', type: 'holiday', name: '自定义' },
     ]);
     // 2026 built-ins suppressed (10-01 holiday, 01-04 workday)
@@ -137,7 +137,7 @@ describe('buildDbHolidayHelpers (image export) per-year semantics', () => {
   });
 
   it('workday entries keep overriding holidays on the same date', () => {
-    const { checkIsHoliday, checkIsWorkday } = buildDbHolidayHelpers([
+    const { isHoliday: checkIsHoliday, isWorkday: checkIsWorkday } = buildHolidayCalendar([
       { date: '2026-10-01', type: 'workday', name: '调休' },
     ]);
     expect(checkIsHoliday('2026-10-01')).toBe(false);

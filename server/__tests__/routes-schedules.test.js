@@ -5,7 +5,7 @@ import { setupApp, makeUser, auth } from './route-helpers.js';
 import { DATE_MIN, DATE_MAX } from '../validations/dates.js';
 import { clearSemesterCache } from '../services/schedule-helpers.js';
 import { clearReportCache } from '../services/report-cache.js';
-vi.mock('../services/holidays.js', () => ({ isHoliday: () => false, getHolidayName: () => '', getHolidaysForYear: () => ['01-01'] }));
+vi.mock('../services/holidays.js', () => ({ isHoliday: () => false, isWorkday: () => false, getHolidayName: () => '', getHolidaysForYear: () => ['01-01'] }));
 
 let app, drizzleDb, token, classId, teacherId;
 
