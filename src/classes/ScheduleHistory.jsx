@@ -1,10 +1,11 @@
 import { useState, useEffect, useMemo } from 'react';
 import { api } from '../api';
 import { useToast } from '../components/ToastProvider';
-import { WEEKDAYS, DATE_MIN, DATE_MAX } from '../utils/constants';
-import { parseDateStr, todayStr, toHours, dateRangeError, isUsableDate } from '../utils/date';
+import { DATE_MIN, DATE_MAX } from '../utils/constants';
+import { todayStr, toHours, dateRangeError, isUsableDate } from '../utils/date';
 import { getDefaultScheduleRange } from '../utils/semesterRange';
-import { DEFAULT_HISTORY_COLUMNS, HISTORY_COLUMNS_KEY, parseHistoryColumns } from '../utils/historyColumns';
+import { DEFAULT_HISTORY_COLUMNS, HISTORY_COLUMNS_KEY, parseHistoryColumns, mergeHistoryColumnChoice, historyTableColumns, historyTsv } from '../utils/historyColumns';
+import { copyText } from '../utils/clipboard';
 
 // 「全部排课」的查询区间。就是 DATE_MIN/DATE_MAX：服务端的 isValidDate 带着同一对
 // 上下限，超出去的区间参数会被 400 掉，整个排课历史页签变成空列表。
@@ -15,10 +16,6 @@ const ALL_END = DATE_MAX;
 // 表格上方那排「显示」复选框：key 对应 DEFAULT_HISTORY_COLUMNS。
 const COLUMN_TOGGLES = [['year', '年份'], ['weekday', '星期'], ['duration', '时长'], ['location', '地点']];
 
-// WEEKDAYS 从周一起算，getDay() 从周日起算。
-function weekdayOf(dateStr) {
-  return WEEKDAYS[(parseDateStr(dateStr).getDay() + 6) % 7];
-}
 
 export default function ScheduleHistory({ classId }) {
   const toast = useToast();
@@ -32,9 +29,15 @@ export default function ScheduleHistory({ classId }) {
     try { return parseHistoryColumns(localStorage.getItem(HISTORY_COLUMNS_KEY)); }
     catch { return { ...DEFAULT_HISTORY_COLUMNS }; }
   });
-  useEffect(() => {
-    try { localStorage.setItem(HISTORY_COLUMNS_KEY, JSON.stringify(cols)); } catch { /* 见上 */ }
-  }, [cols]);
+  // 只在用户点的时候写、只写点到的那一项（见 mergeHistoryColumnChoice）——不能放进
+  // 随 cols 变化的 effect：那样一打开就把整份默认值写回去了。
+  function toggleColumn(key) {
+    const value = !cols[key];
+    setCols(c => ({ ...c, [key]: value }));
+    try {
+      localStorage.setItem(HISTORY_COLUMNS_KEY, mergeHistoryColumnChoice(localStorage.getItem(HISTORY_COLUMNS_KEY), key, value));
+    } catch { /* 见上 */ }
+  }
 
   useEffect(() => {
     let cancelled = false;
@@ -104,6 +107,13 @@ export default function ScheduleHistory({ classId }) {
   // 跨年的学期是常态（秋季从 9 月到次年 1 月）。日期不带年份时，12-28 和 01-04
   // 谁先谁后只能靠排列顺序猜，复制出去之后连顺序都可能丢——得说一声。
   const yearsAmbiguous = !cols.year && new Set(rows.map(s => s.date.slice(0, 4))).size > 1;
+  const columns = historyTableColumns(cols);
+
+  async function copyRows() {
+    // 不传类型时提示默认是错误样式（红色），成功得明说，不然和下面那句失败长得一样。
+    if (await copyText(historyTsv(rows, columns))) toast(`已复制 ${rows.length} 节课`, 'success');
+    else toast('复制失败，请框选表格后按 Ctrl+C');
+  }
 
   if (loadError) return (
     <div className="mt-3 text-sm">
@@ -114,7 +124,11 @@ export default function ScheduleHistory({ classId }) {
   if (!range) return <p role="status" className="mt-3 text-sm text-gray-400 dark:text-gray-500">加载中...</p>;
 
   const inp = 'p-2 text-sm bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded';
-  const locationPad = cols.duration ? 'sm:pl-10' : '';
+  // 对齐是列的属性；地点列的左缩进只在它紧跟右对齐的时长列时才需要（见表头注释）。
+  const cellClass = (c) => [
+    c.align === 'right' ? 'text-right' : 'text-left', 'p-2',
+    c.key === 'location' && cols.duration && 'sm:pl-10',
+  ].filter(Boolean).join(' ');
 
   return (
     <div className="mt-3">
@@ -147,14 +161,20 @@ export default function ScheduleHistory({ classId }) {
           {COLUMN_TOGGLES.map(([key, label]) => (
             <label key={key} className="inline-flex items-center gap-1 cursor-pointer">
               <input type="checkbox" checked={cols[key]}
-                onChange={() => setCols(c => ({ ...c, [key]: !c[key] }))} />
+                onChange={() => toggleColumn(key)} />
               {label}
             </label>
           ))}
+          {/* 没有课可复制时置灰：下面紧跟着「该时段无排课」，不用另外解释。 */}
+          <button onClick={copyRows} disabled={rows.length === 0}
+            className="ml-auto px-3 py-1 bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-200 rounded hover:bg-gray-300 dark:hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed">
+            复制表格
+          </button>
         </div>
       )}
       {yearsAmbiguous && (
-        <p className="mb-2 text-xs text-amber-600 dark:text-amber-400">
+        // 同上面那排勾选框：拖选表格往上多拖了一点时，这行字不能混进复制内容。
+        <p className="mb-2 text-xs text-amber-600 dark:text-amber-400 select-none">
           列表跨了不止一年，日期不带年份时分不清是哪一年
         </p>
       )}
@@ -173,21 +193,13 @@ export default function ScheduleHistory({ classId }) {
                   左缩进；窄屏整张表本来就密，不加。关掉时长时地点紧跟左对齐的时间，
                   这段缩进就只剩一截空白，也不加。 */}
               <tr className="text-gray-500 dark:text-gray-400 border-b border-gray-200 dark:border-gray-600">
-                <th className="text-left p-2 font-medium">日期</th>
-                {cols.weekday && <th className="text-left p-2 font-medium">星期</th>}
-                <th className="text-left p-2 font-medium">时间</th>
-                {cols.duration && <th className="text-right p-2 font-medium">时长</th>}
-                {cols.location && <th className={`text-left p-2 ${locationPad} font-medium`}>地点</th>}
+                {columns.map(c => <th key={c.key} className={`${cellClass(c)} font-medium`}>{c.label}</th>)}
               </tr>
             </thead>
             <tbody>
               {rows.map(s => (
                 <tr key={s.id} className="border-b border-gray-100 dark:border-gray-700">
-                  <td className="p-2">{cols.year ? s.date : s.date.slice(5)}</td>
-                  {cols.weekday && <td className="p-2">{weekdayOf(s.date)}</td>}
-                  <td className="p-2">{`${s.startTime}-${s.endTime}`}</td>
-                  {cols.duration && <td className="text-right p-2">{`${toHours(s.durationBilling).toFixed(1)}h`}</td>}
-                  {cols.location && <td className={`p-2 ${locationPad}`}>{s.locationName || ''}</td>}
+                  {columns.map(c => <td key={c.key} className={cellClass(c)}>{c.value(s)}</td>)}
                 </tr>
               ))}
             </tbody>

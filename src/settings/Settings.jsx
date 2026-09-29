@@ -5,6 +5,7 @@ import HolidayManager from './HolidayManager';
 import { getSubjectColor } from '../utils/colors';
 import { useToast } from '../components/ToastProvider';
 import { useConfirm } from '../components/ConfirmDialog';
+import { copyText } from '../utils/clipboard';
 
 const ALL_SUBJECTS = ['数学', '物理', '化学', '英语', '语文', '生物', '历史', '地理', '政治', '信息技术', '美术', '音乐', '体育'];
 
@@ -147,30 +148,14 @@ function ApiKeySection() {
 
   const displayKey = fullKey || profile?.apiKey;
 
-  function copyKey() {
+  async function copyKey() {
     if (!displayKey) return;
-    // Try modern API first, fallback to execCommand
-    if (navigator.clipboard && navigator.clipboard.writeText) {
-      navigator.clipboard.writeText(fullKey || displayKey).then(() => {
-        setCopied(true);
-        setTimeout(() => setCopied(false), 2000);
-      }).catch(fallbackCopy);
+    if (await copyText(fullKey || displayKey)) {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
     } else {
-      fallbackCopy();
-    }
-    function fallbackCopy() {
-      const textarea = document.createElement('textarea');
-      textarea.value = fullKey || displayKey;
-      textarea.style.position = 'fixed';
-      textarea.style.opacity = '0';
-      document.body.appendChild(textarea);
-      textarea.select();
-      try {
-        document.execCommand('copy');
-        setCopied(true);
-        setTimeout(() => setCopied(false), 2000);
-      } catch {}
-      document.body.removeChild(textarea);
+      // 不能什么都不说：刚重新生成过、旧 Key 已经作废，剪贴板里留着的可能正是旧 Key。
+      toast('复制失败，请手动选中上面的 Key 复制');
     }
   }
 

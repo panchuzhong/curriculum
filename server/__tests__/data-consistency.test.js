@@ -609,3 +609,21 @@ describe('month bar geometry: server (image export) vs frontend (UI)', () => {
     expect(srvMonthBar('08:00', '08:00', { dayStart: 480, dayTotal: 870 }).isLate).toBe(false);
   });
 });
+
+// 「复制表格」按钮放进剪贴板的文本，和服务端的 CSV 导出一样是给表格软件吃的，
+// 所以防公式的规则只能是同一条：以 = + - @ 开头的格前面加 '。
+import { neutralizeFormula as serverNeutralize } from '../services/schedule-helpers.js';
+import { neutralizeFormula as clientNeutralize } from '../../src/utils/historyColumns.js';
+
+describe('防公式注入：CSV 导出与复制表格同一条规则', () => {
+  const CASES = ['=1+1', '+86 138', '-报告厅', '@SUM(A1)', 'A 教室', '', '2026-05-07', '教室=3'];
+  it('两侧对每个值的处理完全一致', () => {
+    for (const value of CASES) {
+      expect([value, clientNeutralize(value)]).toEqual([value, serverNeutralize(value)]);
+    }
+  });
+  it('危险开头确实被中和', () => {
+    expect(serverNeutralize('=1+1')).toBe("'=1+1");
+    expect(serverNeutralize('A 教室')).toBe('A 教室');
+  });
+});

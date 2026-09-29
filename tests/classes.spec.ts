@@ -251,6 +251,19 @@ test.describe('排课历史', () => {
     await expect(page.getByText(/共 \d+ 节 · [\d.]+h/)).toBeVisible();
   });
 
+  test('只看不点时不往本机存储写东西；点了只写点到的那一项', async ({ authenticatedPage: page }) => {
+    // 一打开就把整份默认值写回去的话，以后改了默认值，只是看过一眼的用户也会被
+    // 旧默认值钉住；整份覆盖还会抹掉别的标签页刚存的选择。
+    await openHistory(page);
+    await expect(page.getByRole('checkbox', { name: '年份' })).toBeChecked();
+    expect(await page.evaluate(() => localStorage.getItem('scheduleHistory.columns'))).toBeNull();
+
+    await page.getByRole('checkbox', { name: '年份' }).uncheck();
+
+    expect(JSON.parse(await page.evaluate(() => localStorage.getItem('scheduleHistory.columns')) ?? 'null'))
+      .toEqual({ year: false });
+  });
+
   test('显示选项刷新后还在', async ({ authenticatedPage: page }) => {
     await openHistory(page);
     await page.getByRole('checkbox', { name: '地点' }).uncheck();
@@ -261,6 +274,77 @@ test.describe('排课历史', () => {
     await expect(page.getByRole('checkbox', { name: '年份' })).not.toBeChecked();
     await expect(page.getByRole('checkbox', { name: '星期' })).toBeChecked();
     await expect(page.getByRole('columnheader', { name: '地点' })).toHaveCount(0);
+  });
+
+  test('「复制表格」复制的和框选整张表复制的一样', async ({ authenticatedPage: page }) => {
+    await openHistory(page);
+    // 关掉两项再比：按钮得跟着显示选项走，而不是永远复制五列。
+    await page.getByRole('checkbox', { name: '年份' }).uncheck();
+    await page.getByRole('checkbox', { name: '时长' }).uncheck();
+    const bySelection = copiedRows(await copyTable(page));
+    // 先往剪贴板里放点别的：不这样的话剪贴板里本来就是框选复制的结果，按钮什么都
+    // 不写、只弹一句「已复制」也能过。
+    await page.evaluate(() => navigator.clipboard.writeText('（剪贴板旧内容）'));
+
+    await page.getByRole('button', { name: '复制表格' }).click();
+
+    const toast = page.getByText(/已复制 \d+ 节课/);
+    await expect(toast).toBeVisible();
+    await expect(toast).toHaveClass(/bg-green-600/); // 成功用成功的样式，不是和失败一样的红色
+    const byButton = copiedRows(await page.evaluate(() => navigator.clipboard.readText()));
+    expect(byButton).toEqual(bySelection);
+    expect(byButton[0]).toEqual(['日期', '星期', '时间', '地点']);
+  });
+
+  test('没有剪贴板 API 时（内网 http 部署）照样能复制', async ({ authenticatedPage: page }) => {
+    // navigator.clipboard 只在安全上下文（HTTPS / localhost）里有；部署在内网 http
+    // 地址上它就是 undefined。这时得退回 execCommand，而不是点了没反应。
+    await page.context().grantPermissions(['clipboard-read', 'clipboard-write']);
+    await page.addInitScript(() => {
+      const real = navigator.clipboard;
+      (window as any).__readClipboard = () => real.readText();
+      (window as any).__writeClipboard = (text: string) => real.writeText(text);
+      Object.defineProperty(Navigator.prototype, 'clipboard', { get: () => undefined, configurable: true });
+    });
+    await openHistory(page);
+    // 剪贴板在浏览器上下文之间是共用的：先放点别的，才知道这次确实写进去了。
+    await page.evaluate(() => (window as any).__writeClipboard('（剪贴板旧内容）'));
+    const button = page.getByRole('button', { name: '复制表格' });
+
+    await button.click();
+
+    await expect(page.getByText(/已复制 \d+ 节课/)).toBeVisible();
+    const rows = copiedRows(await page.evaluate(() => (window as any).__readClipboard()));
+    expect(rows[0]).toEqual(['日期', '星期', '时间', '时长', '地点']);
+    // 回退路径借一个隐藏的 textarea 选中文字，焦点会被它抢走；用完得还回来，
+    // 不然键盘用户下一次 Tab 得从页面顶上重新数。
+    await expect(button).toBeFocused();
+  });
+
+  test('两种复制方式都失败时，说清楚并给出替代办法', async ({ authenticatedPage: page }) => {
+    await page.addInitScript(() => {
+      Object.defineProperty(Navigator.prototype, 'clipboard', { get: () => undefined, configurable: true });
+      // execCommand 失败时多半是返回 false 而不是抛错：只看有没有抛错的话，
+      // 会在什么都没复制的情况下告诉用户「已复制」。
+      document.execCommand = () => false;
+    });
+    await openHistory(page);
+
+    await page.getByRole('button', { name: '复制表格' }).click();
+
+    await expect(page.getByText('复制失败，请框选表格后按 Ctrl+C')).toBeVisible();
+    // 失败提示已经在屏幕上了，要是同时还弹过「已复制」，此刻它也还在（提示会叠着
+    // 显示几秒）。只数一次：toHaveCount 会一直重试到它自己消失为止。
+    expect(await page.getByText(/已复制/).count()).toBe(0);
+  });
+
+  test('区间里没有课时「复制表格」不可点', async ({ authenticatedPage: page }) => {
+    await openHistory(page);
+    await page.locator('input[type="date"]').first().fill('2000-01-01');
+    await page.locator('input[type="date"]').nth(1).fill('2000-01-31');
+
+    await expect(page.getByText('该时段无排课')).toBeVisible();
+    await expect(page.getByRole('button', { name: '复制表格' })).toBeDisabled();
   });
 
   test('去掉年份且列表跨年时提示日期会有歧义', async ({ authenticatedPage: page }) => {
@@ -282,6 +366,8 @@ test.describe('排课历史', () => {
     await expect(hint).toHaveCount(0); // 带着年份时不需要提示
     await page.getByRole('checkbox', { name: '年份' }).uncheck();
     await expect(hint).toBeVisible();
+    // 拖选表格往上多拖了一点时，这行提示不能混进复制内容——和上面那排勾选框一样。
+    await expect(hint).toHaveCSS('user-select', 'none');
   });
 
   test('时段内没有排课时给出提示', async ({ authenticatedPage: page }) => {

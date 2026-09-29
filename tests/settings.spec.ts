@@ -54,6 +54,48 @@ test.describe('设置页面', () => {
     await expect(page.getByRole('button', { name: '重新生成 API Key' })).toBeVisible();
   });
 
+  // 只验证复制，不真去换库里的 Key：重新生成的请求拦下来，回一个假的。
+  const FAKE_KEY = 'e2e-full-key-0123456789abcdef';
+  async function regenerateFakeKey(page: import('@playwright/test').Page) {
+    await page.route('**/api/auth/api-key', route => route.fulfill({ json: { apiKey: FAKE_KEY } }));
+    await page.goto('/settings');
+    await page.getByRole('button', { name: '重新生成 API Key' }).click();
+    await page.getByRole('button', { name: '确认' }).click();
+    await expect(page.getByText(FAKE_KEY)).toBeVisible();
+  }
+
+  test('重新生成后「复制」把完整 Key 放进剪贴板', async ({ authenticatedPage: page }) => {
+    await page.context().grantPermissions(['clipboard-read', 'clipboard-write']);
+    await regenerateFakeKey(page);
+
+    await page.getByRole('button', { name: '复制' }).click();
+
+    await expect(page.getByRole('button', { name: '已复制' })).toBeVisible();
+    expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(FAKE_KEY);
+  });
+
+  test('复制没成功时不显示「已复制」', async ({ authenticatedPage: page }) => {
+    // execCommand 失败时多半返回 false 而不是抛错；原先只看有没有抛错，于是在
+    // 什么都没复制的情况下也会显示「已复制」。
+    await page.addInitScript(() => {
+      Object.defineProperty(Navigator.prototype, 'clipboard', { get: () => undefined, configurable: true });
+      (window as any).__copyAttempts = 0;
+      document.execCommand = () => { (window as any).__copyAttempts++; return false; };
+    });
+    await regenerateFakeKey(page);
+
+    await page.getByRole('button', { name: '复制' }).click();
+
+    // 不能用 toHaveCount(0)：它会一直重试，而「已复制」两秒后自己就变回「复制」，
+    // 旧代码照样能等到 0 而通过。短等一下、只数一次——短于那两秒。
+    await page.waitForTimeout(300);
+    expect(await page.evaluate(() => (window as any).__copyAttempts)).toBe(1); // 确实点到了、走了复制
+    expect(await page.getByRole('button', { name: '已复制' }).count()).toBe(0);
+    // 光不显示「已复制」还不够：刚重新生成过、旧 Key 已经作废，剪贴板里留着的却可能
+    // 正是旧 Key。什么都不说，用户会把它粘进 agent 的配置里，然后一直 401。
+    await expect(page.getByText(/复制失败/)).toBeVisible();
+  });
+
   test('显示定价阶梯区', async ({ authenticatedPage: page }) => {
     await page.goto('/settings');
     await expect(page.getByRole('heading', { name: '定价阶梯' })).toBeVisible();
