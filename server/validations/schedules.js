@@ -32,6 +32,13 @@ export const validateBatchCreate = [
 ];
 
 export const validateBatchUpdate = [
+  // express-validator 对数组逐个元素校验：[] 一个元素都没有、校验全过，[3] 也照过。
+  // 这些字段只收单个值——不拦的话 weekday: [] 会被 +[] 强转成 0（周日），范围还是
+  // 该班全部历史；dayShift: [1] 过了 isInt 却不是整数，位移被悄悄丢掉、别的改动照做。
+  // fromDate/toDate/startTime/endTime 的校验本身就要求字符串，不必再列。
+  body(['classId', 'weekday', 'semesterOnly', 'dryRun', 'updates.dayShift', 'updates.durationBilling',
+    'updates.locationName', 'updates.locationLat', 'updates.locationLng'])
+    .not().isArray().withMessage('参数须为单个值，不能是数组'),
   body('classId').isInt({ min: 1 }).withMessage('classId 须为正整数'),
   body('fromDate').optional().custom(v => { if (!isValidDate(v)) throw new Error(`fromDate 格式须为有效的 YYYY-MM-DD${DATE_RANGE_SUFFIX}`); return true; }),
   body('toDate').optional().custom(v => { if (!isValidDate(v)) throw new Error(`toDate 格式须为有效的 YYYY-MM-DD${DATE_RANGE_SUFFIX}`); return true; }),

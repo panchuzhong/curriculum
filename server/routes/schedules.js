@@ -16,7 +16,12 @@ import { students as studentsTable } from '../db/schema.js';
 // 批量位移的挪出学期检查问的都是这一句，只能有一份：将来修一处（比如坏掉的学期行）
 // 而漏了另两处，挪之前和挪之后的学期判断就会互相打架。
 function semesterMembership(db, teacherId) {
-  const teacherSemesters = getTeacherSemesters(db, teacherId);
+  // 用不了的学期行不参与判断。还原备份会原样写进 '2026-9-1' 这种行，按字符串比，
+  // 2027-09-30 反倒「在学期内」、真正的秋季课 2026-10-08 却不在——两头都判错。前端
+  // 推算默认区间时同样先筛掉它们（src/utils/semesterRange.js）；它们在学期管理页里
+  // 看得见、改得了。
+  const teacherSemesters = getTeacherSemesters(db, teacherId)
+    .filter(sem => isValidDate(sem.startDate) && isValidDate(sem.endDate));
   return {
     hasSemesters: teacherSemesters.length > 0,
     inSemester: (date) => teacherSemesters.some(sem => date >= sem.startDate && date <= sem.endDate),
@@ -70,8 +75,10 @@ function attachBatchUpdateWarnings(resp, { semesterFiltered = 0, holidayDates, h
   return resp;
 }
 
-// 与其他排课的时间重叠。单条写入（POST /、PUT /:id）和批量修改共用这一份，报出来
-// 的形状因此天然一致。
+// 与其他排课的时间重叠。单条写入（POST /、PUT /:id）和批量修改共用这一份：每个冲突
+// 对象 {id, classId, className, startTime, endTime} 的形状因此天然一致。外层不同——
+// 单条写入直接返回这个数组；批量修改返回 [{id: 被改的那节, date, conflicts: 这个数组}]，
+// 因为它得说清是哪一节撞了。
 // finals 是「改完之后的样子」（id/classId/date/startTime/endTime），所以写之前就能算，
 // 批量修改的 dryRun 也就能预告重叠。这些 id 在库里的旧位置要从比较对象里剔掉、
 // 换成改完的位置，否则一节课会和自己挪走之前的影子「重叠」。
@@ -143,7 +150,7 @@ function loadHolidayCalendar(teacherId) {
 
 // 同一个缺口，批量创建和批量位移给同一句事实和同一个补救办法，只有后果不同。
 function missingHolidayDataHint(years, consequence) {
-  return `${years.join('、')} 年没有内置或自定义的法定节假日数据，${consequence}，请先通过 POST /api/holidays/batch 导入`;
+  return `${years.join('、')} 年没有可用的法定节假日数据（库里只要有这一年的记录，内置数据就整年不用），${consequence}，请先通过 POST /api/holidays/batch 导入`;
 }
 
 function shiftDate(date, days) {
@@ -374,17 +381,22 @@ router.put('/batch', validateBatchUpdate, handle, (req, res) => {
   // dayShift 不是列，是「每行各自挪多少天」。它进不了 safeUpdates：那里装的是套到
   // 所有匹配行的常量，把日期当常量写进去就是把整学期的周四压到同一天（紧接着撞
   // idx_schedules_unique）。要表达「周四统一改到周五」，需要的是相对位移。
-  const dayShift = Number.isInteger(updates.dayShift) ? updates.dayShift : undefined;
+  // 0 天的位移什么都不挪，按没传处理：当成改日期的话，只改地点的请求会被要求给日期
+  // 下界，本来就落在节假日上的课也会被报成「位移后落在节假日」。
+  const dayShift = Number.isInteger(updates.dayShift) && updates.dayShift !== 0 ? updates.dayShift : undefined;
   if (Object.keys(safeUpdates).length === 0 && dayShift === undefined) {
     return res.status(400).json({ error: 'No valid fields in updates' });
   }
-  // 改日期必须有日期下界。只给 weekday 时候选集是该班历史上所有这个星期几的课
-  // （下面的 effectiveFromDate 只在传了 toDate 时才默认为今天），照发一次就会把
-  // 已经上完、已经计费的课一起改期——改地点、改时间顶多是改错，改日期是改写交付
-  // 记录。这条写进文档也拦不住拿 API Key 的客户端，所以在这里拦。
-  if (dayShift !== undefined && !fromDate && !toDate) {
+  // 改日期、改时间、改计费时长都必须有日期下界。只给 weekday 时候选集是该班历史上
+  // 所有这个星期几的课（下面的 effectiveFromDate 只在传了 toDate 时才默认为今天），照发
+  // 一次就会把已经上完的课一起改掉：改日期是改写交付记录；改时间会重算 durationBilling，
+  // 收入按它算——而审计日志不记旧值，改了就还原不回来。只改地点不进计费、改错了看得见
+  // 也改得回来，这条老用法不收紧。文档写了也拦不住拿 API Key 的客户端，所以在这里拦。
+  const touchesBilling = dayShift !== undefined
+    || ['startTime', 'endTime', 'durationBilling'].some(k => k in safeUpdates);
+  if (touchesBilling && !fromDate && !toDate) {
     return res.status(400).json({
-      error: '改日期（dayShift）必须给出日期下界：请加上 fromDate（或 toDate，此时下界默认为今天）。只给 weekday 会把该班历史上所有这个星期几的课一起改期，包括已经上完的',
+      error: '改日期、时间或计费时长时必须给出日期下界：请加上 fromDate（或 toDate，此时下界默认为今天）。只给 weekday 会把该班历史上所有这个星期几的课一起改掉，包括已经上完、已经计费的',
     });
   }
   if (safeUpdates.locationLat != null) safeUpdates.locationLat = Number(safeUpdates.locationLat);
@@ -409,6 +421,22 @@ router.put('/batch', validateBatchUpdate, handle, (req, res) => {
     .where(and(eq(classes.id, classId), eq(classes.teacherId, req.teacherId), eq(classes.deleted, false))).get();
   if (!cls) return res.status(404).json({ error: 'Class not found' });
 
+  // 改日期前先看全班有没有日期存坏了的课（历史/导入数据里的 '2026-2-1'）。它会被下面的
+  // 字符串区间、weekday 过滤（getDay 是 NaN）、学期过滤悄悄丢掉，或者按字符串被当成在
+  // 学期内——只查剩下的候选，结果就是「挪了一部分、不说为什么」，或者报成「挪出学期…
+  // 请设置 semesterOnly=false」叫人关掉保护。它的真实日期不确定，没法判断它该不该在
+  // 这次范围里，所以只要班里有，改日期就先停下来，指明是哪一条。
+  if (dayShift !== undefined) {
+    const unparsable = drizzleDb.select({ id: schedules.id, date: schedules.date }).from(schedules)
+      .where(eq(schedules.classId, classId)).orderBy(schedules.id).all()
+      .find(r => !isCalendarDate(r.date));
+    if (unparsable) {
+      return res.status(400).json({
+        error: `该班第 ${unparsable.id} 条排课的日期存的是 ${unparsable.date}，解析不了（须为 YYYY-MM-DD）。它的真实日期不确定，无法判断是否在这次范围内，请先修正它再改日期；未做任何修改`,
+      });
+    }
+  }
+
   // When toDate is set without fromDate, default lower bound to today
   const effectiveFromDate = fromDate || (toDate ? toLocalDateStr(new Date()) : undefined);
 
@@ -427,21 +455,6 @@ router.put('/batch', validateBatchUpdate, handle, (req, res) => {
   candidates = sr.candidates;
   let semesterFiltered = sr.filtered;
 
-  // 源日期先过一遍，而且要排在下面的学期检查之前：isValidDate 只在写入时把关，
-  // 历史/导入的行可能存着 '2026-2-1'。它按字符串比 '2026-12-31' 还大，会被当成在
-  // 秋季学期内；拿去 shiftDate 又得到 Invalid Date，格式化出来是 0NaN-NaN-NaN。
-  // 两者一凑，报错就成了「挪出学期…请设置 semesterOnly=false」——叫人关掉保护，
-  // 而真正的问题是那一行本身。
-  if (dayShift !== undefined) {
-    const unparsable = [...candidates].sort((a, b) => String(a.date).localeCompare(String(b.date)))
-      .find(c => !isCalendarDate(c.date));
-    if (unparsable) {
-      return res.status(400).json({
-        error: `第 ${unparsable.id} 条排课的日期存的是 ${unparsable.date}，解析不了（须为 YYYY-MM-DD），未做任何修改`,
-      });
-    }
-  }
-
   // 上面那道过滤看的是位移「之前」的日期，跑出学期是挪完才发生的。这里**不**做
   // 部分过滤：把越界的那几节留在原地，它们会变成拦住其他几节的障碍物（同班同日期
   // 同开始时间撞唯一索引），而用户看到的是一句讲「重复排课」的 409，完全看不出是
@@ -456,8 +469,12 @@ router.put('/batch', validateBatchUpdate, handle, (req, res) => {
       const leaving = candidates.filter(c => inSemester(c.date) && !inSemester(shiftDate(c.date, dayShift)))
         .sort((a, b) => a.date.localeCompare(b.date));
       if (leaving.length > 0) {
+        // 不能只说「设成 false 就能挪」：它不只关掉这一道，还关掉上面那道跨学期过滤，
+        // 照做会把这次本被排除的学期外的课也一起挪了。把全部后果说清，由调用方决定。
+        const alsoMoves = semesterFiltered > 0 ? `，另外 ${semesterFiltered} 节学期外、这次本被排除的课也会一起挪` : '';
         return res.status(400).json({
-          error: `位移会把 ${leaving.length} 节课挪出学期（如 ${leaving[0].date} → ${shiftDate(leaving[0].date, dayShift)}），未做任何修改；确实要挪请设置 semesterOnly=false`,
+          error: `位移会把 ${leaving.length} 节课挪出学期（如 ${leaving[0].date} → ${shiftDate(leaving[0].date, dayShift)}），未做任何修改。semesterOnly=false 可以照挪，但它同时会取消跨学期过滤${alsoMoves}`,
+          ...(semesterFiltered > 0 && { semesterFiltered }),
         });
       }
     }
@@ -474,148 +491,147 @@ router.put('/batch', validateBatchUpdate, handle, (req, res) => {
 
   const updatedIds = candidates.map(s => s.id);
   let holidayDates, holidayLessonCount, holidayDataMissing, targets, warnings;
-  if (updatedIds.length > 0) {
-    if (safeUpdates.startTime !== undefined || safeUpdates.endTime !== undefined) {
-      if (candidates.some(c => !isValidScheduleSpan(
-        safeUpdates.startTime ?? c.startTime,
-        requestedEndTime ?? c.endTime,
-      ))) {
-        return res.status(400).json({ error: '排课时长须大于 0 且小于 24 小时' });
-      }
-      if (requestedEndTime !== undefined) safeUpdates.endTime = normalizeScheduleEndTime(requestedEndTime);
-      const startTime = safeUpdates.startTime;
-      const endTime = safeUpdates.endTime;
-      if (startTime && endTime) {
-        safeUpdates.durationBilling = safeUpdates.durationBilling ?? calcDurationBilling(startTime, endTime, null);
-      }
-      if (safeUpdates.durationBilling == null && updatedIds.length > 1) {
-        const uniqueStarts = new Set(candidates.map(c => c.startTime));
-        const uniqueEnds = new Set(candidates.map(c => c.endTime));
-        if (uniqueStarts.size > 1 || uniqueEnds.size > 1) {
-          return res.status(400).json({ error: '批量修改多条不同时间的排课时，请同时提供 durationBilling 或完整指定 startTime 和 endTime' });
-        }
-        safeUpdates.durationBilling = calcDurationBilling(startTime || candidates[0].startTime, endTime || candidates[0].endTime, null);
-      } else if (safeUpdates.durationBilling == null) {
-        safeUpdates.durationBilling = calcDurationBilling(startTime || candidates[0].startTime, endTime || candidates[0].endTime, null);
-      }
+  if (safeUpdates.startTime !== undefined || safeUpdates.endTime !== undefined) {
+    if (candidates.some(c => !isValidScheduleSpan(
+      safeUpdates.startTime ?? c.startTime,
+      requestedEndTime ?? c.endTime,
+    ))) {
+      return res.status(400).json({ error: '排课时长须大于 0 且小于 24 小时' });
     }
-    if (dayShift !== undefined) {
-      targets = [...candidates].sort((a, b) => a.date.localeCompare(b.date))
-        .map(c => ({ ...c, target: shiftDate(c.date, dayShift) }));
-
-      // 越界的日期写进去就再也看不见也删不掉：每条读取路径都是按区间过滤的，
-      // 而这两个上下限正是那些区间的边界（服务端 isValidDate 与前端同源）。
-      const outOfRange = targets.find(t => !isValidDate(t.target));
-      if (outOfRange) {
-        return res.status(400).json({ error: `位移后的日期 ${outOfRange.target} 超出可用范围${DATE_RANGE_SUFFIX}，未做任何修改` });
-      }
-
+    if (requestedEndTime !== undefined) safeUpdates.endTime = normalizeScheduleEndTime(requestedEndTime);
+    const startTime = safeUpdates.startTime;
+    const endTime = safeUpdates.endTime;
+    if (startTime && endTime) {
+      safeUpdates.durationBilling = safeUpdates.durationBilling ?? calcDurationBilling(startTime, endTime, null);
     }
-
-    // (class, date, startTime) 是唯一键。改了日期或开始时间，就得在写之前把两种撞法
-    // 都查出来，而不是交给唯一索引——索引只在真跑时才撞得到，dryRun 会看到 200，
-    // 文档承诺的「预览看到的就是真跑的结果」就成了假话：
-    //   · 移动集合内部互撞：同一天 09:00 和 11:00 两节，统一改到 14:00；
-    //   · 撞上一节不参与这次修改的课（被 weekday 或学期过滤掉的）。
-    // 报错只陈述是哪一节，不建议「放宽范围把它一并纳入」：agent 照做去掉 weekday，
-    // 范围内每个星期几的课都会跟着挪——一次安全的拒绝会变成一场没人要的大改期。
-    // 每节课改完之后的样子。唯一键预检、重叠预告都照它算，写入也照它写——
-    // 三处各算一遍就会各自漂。
-    const finals = (targets ?? [...candidates]
-      .sort((a, b) => String(a.date).localeCompare(String(b.date)) || a.startTime.localeCompare(b.startTime))
-      .map(c => ({ ...c, target: c.date })))
-      .map(t => ({
-        id: t.id, classId: t.classId, date: t.target,
-        startTime: safeUpdates.startTime ?? t.startTime,
-        endTime: safeUpdates.endTime ?? t.endTime,
-      }));
-
-    if (dayShift !== undefined || safeUpdates.startTime !== undefined) {
-      const byKey = new Map();
-      for (const f of finals) {
-        const key = `${f.date}|${f.startTime}`;
-        const clash = byKey.get(key);
-        if (clash) {
-          return res.status(409).json({
-            error: `修改后第 ${clash.id} 条和第 ${f.id} 条排课会在 ${f.date} ${f.startTime} 重复排课，未做任何修改`,
-          });
-        }
-        byKey.set(key, f);
+    if (safeUpdates.durationBilling == null && updatedIds.length > 1) {
+      const uniqueStarts = new Set(candidates.map(c => c.startTime));
+      const uniqueEnds = new Set(candidates.map(c => c.endTime));
+      if (uniqueStarts.size > 1 || uniqueEnds.size > 1) {
+        return res.status(400).json({ error: '批量修改多条不同时间的排课时，请同时提供 durationBilling 或完整指定 startTime 和 endTime' });
       }
-      const movingIds = new Set(updatedIds);
-      const blocker = drizzleDb.select({ id: schedules.id, date: schedules.date, startTime: schedules.startTime })
-        .from(schedules)
-        .where(and(eq(schedules.classId, classId), inArray(schedules.date, [...new Set(finals.map(f => f.date))])))
-        .orderBy(schedules.date, schedules.startTime).all()
-        .find(row => !movingIds.has(row.id) && byKey.has(`${row.date}|${row.startTime}`));
-      if (blocker) {
+      safeUpdates.durationBilling = calcDurationBilling(startTime || candidates[0].startTime, endTime || candidates[0].endTime, null);
+    } else if (safeUpdates.durationBilling == null) {
+      safeUpdates.durationBilling = calcDurationBilling(startTime || candidates[0].startTime, endTime || candidates[0].endTime, null);
+    }
+  }
+  if (dayShift !== undefined) {
+    targets = [...candidates].sort((a, b) => a.date.localeCompare(b.date))
+      .map(c => ({ ...c, target: shiftDate(c.date, dayShift) }));
+
+    // 越界的日期写进去就再也看不见也删不掉：每条读取路径都是按区间过滤的，
+    // 而这两个上下限正是那些区间的边界（服务端 isValidDate 与前端同源）。
+    const outOfRange = targets.find(t => !isValidDate(t.target));
+    if (outOfRange) {
+      return res.status(400).json({
+        error: `第 ${outOfRange.id} 条排课（${outOfRange.date}）位移后是 ${outOfRange.target}，超出可用范围${DATE_RANGE_SUFFIX}，未做任何修改`,
+      });
+    }
+  }
+
+  // 每节课改完之后的样子。唯一键预检、重叠预告都照它算；日期取自 targets，和写入、
+  // 预览的 from→to 出自同一次位移计算，不会各算一遍各自漂。
+  const finals = (targets ?? [...candidates]
+    .sort((a, b) => String(a.date).localeCompare(String(b.date)) || a.startTime.localeCompare(b.startTime))
+    .map(c => ({ ...c, target: c.date })))
+    .map(t => ({
+      id: t.id, classId: t.classId, date: t.target,
+      startTime: safeUpdates.startTime ?? t.startTime,
+      endTime: safeUpdates.endTime ?? t.endTime,
+    }));
+
+  // (class, date, startTime) 是唯一键。改了日期或开始时间，就得在写之前把两种撞法
+  // 都查出来，而不是交给唯一索引——索引只在真跑时才撞得到，dryRun 会看到 200，
+  // 文档承诺的「预览看到的就是真跑的结果」就成了假话：
+  //   · 移动集合内部互撞：同一天 09:00 和 11:00 两节，统一改到 14:00；
+  //   · 撞上一节不参与这次修改的课（被 weekday 或学期过滤掉的）。
+  // 报错只陈述是哪一节，不建议「放宽范围把它一并纳入」：agent 照做去掉 weekday，
+  // 范围内每个星期几的课都会跟着挪——一次安全的拒绝会变成一场没人要的大改期。
+  if (dayShift !== undefined || safeUpdates.startTime !== undefined) {
+    const byKey = new Map();
+    for (const f of finals) {
+      const key = `${f.date}|${f.startTime}`;
+      const clash = byKey.get(key);
+      if (clash) {
         return res.status(409).json({
-          error: `修改后 ${blocker.date} ${blocker.startTime} 与该班级第 ${blocker.id} 条排课重复（它不在本次修改范围内），未做任何修改`,
+          error: `修改后第 ${clash.id} 条和第 ${f.id} 条排课会在 ${f.date} ${f.startTime} 重复排课，未做任何修改`,
         });
       }
+      byKey.set(key, f);
     }
+    const movingIds = new Set(updatedIds);
+    const blocker = drizzleDb.select({ id: schedules.id, date: schedules.date, startTime: schedules.startTime })
+      .from(schedules)
+      .where(and(eq(schedules.classId, classId), inArray(schedules.date, [...new Set(finals.map(f => f.date))])))
+      .orderBy(schedules.date, schedules.startTime).all()
+      .find(row => !movingIds.has(row.id) && byKey.has(`${row.date}|${row.startTime}`));
+    if (blocker) {
+      return res.status(409).json({
+        error: `修改后 ${blocker.date} ${blocker.startTime} 与该班级第 ${blocker.id} 条排课重复（它不在本次修改范围内），未做任何修改`,
+      });
+    }
+  }
 
-    if (dayShift !== undefined) {
-      // 落到节假日上不拦，但要说：批量创建会主动跳过节假日，位移一声不吭把课挪到
-      // 国庆上，是同一类静默算错。
-      const { isOffDay, uncoveredYears } = loadHolidayCalendar(req.teacherId);
-      const targetDates = [...new Set(targets.map(t => t.target))];
-      const landed = new Set(targetDates.filter(d => isOffDay(d)));
-      if (landed.size > 0) {
-        holidayDates = [...landed];
-        holidayLessonCount = targets.filter(t => landed.has(t.target)).length;
-      }
-      // 空的 holidayDates 不等于「没课落在节假日」：内置数据只覆盖已公布的年份，
-      // 某一年既无内置也无自定义数据时，上面那句判断压根没有依据。批量创建用
-      // holidayDataMissing 报这个缺口，位移沉默的话，调用方会把「不知道」读成
-      // 「没问题」。
-      holidayDataMissing = uncoveredYears(targetDates);
+  if (dayShift !== undefined) {
+    // 落到节假日上不拦，但要说：批量创建会主动跳过节假日，位移一声不吭把课挪到
+    // 国庆上，是同一类静默算错。
+    const { isOffDay, uncoveredYears } = loadHolidayCalendar(req.teacherId);
+    const targetDates = [...new Set(targets.map(t => t.target))];
+    const landed = new Set(targetDates.filter(d => isOffDay(d)));
+    if (landed.size > 0) {
+      holidayDates = [...landed];
+      holidayLessonCount = targets.filter(t => landed.has(t.target)).length;
     }
+    // 空的 holidayDates 不等于「没课落在节假日」：内置数据只覆盖已公布的年份，
+    // 某一年既无内置也无自定义数据时，上面那句判断压根没有依据。批量创建用
+    // holidayDataMissing 报这个缺口，位移沉默的话，调用方会把「不知道」读成
+    // 「没问题」。
+    holidayDataMissing = uncoveredYears(targetDates);
+  }
 
-    // 改了日期或时间才可能造出新的重叠；只改地点不会。单条写入一直会报 warnings，
-    // 批量改日期/时间一次就能造出一串重叠，没有理由反倒不说。按改完的样子算，
-    // 所以预览里也有。
-    if (dayShift !== undefined || safeUpdates.startTime !== undefined || safeUpdates.endTime !== undefined) {
-      warnings = findConflicts(finals, req.teacherId);
-    }
+  // 改了日期或时间才可能造出新的重叠；只改地点不会。单条写入一直会报 warnings，
+  // 批量改日期/时间一次就能造出一串重叠，没有理由反倒不说。按改完的样子算，
+  // 所以预览里也有。
+  if (dayShift !== undefined || safeUpdates.startTime !== undefined || safeUpdates.endTime !== undefined) {
+    warnings = findConflicts(finals, req.teacherId);
+  }
 
-    // 预览：校验全部走完之后才返回，所以 dryRun 看到的 400/409 和真跑一次完全一致。
-    // 它对所有字段生效，不只是 dayShift——只管 dayShift 的话，带着 dryRun 改时间
-    // 会真写进去，比不支持预览更糟。
-    if (dryRun) {
-      // dryRun: true 必须回显：形状和真跑一致是好事，但一模一样就不行——忘了去掉
-      // dryRun 的调用方会拿着 count:N 报告「已改期」，而库里一行没动。
-      const preview = { dryRun: true, count: updatedIds.length, ids: updatedIds };
-      // to 和真正写进去的值必须出自同一处，各算一遍就会漂。
-      if (targets) preview.dates = targets.map(t => ({ id: t.id, from: t.date, to: t.target }));
-      attachBatchUpdateWarnings(preview, { semesterFiltered, holidayDates, holidayLessonCount, holidayDataMissing, warnings });
-      return res.json(preview);
-    }
+  // 预览：校验全部走完之后才返回，所以 dryRun 看到的 400/409 和真跑一次完全一致。
+  // 它对所有字段生效，不只是 dayShift——只管 dayShift 的话，带着 dryRun 改时间
+  // 会真写进去，比不支持预览更糟。
+  if (dryRun) {
+    // dryRun: true 必须回显：形状和真跑一致是好事，但一模一样就不行——忘了去掉
+    // dryRun 的调用方会拿着 count:N 报告「已改期」，而库里一行没动。
+    const preview = { dryRun: true, count: updatedIds.length, ids: updatedIds };
+    // to 和真正写进去的值必须出自同一处，各算一遍就会漂。
+    if (targets) preview.dates = targets.map(t => ({ id: t.id, from: t.date, to: t.target }));
+    attachBatchUpdateWarnings(preview, { semesterFiltered, holidayDates, holidayLessonCount, holidayDataMissing, warnings });
+    return res.json(preview);
+  }
 
-    try {
-      if (dayShift === undefined) {
-        drizzleDb.update(schedules).set(safeUpdates).where(inArray(schedules.id, updatedIds)).run();
-      } else {
-        // 逐行挪，顺序取决于方向。一条 `UPDATE ... SET date = date(date,'+N days')`
-        // 在整周序列上会撞 idx_schedules_unique：第一行挪到第二行此刻占着的日期就报错，
-        // 整条语句回滚（实测）。往后挪先动最晚的一节、往前挪先动最早的一节，途中不重叠。
-        const ordered = dayShift >= 0 ? [...targets].reverse() : targets;
-        db.transaction(() => {
-          for (const t of ordered) {
-            drizzleDb.update(schedules)
-              .set({ ...safeUpdates, date: t.target })
-              .where(eq(schedules.id, t.id)).run();
-          }
-        })();
-      }
-    } catch (e) {
-      // Batch-updating several rows to the same start time on the same date
-      // violates idx_schedules_unique — surface it as a conflict, not a 500.
-      if (e.message?.includes('UNIQUE constraint')) {
-        return res.status(409).json({ error: '批量修改会导致该班级同日期同一时间重复排课，请调整时间或缩小范围' });
-      }
-      throw e;
+  try {
+    if (dayShift === undefined) {
+      drizzleDb.update(schedules).set(safeUpdates).where(inArray(schedules.id, updatedIds)).run();
+    } else {
+      // 逐行挪，顺序取决于方向。一条 `UPDATE ... SET date = date(date,'+N days')`
+      // 在整周序列上会撞 idx_schedules_unique：第一行挪到第二行此刻占着的日期就报错，
+      // 整条语句回滚（实测）。往后挪先动最晚的一节、往前挪先动最早的一节，途中不重叠。
+      const ordered = dayShift >= 0 ? [...targets].reverse() : targets;
+      db.transaction(() => {
+        for (const t of ordered) {
+          drizzleDb.update(schedules)
+            .set({ ...safeUpdates, date: t.target })
+            .where(eq(schedules.id, t.id)).run();
+        }
+      })();
     }
+  } catch (e) {
+    // Batch-updating several rows to the same start time on the same date
+    // violates idx_schedules_unique — surface it as a conflict, not a 500.
+    if (e.message?.includes('UNIQUE constraint')) {
+      return res.status(409).json({ error: '批量修改会导致该班级同日期同一时间重复排课，请调整时间或缩小范围' });
+    }
+    throw e;
   }
 
   // dayShift 不在 safeUpdates 里（它不是列，是每行各自的位移），不单独记下来的话

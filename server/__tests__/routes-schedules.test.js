@@ -1842,7 +1842,7 @@ describe('PUT /api/schedules/batch — dayShift', () => {
     await seedDates(['2026-05-07']);
 
     const res = await request(app).put('/api/schedules/batch').set(auth(token))
-      .send({ classId, weekday: 4, dryRun: true, updates: { startTime: '14:00', endTime: '15:00' } });
+      .send({ classId, fromDate: '2026-05-01', weekday: 4, dryRun: true, updates: { startTime: '14:00', endTime: '15:00' } });
 
     expect(res.status).toBe(200);
     expect(res.body.count).toBe(1);
@@ -2045,6 +2045,9 @@ describe('PUT /api/schedules/batch — dayShift', () => {
 
     expect(res.status).toBe(400);
     expect(res.body.error).toContain('3000-01-01');
+    // 点名是哪一节：范围说明里本来就有 2999-12-31，所以查的是「第 N 条」
+    const [row] = (await request(app).get(`/api/schedules?start=${DATE_MAX}&end=${DATE_MAX}`).set(auth(token))).body;
+    expect(res.body.error).toContain(`第 ${row.id} 条`);
     expect(await listDates(DATE_MAX, DATE_MAX)).toEqual([DATE_MAX]);
   });
 
@@ -2125,6 +2128,103 @@ describe('PUT /api/schedules/batch — dayShift', () => {
     // 只有一个 hint 字段，读它的 UI/agent 不该因为学期那句话就漏掉节假日。
     expect(res.body.hint).toContain('semesterOnly=false');
     expect(res.body.hint).toContain('节假日');
+  });
+
+  it('参数是数组时 400，不按数组的强转去猜', async () => {
+    // express-validator 对数组逐个元素校验：weekday: [] 一个元素都没有，校验全过，
+    // +[] 又是 0，于是悄悄变成「只改周日」、范围还是该班全部历史；dayShift: [1]
+    // 过了 isInt，Number.isInteger([1]) 却是 false，位移被悄悄丢掉、别的改动照做。
+    await seedDates(['2026-05-03', '2026-05-07']); // 周日、周四
+    for (const body of [
+      { weekday: [], updates: { locationName: 'X' } },
+      { classId: [classId], fromDate: '2026-05-01', updates: { locationName: 'X' } },
+      { fromDate: '2026-05-01', updates: { dayShift: [1] } },
+      { fromDate: '2026-05-01', updates: { durationBilling: [30] } },
+      { fromDate: '2026-05-01', updates: { locationName: ['X'] } },
+      { fromDate: '2026-05-01', dryRun: [true], updates: { locationName: 'X' } },
+    ]) {
+      const res = await putBatch(body);
+      expect(res.status, JSON.stringify(body)).toBe(400);
+    }
+    const rows = await request(app).get('/api/schedules?start=2026-05-01&end=2026-05-31').set(auth(token));
+    expect(rows.body.map(r => r.locationName ?? null)).toEqual([null, null]);
+  });
+
+  it('dayShift: 0 不算改日期', async () => {
+    // 它什么都不挪；当成改日期的话，只改地点的请求会被要求给日期下界、
+    // 还会把本来就在节假日上的课报成「位移后落在节假日」。
+    await seedDates(['2026-05-07']);
+
+    const res = await putBatch({ weekday: 4, updates: { dayShift: 0, locationName: 'B教室' } });
+
+    expect(res.status).toBe(200);
+    expect(res.body.count).toBe(1);
+  });
+
+  it('只给 weekday 却改时间或时长时 400：会重算已经计费的历史', async () => {
+    // 改时间会重算 durationBilling，收入按它算；审计日志又不记旧值。只给 weekday 时
+    // 候选集是该班全部历史，改一次就把已经上完、已经收了钱的课的课时全改了。
+    await seedDates(['2026-05-02', '2026-05-09']); // 两个周六
+
+    const byTime = await putBatch({ weekday: 6, updates: { startTime: '14:00', endTime: '16:00' } });
+    const byDuration = await putBatch({ weekday: 6, updates: { durationBilling: 30 } });
+
+    expect(byTime.status).toBe(400);
+    expect(byDuration.status).toBe(400);
+    expect(byTime.body.error).toContain('fromDate');
+    const rows = await request(app).get('/api/schedules?start=2026-05-01&end=2026-05-31').set(auth(token));
+    expect(rows.body.map(r => [r.startTime, r.durationBilling])).toEqual([['09:00', 90], ['09:00', 90]]);
+  });
+
+  it('只给 weekday、只改地点照旧可以', async () => {
+    // 地点不进计费，改错了也看得见、改得回来——这条老用法不收紧。
+    await seedDates(['2026-05-02']);
+    const res = await putBatch({ weekday: 6, updates: { locationName: '新校区' } });
+    expect(res.status).toBe(200);
+  });
+
+  it('挪出学期的 400 说清楚 semesterOnly=false 还会连带挪哪些课', async () => {
+    // semesterOnly=false 不只关掉「挪出学期」这一道，还关掉挪之前那道跨学期过滤：
+    // 只说「设成 false 就能挪」，调用方照做后会连带把原本被排除的学期外的课也挪了。
+    await addSpringSemester(); // 2026-03-01 ~ 2026-07-15
+    await seedDates(['2026-07-10', '2026-07-14', '2026-08-01']);
+
+    const res = await putBatch({ fromDate: '2026-07-01', updates: { dayShift: 3 } });
+
+    expect(res.status).toBe(400);
+    expect(res.body.semesterFiltered).toBe(1);
+    expect(res.body.error).toContain('另外 1 节');
+  });
+
+  it('班里有日期解析不了的课时，带 weekday 也不会悄悄只挪一部分', async () => {
+    // 坏日期会先被 weekday 过滤（getDay 是 NaN）、字符串区间、学期过滤悄悄丢掉，
+    // 检查若只看剩下的候选，就成了「挪了一部分、不说为什么」。它的真实日期不确定，
+    // 没法判断它该不该在这次范围里，所以只要班里有，改日期就先停下来。
+    const { schedules } = await import('../db/schema.js');
+    drizzleDb.insert(schedules).values({
+      classId, date: '2026-5-7', startTime: '09:00', endTime: '10:30', durationBilling: 90,
+    }).run();
+    await seedDates(['2026-05-14']);
+
+    const res = await putBatch({ fromDate: '2026-05-01', weekday: 4, updates: { dayShift: 1 } });
+
+    expect(res.status).toBe(400);
+    expect(res.body.error).toContain('2026-5-7');
+    expect(await listDates('2026-05-01', '2026-05-31')).toEqual(['2026-05-14']);
+  });
+
+  it('学期行的日期格式坏了时，不参与学期判断', async () => {
+    // 还原备份会原样写进 '2026-9-1' 这种学期行。按字符串比，2027-09-30 反倒「在学期内」、
+    // 真正的秋季课 2026-10-08 却不在——两头都判错。前端推算默认区间时也是先筛掉这种行。
+    const { semesters } = await import('../db/schema.js');
+    drizzleDb.insert(semesters).values({
+      teacherId, name: '坏秋季', type: 'fall', startDate: '2026-9-1', endDate: '2027-1-20',
+    }).run();
+    await seedDates(['2027-09-30']);
+
+    const res = await putBatch({ fromDate: '2027-09-01', toDate: '2027-09-30', updates: { dayShift: 1 } });
+
+    expect(res.status).toBe(200);
   });
 
   it('审计日志记下位移量和源日期范围', async () => {

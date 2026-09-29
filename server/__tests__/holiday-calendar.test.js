@@ -58,6 +58,23 @@ describe('buildHolidayCalendar', () => {
     expect(cal.holidayName('2027-03-10')).toBe('节假日');
   });
 
+  it('一年里只有调休、没有节假日记录时，照样算缺数据', () => {
+    // 这一条调休记录就让内置数据整年作废，而库里又没有节假日：这一年实际上一天
+    // 假都没有。只看「有没有记录」会把它当成有数据，批量排课照样排进春节，也不报。
+    expect(buildHolidayCalendar([{ date: '2028-01-29', type: 'workday', name: '调休' }])
+      .uncoveredYears(['2028-02-01'])).toEqual(['2028']);
+    expect(buildHolidayCalendar([{ date: '2026-10-10', type: 'workday', name: '调休' }])
+      .uncoveredYears(['2026-10-01'])).toEqual(['2026']);
+  });
+
+  it('同一天两条节假日记录时取第一条的名字，和前端一致', () => {
+    const cal = buildHolidayCalendar([
+      { date: '2027-03-10', type: 'holiday', name: '甲' },
+      { date: '2027-03-10', type: 'holiday', name: '乙' },
+    ]);
+    expect(cal.holidayName('2027-03-10')).toBe('甲');
+  });
+
   it('uncoveredYears 只报既无内置也无自定义数据的年份', () => {
     expect(buildHolidayCalendar([]).uncoveredYears(['2026-05-01', '2999-01-01', '2999-02-01']))
       .toEqual(['2999']);

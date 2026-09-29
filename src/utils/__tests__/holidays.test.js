@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
+import { buildHolidayCalendar } from '../../../server/services/holiday-calendar.js';
 
 // 库里有这一年的节假日时，内置那份就整年作废——老师自己管了这一年，就该以他管的为准。
 // 这条规则此前一条用例都没有：把 isHoliday/isWorkday 里的 hasDbData 两段整个删掉，
@@ -89,7 +90,6 @@ describe('没有内置数据的年份不借用别年的节名', () => {
 // 前端这份跑在浏览器里、跨不过去，只能对拍：同一组库记录、同一批日期，标不标节假日、
 // 标不标调休、叫什么名字，两边必须一字不差。否则课表页和导出的图会对不上，
 // 而批量排课跳过的日子又是按服务端那份算的。
-import { buildHolidayCalendar } from '../../../server/services/holiday-calendar.js';
 
 describe('前端与服务端的节假日规则逐条一致', () => {
   afterEach(() => {
@@ -106,6 +106,10 @@ describe('前端与服务端的节假日规则逐条一致', () => {
     '同一天既有节假日又有调休（还原的矛盾数据）': [
       { date: '2027-03-10', type: 'holiday', name: '校庆' },
       { date: '2027-03-10', type: 'workday', name: '调休上班' },
+    ],
+    '同一天两条节假日记录（名字不同）': [
+      { date: '2027-03-10', type: 'holiday', name: '甲' },
+      { date: '2027-03-10', type: 'holiday', name: '乙' },
     ],
     '库里的调休落在内置节假日那天': [
       { date: '2027-03-10', type: 'holiday', name: '' },

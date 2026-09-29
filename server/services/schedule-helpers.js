@@ -3,9 +3,9 @@ import { eq } from 'drizzle-orm';
 
 // 年份补到 4 位，和前端的 fmt() 一致。不补的话年份小于 1000 会算出 '261-04-30'，
 // 而库里存的是 '0261-05-01'——按字符串比大小 '0261-...' 反而小于 '261-...'。
-// getConflictsForSchedule 拿 shiftDate(s.date, ±1) 当区间端点，而 s.date 是直接从库里
-// 读的、不经校验：旧库里那些被原生控件左移成 0261 的行，区间一算就什么都匹配不到，
-// 接口会报「没有冲突」而不是真实的冲突。
+// findConflicts（routes/schedules.js）拿 shiftDate(date, ±1) 算出相邻日期，再按日期精确
+// 匹配库里的行，而 date 是直接从库里读的、不经校验：旧库里那些被原生控件左移成 0261
+// 的行，推出来的相邻日期若不补位就对不上库里的写法，接口会报「没有冲突」而不是真实的冲突。
 export function toLocalDateStr(d) {
   const y = String(d.getFullYear()).padStart(4, '0');
   const m = String(d.getMonth() + 1).padStart(2, '0');
@@ -58,13 +58,19 @@ export function resolveRange(query) {
   return query;
 }
 
+// Formula-injection guard for anything meant to be opened in Excel/Sheets:
+// prefix cells starting with =,+,-,@ (or tab/CR) with a single quote so they are
+// treated as text. The 复制表格 button applies the same rule on the client
+// (src/utils/historyColumns.js); data-consistency.test.js pins the two together.
+export function neutralizeFormula(value) {
+  const s = String(value ?? '');
+  return /^[=+\-@\t\r]/.test(s) ? "'" + s : s;
+}
+
 export function toCSV(rows) {
   return '﻿' + rows.map(r =>
     r.map(c => {
-      const s = String(c ?? '');
-      // CSV formula-injection guard: prefix cells starting with =,+,-,@ (or tab/CR)
-      // with a single quote so Excel/Sheets treat them as text.
-      const safe = /^[=+\-@\t\r]/.test(s) ? "'" + s : s;
+      const safe = neutralizeFormula(c);
       return `"${safe.replace(/"/g, '""')}"`;
     }).join(',')
   ).join('\n');

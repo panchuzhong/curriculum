@@ -25,10 +25,12 @@ export function buildHolidayCalendar(rows) {
   const holidayNames = new Map();
   const workdays = new Set();
   for (const h of rows) {
-    if (h.type === 'holiday') holidayNames.set(h.date, h.name || '');
+    // 同一天两条节假日记录（还原不去重）取第一条的名字，和前端的 find 一致。
+    if (h.type === 'holiday') { if (!holidayNames.has(h.date)) holidayNames.set(h.date, h.name || ''); }
     else if (h.type === 'workday') workdays.add(h.date);
   }
   const yearsWithRows = new Set(rows.map(h => h.date.slice(0, 4)));
+  const yearsWithHolidayRows = new Set([...holidayNames.keys()].map(d => d.slice(0, 4)));
   const builtinApplies = (date) => !yearsWithRows.has(date.slice(0, 4));
 
   const isHoliday = (date) => holidayNames.has(date) || (builtinApplies(date) && isBuiltinHoliday(date));
@@ -40,10 +42,12 @@ export function buildHolidayCalendar(rows) {
     // 库里没起名字时退回内置的名字（内置的那份已按年份把关，没有就是「节假日」）。
     holidayName: (date) => holidayNames.get(date) || builtinHolidayName(date),
     isOffDay: (date) => isHoliday(date) && !isWorkday(date),
-    // 既无内置也无自定义数据的年份：上面几个判断对它们一律说「不是」，但那不是
-    // 判断出来的，是没有依据。调用方得把这个缺口报出来。
+    // 实际生效的节假日是空的年份：isHoliday 对它们一律说「不是」，但那不是判断出来的，
+    // 是没有依据，调用方得把这个缺口报出来。看的是「生效的节假日有没有」而不是「有没有
+    // 记录」：一年里只录了一条调休，内置数据就整年作废，库里又没有节假日——这一年实际
+    // 一天假都没有，批量排课会照样排进春节。
     uncoveredYears: (dates) => [...new Set(dates.map(d => d.slice(0, 4)))]
-      .filter(y => !yearsWithRows.has(y) && getHolidaysForYear(y).length === 0)
+      .filter(y => (yearsWithRows.has(y) ? !yearsWithHolidayRows.has(y) : getHolidaysForYear(y).length === 0))
       .sort(),
   };
 }
