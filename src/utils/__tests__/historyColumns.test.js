@@ -108,6 +108,13 @@ describe('historyTsv', () => {
     expect(withLocation('A\u3000教室')).toBe('A\u3000教室');
   });
 
+  it('首尾也只去 ASCII 空白：全角空格、不换行空格在页面上是显示的，不能比屏幕少东西', () => {
+    // trim() 会把它们一起剥掉——按钮复制出去的就和屏幕上、和框选复制的不一样。
+    expect(withLocation('\u3000报告厅')).toBe('\u3000报告厅');
+    expect(withLocation('A 教室\u00A0')).toBe('A 教室\u00A0');
+    expect(withLocation('  B 教室\t')).toBe('B 教室');
+  });
+
   it('以 = + - @ 开头的格前面加 \'，粘进表格软件不会被当成公式', () => {
     // 和服务端 CSV 导出同一条规则（data-consistency.test.js 盯着两边一致）。
     expect(withLocation('=HYPERLINK("http://x","地点")')).toBe('\'=HYPERLINK("http://x","地点")');

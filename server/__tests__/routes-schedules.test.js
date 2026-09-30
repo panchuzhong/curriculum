@@ -55,6 +55,27 @@ describe('POST /api/schedules', () => {
       .send({ classId, date: '2026-05-04', startTime: '09:00', endTime: '10:30' });
     expect(res.status).toBe(404);
   });
+
+  it('单条写入的参数是数组时 400，而不是到绑定层抛 500', async () => {
+    // 同批量接口的规矩（single-values.js）：classId: [] 混过 isInt 的逐元素校验后，
+    // eq(classes.id, []) 在绑定时抛错；durationBilling: [90] 会被当手动值原样写库。
+    for (const body of [
+      { classId: [classId], date: '2026-05-04', startTime: '09:00', endTime: '10:30' },
+      { classId, date: '2026-05-04', startTime: '09:00', endTime: '10:30', durationBilling: [90] },
+      { classId, date: '2026-05-04', startTime: '09:00', endTime: '10:30', locationLat: [31.2] },
+    ]) {
+      const res = await request(app).post('/api/schedules').set(auth(token)).send(body);
+      expect(res.status, JSON.stringify(body)).toBe(400);
+    }
+    const { body: { id } } = await request(app).post('/api/schedules').set(auth(token))
+      .send({ classId, date: '2026-05-04', startTime: '09:00', endTime: '10:30' });
+    for (const body of [{ classId: [classId] }, { durationBilling: [90] }]) {
+      const res = await request(app).put(`/api/schedules/${id}`).set(auth(token)).send(body);
+      expect(res.status, JSON.stringify(body)).toBe(400);
+    }
+    const list = await request(app).get('/api/schedules?start=2026-05-01&end=2026-05-31').set(auth(token));
+    expect(list.body.map(r => [r.startTime, r.durationBilling])).toEqual([['09:00', 90]]);
+  });
 });
 
 describe('GET /api/schedules', () => {
@@ -239,6 +260,25 @@ describe('POST /api/schedules/batch', () => {
       .send({ classId, semesterId: Number(drizzleDb.select().from(semesters).all()[0].id), weekday: 1, startTime: '09:00', endTime: '10:30' });
     expect(res.status).toBe(400);
   });
+
+  it('参数是数组时 400，而不是到绑定层抛 500', async () => {
+    // [] 逐元素校验全过：classId: [] 会到 eq(classes.id, []) 绑定时抛错，
+    // durationBilling: [90] 会被 calcDurationBilling 当手动值原样写库。
+    const base = { classId, startTime: '09:00', endTime: '10:30', dates: ['2026-05-04'] };
+    for (const body of [
+      { ...base, classId: [] },
+      { ...base, durationBilling: [90] },
+      { ...base, preview: [true] },
+      { classId, semesterId: [], weekday: 4, startTime: '09:00', endTime: '10:30' },
+      { classId, semesterId: 1, weekday: [], startTime: '09:00', endTime: '10:30' },
+    ]) {
+      const res = await request(app).post('/api/schedules/batch').set(auth(token)).send(body);
+      expect(res.status, JSON.stringify(body)).toBe(400);
+    }
+    // 一个都没混进去
+    const list = await request(app).get('/api/schedules?start=2026-05-01&end=2026-05-31').set(auth(token));
+    expect(list.body).toHaveLength(0);
+  });
 });
 
 describe('PUT /api/schedules/batch — semester filtering', () => {
@@ -393,6 +433,97 @@ describe('DELETE /api/schedules/batch', () => {
       .send({ start: '2026-05-01', end: '2026-05-31' });
     expect(res.status).toBe(200);
     expect(res.body.count).toBe(1);
+  });
+
+  it('dryRun 预览在每个出口都自报身份，且一行不删', async () => {
+    // 同 PUT /batch 的规矩：忘了去掉 dryRun 的调用方拿着 count:N 报告「已删」——
+    // 改期还能再改回来，删除不能。
+    const { body: { id } } = await request(app).post('/api/schedules').set(auth(token))
+      .send({ classId, date: '2026-05-04', startTime: '09:00', endTime: '10:30' });
+
+    const byIds = await request(app).delete('/api/schedules/batch').set(auth(token))
+      .send({ ids: [id], dryRun: true });
+    expect(byIds.body).toMatchObject({ dryRun: true, count: 1 });
+
+    const byClass = await request(app).delete('/api/schedules/batch').set(auth(token))
+      .send({ classId, fromDate: '2026-05-01', dryRun: true });
+    expect(byClass.body).toMatchObject({ dryRun: true, count: 1 });
+
+    const byRange = await request(app).delete('/api/schedules/batch').set(auth(token))
+      .send({ start: '2026-05-01', end: '2026-05-31', dryRun: true });
+    expect(byRange.body).toMatchObject({ dryRun: true, count: 1 });
+
+    // 空结果出口也要自报：恰好在「一条都没匹配上」时读错，调用方会以为删过了
+    const empty = await request(app).delete('/api/schedules/batch').set(auth(token))
+      .send({ classId, fromDate: '2027-01-01', dryRun: true });
+    expect(empty.body).toMatchObject({ dryRun: true, count: 0 });
+
+    // 日期范围模式里一个班都筛不出来时的提前返回
+    const noClasses = await request(app).delete('/api/schedules/batch').set(auth(token))
+      .send({ classId: 999, start: '2026-05-01', end: '2026-05-31', dryRun: true });
+    expect(noClasses.body).toMatchObject({ dryRun: true, count: 0 });
+
+    const list = await request(app).get('/api/schedules?start=2026-05-01&end=2026-05-31').set(auth(token));
+    expect(list.body).toHaveLength(1);
+
+    const real = await request(app).delete('/api/schedules/batch').set(auth(token))
+      .send({ ids: [id] });
+    expect(real.body.dryRun).toBeUndefined();
+    expect(real.body.count).toBe(1);
+  });
+
+  it('参数是数组时 400，而不是到绑定层抛 500', async () => {
+    // 与 PUT /batch 同一条规矩：[] 逐元素校验全过、又是真值，classId: [] 会混进
+    // byClassId 分支，eq(classes.id, []) 在绑定时抛错。
+    for (const body of [
+      { classId: [], fromDate: '2026-05-01' },
+      { classId: [classId], fromDate: '2026-05-01' },
+      { start: [], end: '2026-05-31' },
+      { start: '2026-05-01', end: [] },
+      { ids: [1], semesterOnly: [false] },
+      { ids: [1], dryRun: [true] },
+    ]) {
+      const res = await request(app).delete('/api/schedules/batch').set(auth(token)).send(body);
+      expect(res.status, JSON.stringify(body)).toBe(400);
+    }
+  });
+});
+
+// 学期行的日期坏了（旧备份原样还原的 '2026-9-1'）时不参与学期判断——这一条对批量
+// 位移有守卫和文档，批量删除/批量创建走的是同一个 semesterMembership，钉住它：
+// 按字符串比，'2026-10-08' 在「学期外」、'2027-09-30' 在「学期内」，两头都错的判断
+// 不如不判。这些行在学期管理页里看得见、改得了。
+describe('坏学期行不参与批量删除/创建的学期判断', () => {
+  async function seedCorruptSemester() {
+    const { semesters } = await import('../db/schema.js');
+    drizzleDb.insert(semesters).values({
+      teacherId, name: '坏秋季', type: 'fall', startDate: '2026-9-1', endDate: '2027-1-20',
+    }).run();
+  }
+
+  it('DELETE /batch 不按坏行过滤，两节都删', async () => {
+    await seedCorruptSemester();
+    for (const date of ['2026-10-08', '2027-09-30']) {
+      await request(app).post('/api/schedules').set(auth(token))
+        .send({ classId, date, startTime: '09:00', endTime: '10:30' });
+    }
+
+    const res = await request(app).delete('/api/schedules/batch').set(auth(token))
+      .send({ classId, fromDate: '2026-01-01' });
+
+    expect(res.status).toBe(200);
+    expect(res.body.count).toBe(2);
+    expect(res.body.semesterFiltered).toBeUndefined();
+  });
+
+  it('POST /batch 日期模式不按坏行报跨学期', async () => {
+    await seedCorruptSemester();
+
+    const res = await request(app).post('/api/schedules/batch').set(auth(token))
+      .send({ classId, dates: ['2026-10-08', '2027-09-30'], startTime: '09:00', endTime: '10:30' });
+
+    expect(res.status).toBe(200);
+    expect(res.body.count).toBe(2);
   });
 });
 
@@ -1911,25 +2042,74 @@ describe('PUT /api/schedules/batch — dayShift', () => {
     expect(await listDates('2026-05-01', '2026-05-31')).toEqual(['2026-05-07', '2026-05-08']);
   });
 
-  it('只改时间时，库里一行坏日期不能让整批 warnings 丢失', async () => {
+  it('只改时间时，别的班一行坏日期不能让整批 warnings 丢失', async () => {
     // 冲突查询的日期窗口若由字符串排序后的首尾日期决定，'2026-9-3' 排在
     // '2026-12-31' 之后，上界 shiftDate 出来是 0NaN-NaN-NaN，查询一行都取不到，
-    // 其余合法行造成的重叠也就一条都报不出来。
+    // 其余合法行造成的重叠也就一条都报不出来。按具体日期取，只是多了几个
+    // 匹配不到的键，其余行照常比较。
+    // （坏行放在别的班：本班有坏行时整单拒绝，见下面几条用例。）
     const { classes, schedules } = await import('../db/schema.js');
     const otherId = Number(drizzleDb.insert(classes).values({
       teacherId, name: '物理班', grade: '高一', subject: '物理', studentCount: 5, unitPrice: 100,
     }).run().lastInsertRowid);
     await request(app).post('/api/schedules').set(auth(token))
       .send({ classId: otherId, date: '2026-05-07', startTime: '14:00', endTime: '16:00' });
-    await seedDates(['2026-05-07'], '09:00', '10:30');
     drizzleDb.insert(schedules).values({
-      classId, date: '2026-9-3', startTime: '09:00', endTime: '10:30', durationBilling: 90,
+      classId: otherId, date: '2026-9-3', startTime: '09:00', endTime: '10:30', durationBilling: 90,
     }).run();
+    await seedDates(['2026-05-07'], '09:00', '10:30');
 
     const res = await putBatch({ fromDate: '2026-01-01', updates: { startTime: '14:30', endTime: '15:30' } });
 
     expect(res.status).toBe(200);
     expect(res.body.warnings?.map(w => w.date)).toEqual(['2026-05-07']);
+  });
+
+  it('改时间时本班有日期解析不了的课，整单拒绝而不是悄悄改写它', async () => {
+    // 坏行按字符串比得过 fromDate（'2026-9-3' > '2026-01-01'），会混进候选、时间和
+    // 计费被一起改写，而审计不记旧值；冲突检查又看不见它（相邻日期键是 NaN，和正常
+    // 存的同一天的课永远比不到）。「真实日期不确定」对改时间和改日期同样成立。
+    const { schedules } = await import('../db/schema.js');
+    drizzleDb.insert(schedules).values({
+      classId, date: '2026-9-3', startTime: '09:00', endTime: '10:30', durationBilling: 90,
+    }).run();
+    await seedDates(['2026-05-07']);
+
+    const res = await putBatch({ fromDate: '2026-01-01', updates: { startTime: '14:30', endTime: '15:30' } });
+
+    expect(res.status).toBe(400);
+    expect(res.body.error).toContain('2026-9-3');
+    // 一行未动：坏行还是 09:00，好行也没被改成 14:30
+    // （'2026-9-3' 按字符串排在 '2026-12-31' 之后，上界要放宽到 2027 才查得到它）
+    const rows = (await request(app).get(`/api/schedules?start=2026-01-01&end=2027-12-31&classId=${classId}`).set(auth(token))).body;
+    expect(rows.find(r => r.date === '2026-9-3')?.startTime).toBe('09:00');
+    expect(rows.find(r => r.date === '2026-05-07')?.startTime).toBe('09:00');
+  });
+
+  it('只改计费时长时同样被本班坏行拦住', async () => {
+    const { schedules } = await import('../db/schema.js');
+    drizzleDb.insert(schedules).values({
+      classId, date: '2026-9-3', startTime: '09:00', endTime: '10:30', durationBilling: 90,
+    }).run();
+
+    const res = await putBatch({ fromDate: '2026-01-01', updates: { durationBilling: 60 } });
+
+    expect(res.status).toBe(400);
+    expect(res.body.error).toContain('2026-9-3');
+  });
+
+  it('只改地点不受本班坏行影响（不进计费、改错了看得见也改得回来）', async () => {
+    const { schedules } = await import('../db/schema.js');
+    drizzleDb.insert(schedules).values({
+      classId, date: '2026-9-3', startTime: '09:00', endTime: '10:30', durationBilling: 90,
+    }).run();
+    await seedDates(['2026-05-07']);
+
+    const res = await putBatch({ fromDate: '2026-01-01', updates: { locationName: '新校区' } });
+
+    expect(res.status).toBe(200);
+    const rows = (await request(app).get('/api/schedules?start=2026-01-01&end=2026-12-31').set(auth(token))).body;
+    expect(rows.find(r => r.date === '2026-05-07')?.locationName).toBe('新校区');
   });
 
   it('连续几天的课一起挪时，不和彼此挪走前的位置报重叠', async () => {
@@ -2049,6 +2229,23 @@ describe('PUT /api/schedules/batch — dayShift', () => {
     const [row] = (await request(app).get(`/api/schedules?start=${DATE_MAX}&end=${DATE_MAX}`).set(auth(token))).body;
     expect(res.body.error).toContain(`第 ${row.id} 条`);
     expect(await listDates(DATE_MAX, DATE_MAX)).toEqual([DATE_MAX]);
+  });
+
+  it('位移又出学期又越界时先报越界——semesterOnly=false 救不了越界', async () => {
+    // 两道 400 的顺序反了的话，先报的是「挪出学期…semesterOnly=false 可以照挪」，
+    // 调用方照做只会换回第二句「超出可用范围」——走不通的建议不如不说。
+    const { semesters } = await import('../db/schema.js');
+    drizzleDb.insert(semesters).values({
+      teacherId, name: '末日学期', type: 'fall', startDate: '2999-09-01', endDate: DATE_MAX,
+    }).run();
+    await seedDates(['2999-12-25']);
+
+    const res = await putBatch({ fromDate: '2999-12-01', updates: { dayShift: 7 } });
+
+    expect(res.status).toBe(400);
+    expect(res.body.error).toContain('3000-01-01');
+    expect(res.body.error).toContain('超出可用范围');
+    expect(res.body.error).not.toContain('semesterOnly');
   });
 
   it('dryRun 的响应自己说明是预览', async () => {

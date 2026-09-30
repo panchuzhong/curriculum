@@ -1,7 +1,10 @@
 import { body } from 'express-validator';
 import { isFiniteNumber } from './numbers.js';
+import { singleValues } from './single-values.js';
 
 export const validateCreateTier = [
+  // isInt 对数组逐元素校验（single-values.js）；单价有 isFiniteNumber 兜底。
+  singleValues(['minStudents', 'maxStudents']),
   body('minStudents').isInt({ min: 1 }).toInt().withMessage('最小人数须为正整数'),
   body('maxStudents').isInt({ min: 1 }).toInt().withMessage('最大人数须为正整数')
     .custom((max, { req }) => {
@@ -14,6 +17,7 @@ export const validateCreateTier = [
 ];
 
 export const validateUpdateTier = [
+  singleValues(['minStudents', 'maxStudents']),
   body('minStudents').optional().isInt({ min: 1 }).toInt().withMessage('最小人数须为正整数'),
   body('maxStudents').optional().isInt({ min: 1 }).toInt().withMessage('最大人数须为正整数')
     .custom((max, { req }) => {

@@ -13,8 +13,11 @@ import { copyText } from '../utils/clipboard';
 const ALL_START = DATE_MIN;
 const ALL_END = DATE_MAX;
 
-// 表格上方那排「显示」复选框：key 对应 DEFAULT_HISTORY_COLUMNS。
-const COLUMN_TOGGLES = [['year', '年份'], ['weekday', '星期'], ['duration', '时长'], ['location', '地点']];
+// 表格上方那排「显示」复选框：key 就是 DEFAULT_HISTORY_COLUMNS 的键，加一列只需改
+// historyColumns.js 一处。标签单独列：它和表头不是一回事（「年份」开关控制的是「日期」
+// 列带不带年），不能从 historyTableColumns 里拿。
+const TOGGLE_LABELS = { year: '年份', weekday: '星期', duration: '时长', location: '地点' };
+const COLUMN_TOGGLES = Object.keys(DEFAULT_HISTORY_COLUMNS).map(key => [key, TOGGLE_LABELS[key]]);
 
 
 export default function ScheduleHistory({ classId }) {

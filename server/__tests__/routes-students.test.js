@@ -330,3 +330,19 @@ describe('手机号号段校验', () => {
     expect(res.status).toBe(200);
   });
 });
+
+// 同 single-values.js：matches/isLength 对数组逐元素校验，phone: [] 会漏到路由变成 500。
+describe('写接口的标量参数是数组时 400', () => {
+  it('POST/PUT /api/students 的 phone/parentPhone', async () => {
+    for (const body of [
+      { name: '学生', phone: [] },
+      { name: '学生', parentPhone: ['13800000000'] },
+    ]) {
+      const res = await request(app).post('/api/students').set(auth(token)).send(body);
+      expect(res.status, JSON.stringify(body)).toBe(400);
+    }
+    const { body: { id } } = await request(app).post('/api/students').set(auth(token)).send({ name: '学生' });
+    const res = await request(app).put(`/api/students/${id}`).set(auth(token)).send({ phone: [] });
+    expect(res.status).toBe(400);
+  });
+});

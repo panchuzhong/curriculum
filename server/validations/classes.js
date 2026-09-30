@@ -2,6 +2,7 @@ import { body } from 'express-validator';
 import { isValidDate, isValidBirthDate, DATE_RANGE_SUFFIX } from './dates.js';
 import { numToStr } from './students.js';
 import { isFiniteNumber } from './numbers.js';
+import { singleValues } from './single-values.js';
 
 export const VALID_GRADES = ['初一', '初二', '初三', '高一', '高二', '高三', '大学'];
 const PHONE_RE = /^1[3-9]\d{9}$/;
@@ -13,6 +14,9 @@ const optionalPhone = (field, msg) =>
   body(field).optional({ checkFalsy: true }).customSanitizer(numToStr).matches(PHONE_RE).withMessage(msg);
 
 export const validateCreateClass = [
+  // isIn/isInt/isBoolean/isFloat 对数组逐元素校验，[] 和 ['高一'] 都能混过（规则见
+  // single-values.js）；字符串字段有 isString 查类型、金额字段有 isFiniteNumber 兜底。
+  singleValues(['grade', 'studentCount', 'isCompetition', 'defaultLocationLat', 'defaultLocationLng']),
   // isString keeps objects/arrays from reaching the driver as bind values; trim
   // makes whitespace-only names fail notEmpty.
   body('name').isString().withMessage('班级名称不能为空').bail().trim().notEmpty().withMessage('班级名称不能为空').isLength({ max: 100 }).withMessage('班级名称最多100个字符'),
@@ -29,6 +33,7 @@ export const validateCreateClass = [
 ];
 
 export const validateUpdateClass = [
+  singleValues(['grade', 'studentCount', 'isCompetition', 'defaultLocationLat', 'defaultLocationLng']),
   body('name').optional().isString().withMessage('班级名称不能为空').bail().trim().notEmpty().withMessage('班级名称不能为空').isLength({ max: 100 }).withMessage('班级名称最多100个字符'),
   body('grade').optional().isIn(VALID_GRADES).withMessage(`年级须为: ${VALID_GRADES.join('/')}`),
   body('subject').optional().isString().withMessage('学科不能为空').bail().trim().notEmpty().withMessage('学科不能为空').isLength({ max: 50 }).withMessage('学科最多50个字符'),
@@ -43,6 +48,7 @@ export const validateUpdateClass = [
 ];
 
 export const validateCreatePricing = [
+  singleValues(['studentCount']),
   body('studentCount').isInt({ min: 1 }).withMessage('学生人数须为正整数'),
   body('unitPrice').isFloat({ min: 0 }).withMessage('单价不能为负').bail().custom(isFiniteNumber).withMessage('单价须为有限数字'),
   body('discountAmount').optional().isFloat({ min: 0 }).withMessage('优惠金额不能为负').bail().custom(isFiniteNumber).withMessage('优惠金额须为有限数字'),
@@ -51,6 +57,7 @@ export const validateCreatePricing = [
 ];
 
 export const validateUpdatePricing = [
+  singleValues(['studentCount']),
   body('studentCount').optional().isInt({ min: 1 }).withMessage('学生人数须为正整数'),
   body('unitPrice').optional().isFloat({ min: 0 }).withMessage('单价不能为负').bail().custom(isFiniteNumber).withMessage('单价须为有限数字'),
   body('discountAmount').optional().isFloat({ min: 0 }).withMessage('优惠金额不能为负').bail().custom(isFiniteNumber).withMessage('优惠金额须为有限数字'),
@@ -59,6 +66,8 @@ export const validateUpdatePricing = [
 ];
 
 export const validateClassStudent = [
+  // matches 对数组逐元素校验：phone: [] 会漏到路由变成绑定错误（single-values.js）。
+  singleValues(['phone', 'parentPhone']),
   body('name').isString().withMessage('学生姓名不能为空').bail().trim().notEmpty().withMessage('学生姓名不能为空').isLength({ max: 100 }).withMessage('学生姓名不能为空'),
   body('birthDate').optional({ checkFalsy: true }).customSanitizer(numToStr).custom(value => {
     if (!isValidBirthDate(value)) throw new Error('出生日期格式须为有效的 YYYY 或 YYYY-MM-DD');

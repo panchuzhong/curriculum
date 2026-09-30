@@ -1,5 +1,6 @@
 import { body } from 'express-validator';
 import { isValidDate, isValidScheduleEndTime, isValidTime, DATE_RANGE_SUFFIX } from './dates.js';
+import { singleValues } from './single-values.js';
 
 // 批量排课一次能收多少个日期。客户端 BatchScheduleDialog 手抄了同一个数用来提前截断，
 // data-consistency 测试把两边钉在一起：抄的那份小了会把合法输入静默截掉，大了则是
@@ -7,6 +8,9 @@ import { isValidDate, isValidScheduleEndTime, isValidTime, DATE_RANGE_SUFFIX } f
 export const MAX_BATCH_DATES = 365;
 
 export const validateCreateSchedule = [
+  // classId: [] 会混过 isInt 的逐元素校验，到 eq(classes.id, []) 绑定时抛成 500；
+  // durationBilling: [90] 会被 calcDurationBilling 当手动值原样写库。
+  singleValues(['classId', 'date', 'startTime', 'endTime', 'durationBilling', 'locationName', 'locationLat', 'locationLng']),
   body('classId').isInt({ min: 1 }).withMessage('classId 须为正整数'),
   body('date').custom(v => { if (!isValidDate(v)) throw new Error(`日期格式须为有效的 YYYY-MM-DD${DATE_RANGE_SUFFIX}`); return true; }),
   body('startTime').custom(v => { if (!isValidTime(v)) throw new Error('开始时间须为有效的 HH:MM (00:00-23:59)'); return true; }),
@@ -18,6 +22,9 @@ export const validateCreateSchedule = [
 ];
 
 export const validateBatchCreate = [
+  // 这些字段只收单个值（规则见 single-values.js）。dates 本身就是数组，不在此列；
+  // startTime/endTime 的校验本身要求字符串，不必再列。
+  singleValues(['classId', 'weekday', 'semesterId', 'durationBilling', 'preview', 'crossSemester']),
   body('classId').isInt({ min: 1 }).withMessage('classId 须为正整数'),
   body('startTime').custom(v => { if (!isValidTime(v)) throw new Error('开始时间须为有效的 HH:MM (00:00-23:59)'); return true; }),
   body('endTime').custom(v => { if (!isValidScheduleEndTime(v)) throw new Error('结束时间须为有效的 HH:MM (00:00-47:59)'); return true; }),
@@ -32,13 +39,12 @@ export const validateBatchCreate = [
 ];
 
 export const validateBatchUpdate = [
-  // express-validator 对数组逐个元素校验：[] 一个元素都没有、校验全过，[3] 也照过。
-  // 这些字段只收单个值——不拦的话 weekday: [] 会被 +[] 强转成 0（周日），范围还是
-  // 该班全部历史；dayShift: [1] 过了 isInt 却不是整数，位移被悄悄丢掉、别的改动照做。
-  // fromDate/toDate/startTime/endTime 的校验本身就要求字符串，不必再列。
-  body(['classId', 'weekday', 'semesterOnly', 'dryRun', 'updates.dayShift', 'updates.durationBilling',
-    'updates.locationName', 'updates.locationLat', 'updates.locationLng'])
-    .not().isArray().withMessage('参数须为单个值，不能是数组'),
+  // 这些字段只收单个值（规则见 single-values.js）：不拦的话 weekday: [] 会被 +[]
+  // 强转成 0（周日），范围还是该班全部历史；dayShift: [1] 过了 isInt 却不是整数，
+  // 位移被悄悄丢掉、别的改动照做。fromDate/toDate/startTime/endTime 的校验本身就
+  // 要求字符串，不必再列。
+  singleValues(['classId', 'weekday', 'semesterOnly', 'dryRun', 'updates.dayShift', 'updates.durationBilling',
+    'updates.locationName', 'updates.locationLat', 'updates.locationLng']),
   body('classId').isInt({ min: 1 }).withMessage('classId 须为正整数'),
   body('fromDate').optional().custom(v => { if (!isValidDate(v)) throw new Error(`fromDate 格式须为有效的 YYYY-MM-DD${DATE_RANGE_SUFFIX}`); return true; }),
   body('toDate').optional().custom(v => { if (!isValidDate(v)) throw new Error(`toDate 格式须为有效的 YYYY-MM-DD${DATE_RANGE_SUFFIX}`); return true; }),
@@ -56,6 +62,9 @@ export const validateBatchUpdate = [
 ];
 
 export const validateBatchDelete = [
+  // 同上：ids 本身就是数组，其余字段只收单个值——classId: [] 会混过逐元素校验，
+  // 到路由里 eq(classes.id, []) 绑定时抛成 500；start: [] 同理（[] 是真值，进得了分支）。
+  singleValues(['classId', 'start', 'end', 'fromDate', 'semesterOnly', 'dryRun']),
   body('ids').optional().isArray({ max: 500 }).withMessage('ids 最多 500 项'),
   body('ids.*').optional().isInt({ min: 1 }).withMessage('ids 元素须为正整数'),
   body('classId').optional().isInt({ min: 1 }).withMessage('classId 须为正整数'),
@@ -67,6 +76,7 @@ export const validateBatchDelete = [
 ];
 
 export const validateUpdateSchedule = [
+  singleValues(['classId', 'date', 'startTime', 'endTime', 'durationBilling', 'locationName', 'locationLat', 'locationLng']),
   body('classId').optional().isInt({ min: 1 }).withMessage('classId 须为正整数'),
   body('date').optional().custom(v => { if (!isValidDate(v)) throw new Error(`日期格式须为有效的 YYYY-MM-DD${DATE_RANGE_SUFFIX}`); return true; }),
   body('startTime').optional().custom(v => { if (!isValidTime(v)) throw new Error('开始时间须为有效的 HH:MM (00:00-23:59)'); return true; }),

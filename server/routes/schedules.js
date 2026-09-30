@@ -421,18 +421,21 @@ router.put('/batch', validateBatchUpdate, handle, (req, res) => {
     .where(and(eq(classes.id, classId), eq(classes.teacherId, req.teacherId), eq(classes.deleted, false))).get();
   if (!cls) return res.status(404).json({ error: 'Class not found' });
 
-  // 改日期前先看全班有没有日期存坏了的课（历史/导入数据里的 '2026-2-1'）。它会被下面的
-  // 字符串区间、weekday 过滤（getDay 是 NaN）、学期过滤悄悄丢掉，或者按字符串被当成在
-  // 学期内——只查剩下的候选，结果就是「挪了一部分、不说为什么」，或者报成「挪出学期…
-  // 请设置 semesterOnly=false」叫人关掉保护。它的真实日期不确定，没法判断它该不该在
-  // 这次范围里，所以只要班里有，改日期就先停下来，指明是哪一条。
-  if (dayShift !== undefined) {
+  // 改日期、改时间、改计费前，先看全班有没有日期存坏了的课（历史/导入数据里的
+  // '2026-2-1'）。它会被下面的字符串区间、weekday 过滤（getDay 是 NaN）、学期过滤
+  // 悄悄丢掉，或者按字符串被当成在范围内、在学期内——只查剩下的候选，改日期就是
+  // 「挪了一部分、不说为什么」，或者报成「挪出学期…请设置 semesterOnly=false」叫人
+  // 关掉保护；改时间、改计费则是把这行一起改写而审计不记旧值，冲突检查还看不见它
+  // （findConflicts 按相邻日期取行，坏日期 shiftDate 出 NaN 键，和正常存的同一天的
+  // 课永远比不到）。它的真实日期不确定，没法判断该不该在这次范围里，所以只要班里有，
+  // 就先停下来，指明是哪一条。只改地点不拦：不进计费、改错了看得见也改得回来。
+  if (touchesBilling) {
     const unparsable = drizzleDb.select({ id: schedules.id, date: schedules.date }).from(schedules)
       .where(eq(schedules.classId, classId)).orderBy(schedules.id).all()
       .find(r => !isCalendarDate(r.date));
     if (unparsable) {
       return res.status(400).json({
-        error: `该班第 ${unparsable.id} 条排课的日期存的是 ${unparsable.date}，解析不了（须为 YYYY-MM-DD）。它的真实日期不确定，无法判断是否在这次范围内，请先修正它再改日期；未做任何修改`,
+        error: `该班第 ${unparsable.id} 条排课的日期存的是 ${unparsable.date}，解析不了（须为 YYYY-MM-DD）。它的真实日期不确定，无法判断是否在这次范围内，请先修正它再批量修改；未做任何修改`,
       });
     }
   }
@@ -454,6 +457,23 @@ router.put('/batch', validateBatchUpdate, handle, (req, res) => {
   const sr = filterBySemesters(candidates, { semesterOnly, drizzleDb, teacherId: req.teacherId });
   candidates = sr.candidates;
   let semesterFiltered = sr.filtered;
+
+  let targets;
+  if (dayShift !== undefined) {
+    targets = [...candidates].sort((a, b) => a.date.localeCompare(b.date))
+      .map(c => ({ ...c, target: shiftDate(c.date, dayShift) }));
+
+    // 越界的日期写进去就再也看不见也删不掉：每条读取路径都是按区间过滤的，
+    // 而这两个上下限正是那些区间的边界（服务端 isValidDate 与前端同源）。
+    // 这一道排在「挪出学期」之前：又越界又出学期时，出学期那句「semesterOnly=false
+    // 可以照挪」是走不通的建议——照做只会换回这一句，所以要先说越界。
+    const outOfRange = targets.find(t => !isValidDate(t.target));
+    if (outOfRange) {
+      return res.status(400).json({
+        error: `第 ${outOfRange.id} 条排课（${outOfRange.date}）位移后是 ${outOfRange.target}，超出可用范围${DATE_RANGE_SUFFIX}，未做任何修改`,
+      });
+    }
+  }
 
   // 上面那道过滤看的是位移「之前」的日期，跑出学期是挪完才发生的。这里**不**做
   // 部分过滤：把越界的那几节留在原地，它们会变成拦住其他几节的障碍物（同班同日期
@@ -490,7 +510,7 @@ router.put('/batch', validateBatchUpdate, handle, (req, res) => {
   }
 
   const updatedIds = candidates.map(s => s.id);
-  let holidayDates, holidayLessonCount, holidayDataMissing, targets, warnings;
+  let holidayDates, holidayLessonCount, holidayDataMissing, warnings;
   if (safeUpdates.startTime !== undefined || safeUpdates.endTime !== undefined) {
     if (candidates.some(c => !isValidScheduleSpan(
       safeUpdates.startTime ?? c.startTime,
@@ -515,27 +535,13 @@ router.put('/batch', validateBatchUpdate, handle, (req, res) => {
       safeUpdates.durationBilling = calcDurationBilling(startTime || candidates[0].startTime, endTime || candidates[0].endTime, null);
     }
   }
-  if (dayShift !== undefined) {
-    targets = [...candidates].sort((a, b) => a.date.localeCompare(b.date))
-      .map(c => ({ ...c, target: shiftDate(c.date, dayShift) }));
-
-    // 越界的日期写进去就再也看不见也删不掉：每条读取路径都是按区间过滤的，
-    // 而这两个上下限正是那些区间的边界（服务端 isValidDate 与前端同源）。
-    const outOfRange = targets.find(t => !isValidDate(t.target));
-    if (outOfRange) {
-      return res.status(400).json({
-        error: `第 ${outOfRange.id} 条排课（${outOfRange.date}）位移后是 ${outOfRange.target}，超出可用范围${DATE_RANGE_SUFFIX}，未做任何修改`,
-      });
-    }
-  }
-
   // 每节课改完之后的样子。唯一键预检、重叠预告都照它算；日期取自 targets，和写入、
-  // 预览的 from→to 出自同一次位移计算，不会各算一遍各自漂。
+  // 预览的 from→to 出自同一次位移计算，不会各算一遍各自漂。排序只为了让 409 稳定
+  // 点名同一对课（findConflicts 内部自己重排，不靠这个顺序）。
   const finals = (targets ?? [...candidates]
-    .sort((a, b) => String(a.date).localeCompare(String(b.date)) || a.startTime.localeCompare(b.startTime))
-    .map(c => ({ ...c, target: c.date })))
+    .sort((a, b) => a.date.localeCompare(b.date) || a.startTime.localeCompare(b.startTime)))
     .map(t => ({
-      id: t.id, classId: t.classId, date: t.target,
+      id: t.id, classId: t.classId, date: t.target ?? t.date,
       startTime: safeUpdates.startTime ?? t.startTime,
       endTime: safeUpdates.endTime ?? t.endTime,
     }));
@@ -596,6 +602,10 @@ router.put('/batch', validateBatchUpdate, handle, (req, res) => {
     warnings = findConflicts(finals, req.teacherId);
   }
 
+  // 预览和真跑挂同一组提示，字面量只写一遍：各写一遍，下一个加进来的字段很容易
+  // 只更新一个出口，预览和真跑又开始各说各话——attachBatchUpdateWarnings 防的就是这个。
+  const batchWarnings = { semesterFiltered, holidayDates, holidayLessonCount, holidayDataMissing, warnings };
+
   // 预览：校验全部走完之后才返回，所以 dryRun 看到的 400/409 和真跑一次完全一致。
   // 它对所有字段生效，不只是 dayShift——只管 dayShift 的话，带着 dryRun 改时间
   // 会真写进去，比不支持预览更糟。
@@ -605,7 +615,7 @@ router.put('/batch', validateBatchUpdate, handle, (req, res) => {
     const preview = { dryRun: true, count: updatedIds.length, ids: updatedIds };
     // to 和真正写进去的值必须出自同一处，各算一遍就会漂。
     if (targets) preview.dates = targets.map(t => ({ id: t.id, from: t.date, to: t.target }));
-    attachBatchUpdateWarnings(preview, { semesterFiltered, holidayDates, holidayLessonCount, holidayDataMissing, warnings });
+    attachBatchUpdateWarnings(preview, batchWarnings);
     return res.json(preview);
   }
 
@@ -647,14 +657,14 @@ router.put('/batch', validateBatchUpdate, handle, (req, res) => {
     after: auditAfter,
   });
   clearReportCache(req.teacherId);
-  res.json(attachBatchUpdateWarnings(
-    { count: updatedIds.length, ids: updatedIds },
-    { semesterFiltered, holidayDates, holidayLessonCount, holidayDataMissing, warnings },
-  ));
+  res.json(attachBatchUpdateWarnings({ count: updatedIds.length, ids: updatedIds }, batchWarnings));
 });
 
 router.delete('/batch', validateBatchDelete, handle, (req, res) => {
   const { ids, start, end, classId, fromDate, semesterOnly = true, dryRun } = req.body;
+  // 预览要在每个出口都自报身份（同 PUT /batch，包括「一条都没匹配上」）：忘了去掉
+  // dryRun 的调用方会拿着 count:N 报告「已删」——改期还能再改回来，删除不能。
+  const send = (resp) => res.json(dryRun ? { dryRun: true, ...resp } : resp);
 
   if (ids && Array.isArray(ids) && ids.length > 0) {
     const teacherClasses = drizzleDb.select({ id: classes.id }).from(classes)
@@ -680,7 +690,7 @@ router.delete('/batch', validateBatchDelete, handle, (req, res) => {
       resp.semesterFiltered = semesterFiltered;
       resp.hint = `${semesterFiltered}条记录因不在当前学期内被过滤，如需删除请设置 semesterOnly=false`;
     }
-    return res.json(resp);
+    return send(resp);
   }
 
   if (classId && fromDate) {
@@ -701,7 +711,7 @@ router.delete('/batch', validateBatchDelete, handle, (req, res) => {
         resp.semesterFiltered = semesterFiltered;
         resp.hint = `${semesterFiltered}条记录因不在当前学期内被过滤，如需删除请设置 semesterOnly=false`;
       }
-      return res.json(resp);
+      return send(resp);
     }
 
     const toDelete = candidates.map(s => s.id);
@@ -720,7 +730,7 @@ router.delete('/batch', validateBatchDelete, handle, (req, res) => {
       resp.semesterFiltered = semesterFiltered;
       resp.hint = `${semesterFiltered}条记录因不在当前学期内被过滤，如需删除请设置 semesterOnly=false`;
     }
-    return res.json(resp);
+    return send(resp);
   }
 
   if (start && end) {
@@ -732,7 +742,7 @@ router.delete('/batch', validateBatchDelete, handle, (req, res) => {
       if (queryClassIds.length) classIds = classIds.filter(id => queryClassIds.includes(id));
     }
     if (classIds.length === 0) {
-      return res.json({ count: 0, ids: [] });
+      return send({ count: 0, ids: [] });
     }
     let candidates = drizzleDb.select({ id: schedules.id, classId: schedules.classId, date: schedules.date })
       .from(schedules).where(and(gte(schedules.date, start), lte(schedules.date, end), inArray(schedules.classId, classIds))).all();
@@ -754,7 +764,7 @@ router.delete('/batch', validateBatchDelete, handle, (req, res) => {
       resp.semesterFiltered = semesterFiltered;
       resp.hint = `${semesterFiltered}条记录因不在当前学期内被过滤，如需删除请设置 semesterOnly=false`;
     }
-    return res.json(resp);
+    return send(resp);
   }
 
   res.status(400).json({ error: 'Provide ids[], start+end, or classId+fromDate' });

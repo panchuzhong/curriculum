@@ -584,3 +584,46 @@ describe('GET /api/classes/locations/suggest', () => {
     expect(list).toEqual(['Room A', 'Room B', 'Room C']);
   });
 });
+
+// 标量参数传数组一律 400：isIn/isInt/isBoolean/isFloat 对数组逐元素校验，
+// [] 一个元素都没有、校验全过，['高一'] 按元素照过——数组原样到达路由就是
+// 绑定层的 500（守卫见 validations/single-values.js）。
+describe('写接口的标量参数是数组时 400', () => {
+  async function createClass() {
+    const { body } = await request(app).post('/api/classes').set(auth(token))
+      .send({ name: '数学班', grade: '高一', subject: '数学', studentCount: 5 });
+    return body.id;
+  }
+
+  it('POST/PUT /api/classes', async () => {
+    const base = { name: '数学班', grade: '高一', subject: '数学', studentCount: 5 };
+    for (const body of [
+      { ...base, grade: ['高一'] },
+      { ...base, studentCount: [5] },
+      { ...base, isCompetition: [true] },
+      { ...base, defaultLocationLat: [31.2] },
+    ]) {
+      const res = await request(app).post('/api/classes').set(auth(token)).send(body);
+      expect(res.status, JSON.stringify(body)).toBe(400);
+    }
+    const id = await createClass();
+    for (const body of [{ grade: [] }, { studentCount: [5] }]) {
+      const res = await request(app).put(`/api/classes/${id}`).set(auth(token)).send(body);
+      expect(res.status, JSON.stringify(body)).toBe(400);
+    }
+  });
+
+  it('POST /api/classes/:id/students 的 phone', async () => {
+    const id = await createClass();
+    const res = await request(app).post(`/api/classes/${id}/students`).set(auth(token))
+      .send({ name: '学生', phone: [] });
+    expect(res.status).toBe(400);
+  });
+
+  it('POST /api/classes/:id/pricing 的 studentCount', async () => {
+    const id = await createClass();
+    const res = await request(app).post(`/api/classes/${id}/pricing`).set(auth(token))
+      .send({ studentCount: [5], unitPrice: 100, effectiveFrom: '2026-09-01' });
+    expect(res.status).toBe(400);
+  });
+});

@@ -361,7 +361,7 @@ POST /api/schedules/batch
 }
 ```
 
-两种模式均支持可选参数：`durationBilling` 手动指定计费时长（分钟，默认为 endTime-startTime），`preview: true` 仅返回 `{count, dates}` 预览不实际创建。学期模式仅对有节假日数据的年份跳过节假日；若排课日期落在既无内置数据、也无自定义记录的年份，响应会附加 `holidayDataMissing`（年份数组）与 `hint`，提示先导入该年份的节假日。开始时间使用 `00:00-23:59`；结束时间推荐使用普通钟表时间 `00:00-23:59`，`endTime < startTime` 表示跨午夜。接口兼容 `24:00-47:59` 形式的结束时间，保存时会归一为普通钟表时间。排课时长须大于 0 且小于 24 小时（开始时间等于结束时间、或跨度满 24 小时会被拒绝，返回 400 `排课时长须大于 0 且小于 24 小时`）。日期模式下若日期跨越学期边界（部分在学期内、部分在学期外）默认返回 400，可传 `crossSemester: true` 绕过。
+两种模式均支持可选参数：`durationBilling` 手动指定计费时长（分钟，默认为 endTime-startTime），`preview: true` 仅返回 `{count, dates}` 预览不实际创建。学期模式仅对有节假日数据的年份跳过节假日；若排课日期落在没有实际生效节假日的年份（既无内置数据，或库里只有这一年的调休——库里有这一年的记录时内置数据整年不用），响应会附加 `holidayDataMissing`（年份数组）与 `hint`，提示先导入该年份的节假日。开始时间使用 `00:00-23:59`；结束时间推荐使用普通钟表时间 `00:00-23:59`，`endTime < startTime` 表示跨午夜。接口兼容 `24:00-47:59` 形式的结束时间，保存时会归一为普通钟表时间。排课时长须大于 0 且小于 24 小时（开始时间等于结束时间、或跨度满 24 小时会被拒绝，返回 400 `排课时长须大于 0 且小于 24 小时`）。日期模式下若日期跨越学期边界（部分在学期内、部分在学期外）默认返回 400，可传 `crossSemester: true` 绕过。
 
 ### 批量删课
 
@@ -377,7 +377,7 @@ DELETE /api/schedules/batch
 DELETE /api/schedules/batch
 {"classId": 1, "fromDate": "2026-05-11"}
 ```
-仅删除 `date >= fromDate` 的排课；`semesterOnly` 默认 `true`，跨学期时自动过滤并返回 `semesterFiltered` 和 `hint`。设为 `false` 绕过学期限制。
+仅删除 `date >= fromDate` 的排课；`semesterOnly` 默认 `true`，跨学期时自动过滤并返回 `semesterFiltered` 和 `hint`。设为 `false` 绕过学期限制。日期无效的学期行（如旧备份还原的 `2026-9-1`）不参与学期判断，可在学期管理页修正。
 
 **按日期范围（可附加 classId）**：
 ```json
@@ -385,7 +385,7 @@ DELETE /api/schedules/batch
 {"classId": 1, "start": "2026-05-01", "end": "2026-05-31"}
 ```
 
-三种模式均支持 `dryRun: true` 仅预览匹配记录而不实际删除，返回包含 `count` 与 `ids` 的响应体。
+三种模式均支持 `dryRun: true` 仅预览匹配记录而不实际删除，返回包含 `count` 与 `ids` 的响应体，且带 `dryRun: true` 以区别于真跑。
 
 ### 批量调整排课
 

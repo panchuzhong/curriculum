@@ -279,3 +279,19 @@ describe('GET /api/holidays/:year 的年份格式', () => {
     expect(res.status).toBe(200);
   });
 });
+
+// 同 single-values.js：isIn 对数组逐元素校验，type: ['holiday'] 会混过。
+describe('写接口的标量参数是数组时 400', () => {
+  it('POST/PUT /api/holidays 与 batch 的 type', async () => {
+    const res = await request(app).post('/api/holidays').set(auth(token))
+      .send({ date: '2026-10-01', type: ['holiday'], name: '国庆' });
+    expect(res.status).toBe(400);
+    const { body: { id } } = await request(app).post('/api/holidays').set(auth(token))
+      .send({ date: '2026-10-01', type: 'holiday', name: '国庆' });
+    const res2 = await request(app).put(`/api/holidays/${id}`).set(auth(token)).send({ type: [] });
+    expect(res2.status).toBe(400);
+    const res3 = await request(app).post('/api/holidays/batch').set(auth(token))
+      .send({ items: [{ date: '2026-11-01', type: ['workday'] }] });
+    expect(res3.status).toBe(400);
+  });
+});

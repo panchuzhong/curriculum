@@ -1,5 +1,6 @@
 import { body } from 'express-validator';
 import { isValidBirthDate } from './dates.js';
+import { singleValues } from './single-values.js';
 
 const PHONE_RE = /^1[3-9]\d{9}$/;
 
@@ -18,6 +19,9 @@ const birthDate = () => body('birthDate').optional({ checkFalsy: true })
   });
 
 export const validateCreateStudent = [
+  // matches/isLength 对数组逐元素校验：phone: [] 会漏到路由变成绑定错误
+  // （single-values.js）。classIds 本身就是数组；birthDate 的 custom 查类型，天然免疫。
+  singleValues(['phone', 'parentPhone']),
   body('name').isString().withMessage('姓名不能为空').bail().trim().notEmpty().withMessage('姓名不能为空').isLength({ max: 100 }).withMessage('姓名最多100个字符'),
   birthDate(),
   body('phone').optional({ checkFalsy: true }).customSanitizer(numToStr).isLength({ max: 20 }).withMessage('手机号格式不正确').bail().matches(PHONE_RE).withMessage('手机号格式不正确'),
@@ -30,6 +34,7 @@ export const validateCreateStudent = [
 ];
 
 export const validateUpdateStudent = [
+  singleValues(['phone', 'parentPhone']),
   body('name').optional().isString().withMessage('姓名不能为空').bail().trim().notEmpty().withMessage('姓名不能为空').isLength({ max: 100 }).withMessage('姓名最多100个字符'),
   birthDate(),
   body('phone').optional({ checkFalsy: true }).customSanitizer(numToStr).isLength({ max: 20 }).withMessage('手机号格式不正确').bail().matches(PHONE_RE).withMessage('手机号格式不正确'),

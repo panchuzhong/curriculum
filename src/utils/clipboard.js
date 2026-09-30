@@ -21,6 +21,9 @@ export async function copyText(text) {
   textarea.style.opacity = '0';
   document.body.appendChild(textarea);
   textarea.select();
+  // iOS Safari 对 readonly 字段的 select() 不产生可复制的选区，execCommand 因此什么都
+  // 复制不到（clipboard.js 的 iOS 修复就是这一句）；别的浏览器里是无害的重复设置。
+  textarea.setSelectionRange(0, textarea.value.length);
   try {
     return document.execCommand('copy') === true;
   } catch {

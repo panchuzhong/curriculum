@@ -272,3 +272,20 @@ describe('定价阶梯重叠只看自己的阶梯', () => {
     expect(res.status).toBe(409);
   });
 });
+
+// 同 single-values.js：isInt 对数组逐元素校验，minStudents: [1] 会混过。
+describe('写接口的标量参数是数组时 400', () => {
+  it('POST/PUT /api/pricing-tiers 的 min/maxStudents', async () => {
+    for (const body of [
+      { minStudents: [1], maxStudents: 10, pricePerStudentPerHour: 50 },
+      { minStudents: 1, maxStudents: [10], pricePerStudentPerHour: 50 },
+    ]) {
+      const res = await request(app).post('/api/pricing-tiers').set(auth(token)).send(body);
+      expect(res.status, JSON.stringify(body)).toBe(400);
+    }
+    const { body: { id } } = await request(app).post('/api/pricing-tiers').set(auth(token))
+      .send({ minStudents: 1, maxStudents: 10, pricePerStudentPerHour: 50 });
+    const res = await request(app).put(`/api/pricing-tiers/${id}`).set(auth(token)).send({ minStudents: [] });
+    expect(res.status).toBe(400);
+  });
+});

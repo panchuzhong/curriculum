@@ -370,3 +370,16 @@ describe('学期写操作会让学期缓存失效', () => {
     }
   });
 });
+
+// 同 single-values.js：isIn 对数组逐元素校验，type: ['fall'] 会混过。
+describe('写接口的标量参数是数组时 400', () => {
+  it('POST/PUT /api/semesters 的 type', async () => {
+    const res = await request(app).post('/api/semesters').set(auth(token))
+      .send({ name: '秋季', type: ['fall'], startDate: '2026-09-01', endDate: '2027-01-15' });
+    expect(res.status).toBe(400);
+    const { body: { id } } = await request(app).post('/api/semesters').set(auth(token))
+      .send({ name: '秋季', type: 'fall', startDate: '2026-09-01', endDate: '2027-01-15' });
+    const res2 = await request(app).put(`/api/semesters/${id}`).set(auth(token)).send({ type: [] });
+    expect(res2.status).toBe(400);
+  });
+});
