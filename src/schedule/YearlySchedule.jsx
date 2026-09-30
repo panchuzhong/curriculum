@@ -256,10 +256,10 @@ export default function YearlySchedule() {
             return (
               <div key={m} onClick={() => navigate(`/monthly?year=${year}&month=${m}`)}
                 className={`bg-gray-100 dark:bg-gray-800 rounded cursor-pointer hover:bg-gray-200 dark:hover:bg-gray-700 overflow-hidden p-1.5 sm:p-2 flex flex-col ${
-                  totalHours > 0 ? 'justify-between' : isMobile ? '' : 'justify-between'
+                  data.schedules.length > 0 ? 'justify-between' : isMobile ? '' : 'justify-between'
                 }`}
                 style={{ fontSize: 'clamp(10px, 1.2vw, 14px)' }}>
-                {totalHours === 0 ? (
+                {data.schedules.length === 0 ? (
                   isMobile ? (
                     <div className="flex items-center justify-between">
                       <span className="text-gray-400">{m + 1}月</span>
@@ -306,7 +306,7 @@ export default function YearlySchedule() {
                     const color = resolveColor(label, dominantCat, dark);
                     return (
                       <div key={label}
-                        style={{ width: `${(h / totalHours) * 100}%`, backgroundColor: color }}
+                        style={{ width: `${totalHours > 0 ? (h / totalHours) * 100 : 0}%`, backgroundColor: color }}
                         title={condensed
                           ? categoryEntries.filter(([c]) => getGradeLevel(c) === label).map(([c, hh]) => `${c} ${hh.toFixed(1)}h`).join(' · ')
                           : `${label} ${h.toFixed(1)}h`
@@ -321,7 +321,7 @@ export default function YearlySchedule() {
           })}
         </div>
 
-        {yearTotalHours > 0 && (
+        {schedules.length > 0 && (
           <div className="mt-2 p-2 sm:p-3 bg-gray-100 dark:bg-gray-800 rounded-lg shrink-0" style={{ fontSize: 'clamp(10px, 1.2vw, 13px)' }}>
             <div className="flex items-center justify-between mb-1">
               <span className="font-bold text-[1.1em]">{year} 年度统计</span>
@@ -338,7 +338,7 @@ export default function YearlySchedule() {
                     <span className="w-16 sm:w-24 truncate text-right text-[0.9em]">{label}</span>
                     <div className="flex-1 h-3 sm:h-4 bg-gray-200 dark:bg-gray-700 rounded overflow-hidden">
                       <div className="h-full rounded"
-                        style={{ width: `${(h / yearMaxHours) * 100}%`, backgroundColor: color }}
+                        style={{ width: `${yearMaxHours > 0 ? (h / yearMaxHours) * 100 : 0}%`, backgroundColor: color }}
                         title={yearCondensed
                           ? yearCategoryEntries
                               .filter(([c]) => getGradeLevel(c) === label)

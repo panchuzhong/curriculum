@@ -1222,3 +1222,31 @@ describe('备份的教师隔离', () => {
     expect(drizzleDb.select().from(schema.classPricing).all().filter(r => r.classId === 101)).toHaveLength(1);
   });
 });
+
+
+describe('还原的可选表类型校验', () => {
+  it.each(['classStudents', 'holidays', 'semesters', 'pricingTiers', 'classPricing', 'auditLog'])('%s 存在但非数组时拒绝，并保留现有数据', async table => {
+    const { classes, semesters, classPricing } = await import('../db/schema.js');
+    const r = drizzleDb.insert(classes).values({ teacherId, name: '原班级', grade: '高一', subject: '数学', studentCount: 1, unitPrice: 100 }).run();
+    drizzleDb.insert(semesters).values({ teacherId, name: '原学期', type: 'fall', startDate: '2026-09-01', endDate: '2026-12-31' }).run();
+    drizzleDb.insert(classPricing).values({ classId: Number(r.lastInsertRowid), studentCount: 1, unitPrice: 200, effectiveFrom: '2026-09-01' }).run();
+    const before = (await request(app).get('/api/backup').set(auth(token))).body;
+    for (const invalid of [null, { rows: [] }, '[]']) {
+      const res = await request(app).post('/api/backup/restore').set(auth(token))
+        .send({ version: 1, classes: [], students: [], schedules: [], [table]: invalid });
+      expect(res.status).toBe(400);
+      expect(res.body.error).toBe(`${table} 须为数组`);
+      const after = (await request(app).get('/api/backup').set(auth(token))).body;
+      for (const key of ['classes', 'students', 'schedules', 'semesters', 'classPricing']) expect(after[key]).toEqual(before[key]);
+      expect(fsMocks.writeFileSync).not.toHaveBeenCalled();
+    }
+  });
+
+  it('省略旧版可选表仍可还原', async () => {
+    const res = await request(app).post('/api/backup/restore').set(auth(token))
+      .send({ version: 1, classes: [], students: [], schedules: [] });
+    expect(res.status).toBe(200);
+    expect(res.body.restored.semesters).toBe(0);
+    expect(res.body.restored.classPricing).toBe(0);
+  });
+});

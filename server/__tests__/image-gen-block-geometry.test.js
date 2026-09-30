@@ -483,3 +483,37 @@ describe('weekly PNG 的横向定位与配色', () => {
     expect(getTextColor(cls, true)).not.toBe(getTextColor(cls, false));
   });
 });
+
+
+describe('跨午夜冲突与零计费课程的导出', () => {
+  const night = makeSchedule({ id: 501, date: '2026-09-30', startTime: '23:00', endTime: '01:00', class: makeClass({ name: '上月晚课' }) });
+  const morning = makeSchedule({ id: 502, date: '2026-10-01', startTime: '00:30', endTime: '02:00', class: makeClass({ name: '本月早课' }) });
+
+  it('周图对跨日期的两节冲突课都标红', async () => {
+    await generateScheduleImage([night, morning], '2026-09-30', '2026-10-01');
+    expect(blockHeights(captured.html).map(b => b.bg)).toEqual(['#ef4444', '#ef4444']);
+  });
+
+  it('单日周图使用相邻日检测冲突，但不画范围外的课', async () => {
+    await generateScheduleImage([night, morning], '2026-10-01', '2026-10-01');
+    expect(blockHeights(captured.html).map(b => b.bg)).toEqual(['#ef4444']);
+    expect(captured.html).not.toContain('上月晚课');
+    expect(captured.html).toContain('本月早课');
+  });
+
+  it('月首的早课也与上月末的晚课比较', async () => {
+    const { generateMonthlyImage } = await import('../services/image-gen-monthly.js');
+    await generateMonthlyImage([night, morning], 2026, 9);
+    expect(captured.html).toContain('本月早课 00:30-02:00 [冲突]');
+    expect(captured.html).not.toContain('上月晚课');
+  });
+
+  it('零计费课仍显示天数、次数和年度统计，且没有 NaN 宽度', async () => {
+    const { generateYearlyImage } = await import('../services/image-gen-yearly.js');
+    await generateYearlyImage([makeSchedule({ durationBilling: 0 })], 2026);
+    expect(captured.html).toContain('1天 · 1次');
+    expect(captured.html).toContain('0.0h · 1天 · 1次');
+    expect(captured.html.match(/无排课/g)).toHaveLength(11);
+    expect(captured.html).not.toMatch(/(?:NaN|Infinity)%/);
+  });
+});

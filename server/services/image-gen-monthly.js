@@ -1,7 +1,7 @@
 import { isDarkTheme, withBrowserPage } from './image-helpers.js';
 import { buildHolidayCalendar } from './holiday-calendar.js';
 import { getColor, getTextColor } from './colors.js';
-import { monthDayWindow, monthBarPct, toLocalDateStr, escapeHtml, detectConflictGroups, assignColumns } from './schedule-helpers.js';
+import { monthDayWindow, monthBarPct, toLocalDateStr, escapeHtml, detectConflictGroups, findDatedConflictIds, assignColumns } from './schedule-helpers.js';
 
 // 导出仅为可测：月历是周一开头的，getDay() 的 0=周日要映射到第 7 列，
 // 否则整个月的每一天都会落到错误的星期列上（以周日开头的月份更是整体错一周）。
@@ -33,7 +33,7 @@ function buildMonthList(startYear, startMonth, endYear, endMonth) {
 }
 
 // ── Generate HTML for one month ────────────────────────────────────
-function renderMonthHtml(schedulesWithClasses, year, month, { theme, checkIsHoliday, checkIsWorkday, checkHolidayName, todayStr }) {
+function renderMonthHtml(schedulesWithClasses, year, month, { theme, checkIsHoliday, checkIsWorkday, checkHolidayName, todayStr, conflictIds }) {
   const dates = getMonthDates(year, month);
   const dayRows = Math.ceil(dates.length / 7);
 
@@ -107,10 +107,10 @@ function renderMonthHtml(schedulesWithClasses, year, month, { theme, checkIsHoli
 
       const groups = detectConflictGroups(daySchedules);
       for (const group of groups) {
-        const hasConflict = group.length > 1;
-        const items = hasConflict ? assignColumns(group) : group.map(s => ({ ...s, _col: 0 }));
+        const items = assignColumns(group);
         const totalCols = Math.max(...items.map(it => (it._col || 0))) + 1;
         for (const item of items) {
+          const hasConflict = conflictIds.has(item.id);
           const { topPct, heightPct, isEarly, isLate } =
             monthBarPct(item.startTime, item.endTime, { dayStart, dayTotal });
           const barTop = HEADER_H_CELL + topPct / 100 * CONTENT_H;
@@ -182,7 +182,7 @@ export async function generateMonthlyImage(schedulesWithClasses, year, month, { 
   const em = endMonth != null ? endMonth : month;
   const monthList = buildMonthList(year, month, ey, em);
 
-  const shared = { theme, checkIsHoliday, checkIsWorkday, checkHolidayName, todayStr };
+  const shared = { theme, checkIsHoliday, checkIsWorkday, checkHolidayName, todayStr, conflictIds: findDatedConflictIds(schedulesWithClasses) };
 
   // Build combined HTML
   let combinedHtml = '';

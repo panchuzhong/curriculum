@@ -225,7 +225,8 @@ test.describe('月/年视图 reload 竞态防护', () => {
 
   test('月视图：批量保存后快速翻月，旧月响应不应清空新月视图的数据', async ({ authenticatedPage: page }) => {
     const now = new Date();
-    const monthStart = `${now.getFullYear()}-${pad2(now.getMonth() + 1)}-01`;
+    // 月视图多查月首前一天，以检查跨午夜冲突。
+    const monthStart = toDateString(new Date(now.getFullYear(), now.getMonth(), 0));
     const prevYear = now.getMonth() === 0 ? now.getFullYear() - 1 : now.getFullYear();
     const prevMonth = now.getMonth() === 0 ? 12 : now.getMonth(); // 1-12
     const markerDate = `${prevYear}-${pad2(prevMonth)}-15`;

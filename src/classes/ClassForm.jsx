@@ -1,4 +1,4 @@
-import { useState, useEffect, useContext } from 'react';
+import { useState, useEffect, useContext, useRef } from 'react';
 import { GRADES } from '../utils/constants';
 import { api } from '../api';
 import { getClassColor, getTextColor, DarkContext } from '../utils/colors';
@@ -9,6 +9,7 @@ export default function ClassForm({ initial, onSubmit, onCancel, compact, action
   const toast = useToast();
   const [subjects, setSubjects] = useState([]);
   const [geocodeAvailable, setGeocodeAvailable] = useState(false);
+  const geocodeRequest = useRef(0);
   const [form, setForm] = useState(initial || {
     name: '', grade: '初三', subject: '', studentCount: 1,
     unitPrice: 800, discountAmount: 0, discountReason: '',
@@ -30,7 +31,11 @@ export default function ClassForm({ initial, onSubmit, onCancel, compact, action
     api.geocodeStatus().then(({ available }) => setGeocodeAvailable(available)).catch(() => {});
   }, []);
 
-  useEffect(() => { if (initial) setForm(initial); }, [initial]);
+  useEffect(() => {
+    ++geocodeRequest.current;
+    if (initial) setForm(initial);
+    return () => { ++geocodeRequest.current; };
+  }, [initial]);
 
   return (
     <form onSubmit={e => {
@@ -102,11 +107,15 @@ export default function ClassForm({ initial, onSubmit, onCancel, compact, action
           <label className="block text-sm text-gray-500 dark:text-gray-400 mb-1">默认上课地点</label>
           <div className="flex gap-2">
             <input className="flex-1 p-2 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded" value={form.defaultLocationName || ''}
-              onChange={e => setForm(f => ({ ...f, defaultLocationName: e.target.value }))} />
+              onChange={e => {
+                ++geocodeRequest.current;
+                setForm(f => ({ ...f, defaultLocationName: e.target.value, defaultLocationLat: '', defaultLocationLng: '' }));
+              }} />
             {geocodeAvailable && (
               <button type="button" onClick={async () => {
                 const loc = form.defaultLocationName?.trim();
                 if (!loc) return;
+                const request = ++geocodeRequest.current;
                 if (/^(线上|网课|在线|online)$/i.test(loc)) {
                   toast('线上课程无需经纬度，已清空', 'success');
                   setForm(f => ({ ...f, defaultLocationLat: '', defaultLocationLng: '' }));
@@ -114,9 +123,10 @@ export default function ClassForm({ initial, onSubmit, onCancel, compact, action
                 }
                 try {
                   const { lat, lng, error } = await api.geocode(loc);
+                  if (request !== geocodeRequest.current) return;
                   if (lat != null) setForm(f => ({ ...f, defaultLocationLat: String(lat), defaultLocationLng: String(lng) }));
                   else toast(error || '未找到该地点的经纬度');
-                } catch (e) { toast(e.message || '地理编码失败'); }
+                } catch (e) { if (request === geocodeRequest.current) toast(e.message || '地理编码失败'); }
                 // 置灰条件必须和上面的 loc 用同一套归一化：只写空格时
                 // form.defaultLocationName 是真值、按钮亮着，而 loc 为空直接 return。
               }} disabled={!form.defaultLocationName?.trim()}
@@ -127,12 +137,12 @@ export default function ClassForm({ initial, onSubmit, onCancel, compact, action
         <div>
           <label className="block text-sm text-gray-500 dark:text-gray-400 mb-1">纬度（可选）</label>
           <input type="number" step="any" min="-90" max="90" className="w-full p-2 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded" value={form.defaultLocationLat ?? ''}
-            onChange={e => setForm(f => ({ ...f, defaultLocationLat: e.target.value }))} placeholder="如 31.2" />
+            onChange={e => { ++geocodeRequest.current; setForm(f => ({ ...f, defaultLocationLat: e.target.value })); }} placeholder="如 31.2" />
         </div>
         <div>
           <label className="block text-sm text-gray-500 dark:text-gray-400 mb-1">经度（可选）</label>
           <input type="number" step="any" min="-180" max="180" className="w-full p-2 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded" value={form.defaultLocationLng ?? ''}
-            onChange={e => setForm(f => ({ ...f, defaultLocationLng: e.target.value }))} placeholder="如 121.4" />
+            onChange={e => { ++geocodeRequest.current; setForm(f => ({ ...f, defaultLocationLng: e.target.value })); }} placeholder="如 121.4" />
         </div>
         <div className="flex items-center">
           <label className="flex items-center gap-2 cursor-pointer">

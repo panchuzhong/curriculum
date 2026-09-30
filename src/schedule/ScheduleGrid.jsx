@@ -13,7 +13,7 @@ const TOP_OFFSET_MIN = 5;
 const BOTTOM_OFFSET_MIN = 30;
 const HEADER_HEIGHT = 52;
 
-import { toMin, findConflictGroups, assignColumns } from '../utils/schedule';
+import { toMin, findConflictGroups, findDatedConflictIds, assignColumns } from '../utils/schedule';
 
 function useTouchTime() {
   const ref = useRef(0);
@@ -79,7 +79,7 @@ export default function ScheduleGrid({ dates, schedules, visibleDays = 7, weekSt
 
   const N = dates.length;
 
-  const { byDate, conflictMap, startHour, bottomMin } = useMemo(() => {
+  const { byDate, conflictMap, conflictIds, startHour, bottomMin } = useMemo(() => {
     const ss = schedules || [];
     const bd = {};
     dates.forEach(d => bd[d] = []);
@@ -115,7 +115,7 @@ export default function ScheduleGrid({ dates, schedules, visibleDays = 7, weekSt
     sh = Math.max(0, Math.min(sh, DEFAULT_START));
     const minBottom = DEFAULT_END * 60 + BOTTOM_OFFSET_MIN;
     const bm = latest > minBottom ? latest + BOTTOM_OFFSET_MIN : minBottom;
-    return { byDate: bd, conflictMap: cm, startHour: sh, bottomMin: bm };
+    return { byDate: bd, conflictMap: cm, conflictIds: findDatedConflictIds(ss), startHour: sh, bottomMin: bm };
   }, [schedules, dates, weekStart, visibleDays]);
   const endHour = Math.max(DEFAULT_END, Math.floor(bottomMin / 60));
 
@@ -197,12 +197,12 @@ export default function ScheduleGrid({ dates, schedules, visibleDays = 7, weekSt
                   ))}
 
                   {/* Schedule blocks */}
-                  {(conflictMap[date] || []).map(({ hasConflict, items, totalCols }) =>
+                  {(conflictMap[date] || []).map(({ items, totalCols }) =>
                     items.map(item => (
                       <ScheduleBlock
                         key={item.id}
                         item={item}
-                        hasConflict={hasConflict}
+                        hasConflict={conflictIds.has(item.id)}
                         totalCols={totalCols}
                         rowHeight={rowHeight}
                         topGapHeight={topGapHeight}

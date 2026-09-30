@@ -4,7 +4,6 @@ import { api } from '../api';
 import { parseDateStr, todayStr, getMonday, addDays, isUsableDate, clampDate } from '../utils/date';
 import { setViewDate } from '../utils/viewDate';
 import useSwipeNavigation from '../hooks/useSwipeNavigation';
-import { useToast } from '../components/ToastProvider';
 import useBoundWarning from '../hooks/useBoundWarning';
 
 const TOTAL_COLS = 21;
@@ -51,7 +50,6 @@ export function fetchRange(dates) {
 // 抓取和导出则各自夹回合法区间。
 
 export default function useWeekNavigation({ searchParams, setSearchParams }) {
-  const toast = useToast();
   const [orient, setOrient] = useState(getOrientation);
   useEffect(() => {
     const onResize = () => setOrient(getOrientation());
@@ -72,6 +70,8 @@ export default function useWeekNavigation({ searchParams, setSearchParams }) {
   const [weekStart, setWeekStart] = useState(initialWeek);
   const [allDates, setAllDates] = useState(() => getAllDates(initialWeek));
   const [allSchedules, setAllSchedules] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
 
   const gridRef = useRef(null);
   const navLockRef = useRef(false);
@@ -96,10 +96,18 @@ export default function useWeekNavigation({ searchParams, setSearchParams }) {
   }, [allDates]);
 
   function reload() {
+    loadSchedules(getAllDates(centerRef.current));
+  }
+
+  function loadSchedules(dates) {
     const gen = ++fetchGenRef.current;
-    api.getSchedules(...fetchRange(allDates))
-      .then(data => { if (mountedRef.current && gen === fetchGenRef.current) setAllSchedules(data); })
-      .catch(e => { if (mountedRef.current && gen === fetchGenRef.current) toast(e.message || '加载课表失败'); });
+    pendingSchedulesRef.current = null;
+    setLoading(true);
+    setLoadError('');
+    api.getSchedules(...fetchRange(dates))
+      .then(data => { if (mountedRef.current && gen === fetchGenRef.current) safeSetSchedules(data); })
+      .catch(e => { if (mountedRef.current && gen === fetchGenRef.current) setLoadError(e.message || '加载课表失败'); })
+      .finally(() => { if (mountedRef.current && gen === fetchGenRef.current) setLoading(false); });
   }
 
   // 首次拉取和 reload() 一模一样，写两份的话每次改都得改两处。
@@ -151,10 +159,7 @@ export default function useWeekNavigation({ searchParams, setSearchParams }) {
     const newDates = getAllDates(newCenter);
     flushSync(() => setAllDates(newDates));
     // useLayoutEffect has already snapped CSS to INITIAL_OFFSET
-    const gen = ++fetchGenRef.current;
-    api.getSchedules(...fetchRange(newDates))
-      .then(data => { if (mountedRef.current && gen === fetchGenRef.current) safeSetSchedules(data); })
-      .catch(e => { if (mountedRef.current && gen === fetchGenRef.current) toast(e.message || '加载课表失败'); });
+    loadSchedules(newDates);
   }
 
   // Animated button navigation (desktop prev/next, "today")
@@ -274,7 +279,7 @@ export default function useWeekNavigation({ searchParams, setSearchParams }) {
   }, [weekStart]);
 
   return {
-    gridRef, weekStart, allDates, allSchedules, isMobile, visibleDays,
+    gridRef, weekStart, allDates, allSchedules, isMobile, visibleDays, loading, loadError,
     navigateTo, navigateByDays, goToThisWeek, reload,
   };
 }

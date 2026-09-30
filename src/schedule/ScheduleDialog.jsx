@@ -89,16 +89,21 @@ export default function ScheduleDialog({ date, startTime, schedule, onClose, onS
         durationBilling: form.durationBilling !== '' ? +form.durationBilling : undefined,
         locationName: schedule ? (form.locationName || null) : (form.locationName || undefined),
       };
-      if (schedule) {
-        await api.updateSchedule(schedule.id, data);
-      } else {
-        await api.createSchedule(data);
-      }
+      const result = schedule
+        ? await api.updateSchedule(schedule.id, data)
+        : await api.createSchedule(data);
+      notifyConflicts(result);
       onSaved();
     } catch (err) {
       setError(err.message || '保存失败');
     } finally {
       setSaving(false);
+    }
+  }
+
+  function notifyConflicts(result) {
+    if (result.warnings?.length) {
+      toast(`排课已保存，与 ${result.warnings.length} 节课时间冲突：${result.warnings.map(s => `${s.className} ${s.startTime}–${s.endTime}`).join('；')}`);
     }
   }
 
@@ -115,7 +120,7 @@ export default function ScheduleDialog({ date, startTime, schedule, onClose, onS
         unitPrice: newClass.unitPrice === '' ? 0 : +newClass.unitPrice,
         discountAmount: newClass.discountAmount === '' ? 0 : +newClass.discountAmount,
       });
-      await api.createSchedule({
+      const result = await api.createSchedule({
         classId: cls.id,
         date: form.date,
         startTime: form.startTime,
@@ -123,6 +128,7 @@ export default function ScheduleDialog({ date, startTime, schedule, onClose, onS
         durationBilling: form.durationBilling !== '' ? +form.durationBilling : undefined,
         locationName: form.locationName || undefined,
       });
+      notifyConflicts(result);
       onSaved();
     } catch (err) {
       setError(err.message || '创建失败');

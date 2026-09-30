@@ -17,7 +17,7 @@ export default function WeeklySchedule() {
   const containerRef = useRef(null);
 
   const {
-    gridRef, weekStart, allDates, allSchedules, isMobile, visibleDays,
+    gridRef, weekStart, allDates, allSchedules, isMobile, visibleDays, loading, loadError,
     navigateTo, navigateByDays, goToThisWeek, reload,
   } = useWeekNavigation({ searchParams, setSearchParams });
 
@@ -58,7 +58,8 @@ export default function WeeklySchedule() {
         exporting={exporting} openExport={openExport}
       />
 
-      <div ref={gridRef} className="flex-1 min-h-0">
+      <div ref={gridRef} className="flex-1 min-h-0 relative" aria-busy={loading}>
+        <div className={`h-full ${loading || loadError ? 'invisible' : ''}`}>
         <ScheduleGrid
           dates={allDates}
           schedules={allSchedules}
@@ -72,6 +73,13 @@ export default function WeeklySchedule() {
             setDialog({ date, startTime });
           }}
         />
+        </div>
+        {(loading || loadError) && <div className="absolute inset-0 flex flex-col items-center justify-center">
+          {loading ? <p role="status" className="text-gray-500">正在加载课表…</p> : <>
+            <p role="alert" className="mb-3 text-red-500">课表加载失败：{loadError}</p>
+            <button onClick={reload} className="px-4 py-2 bg-gray-200 dark:bg-gray-700 rounded">重试</button>
+          </>}
+        </div>}
       </div>
 
       {dialog && (

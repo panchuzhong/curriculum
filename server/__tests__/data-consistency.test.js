@@ -627,3 +627,21 @@ describe('防公式注入：CSV 导出与复制表格同一条规则', () => {
     expect(serverNeutralize('A 教室')).toBe('A 教室');
   });
 });
+
+
+describe('按日期判断跨午夜冲突：网页和出图保持一致', () => {
+  const at = (id, date, startTime, endTime) => ({ id, date, startTime, endTime });
+  it.each([
+    ['次日清晨重叠', [at(1, '2026-09-30', '23:00', '01:00'), at(2, '2026-10-01', '00:30', '02:00')], [1, 2]],
+    ['午夜相接不冲突', [at(1, '2026-09-30', '23:00', '00:00'), at(2, '2026-10-01', '00:00', '01:00')], []],
+    ['同日早晨与当晚跨午夜不冲突', [at(1, '2026-09-30', '23:00', '01:00'), at(2, '2026-09-30', '00:30', '02:00')], []],
+    ['跨年且输入乱序', [at(2, '2027-01-01', '00:30', '02:00'), at(3, '2027-01-01', '02:00', '03:00'), at(1, '2026-12-31', '23:00', '01:00')], [1, 2]],
+    ['同日冲突仍标记', [at(1, '2026-10-01', '09:00', '11:00'), at(2, '2026-10-01', '10:00', '12:00')], [1, 2]],
+    ['空列表', [], []],
+  ])('%s', async (_label, rows, expected) => {
+    const { findDatedConflictIds: client } = await import('../../src/utils/schedule.js');
+    const { findDatedConflictIds: server } = await import('../services/schedule-helpers.js');
+    expect([...client(rows)].sort()).toEqual(expected);
+    expect([...server(rows)].sort()).toEqual(expected);
+  });
+});

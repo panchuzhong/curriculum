@@ -14,10 +14,24 @@ function SubjectSection() {
   const [subjects, setSubjects] = useState([]);
   const [newSubject, setNewSubject] = useState('');
   const [saved, setSaved] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
+  const [loadAttempt, setLoadAttempt] = useState(0);
+  const [saving, setSaving] = useState(false);
 
   useEffect(() => {
-    api.getProfile().then(p => setSubjects(p.subjects || [])).catch(e => toast(e.message || '加载学科失败'));
-  }, []);
+    let cancelled = false;
+    setLoading(true);
+    setLoadError('');
+    api.getProfile().then(p => {
+      if (!cancelled) setSubjects(p.subjects || []);
+    }).catch(e => {
+      if (!cancelled) setLoadError(e.message || '加载学科失败');
+    }).finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+  }, [loadAttempt]);
+
+  useEffect(() => { setSaved(false); }, [subjects]);
 
   function moveUp(i) {
     if (i === 0) return;
@@ -53,12 +67,17 @@ function SubjectSection() {
   }
 
   async function save() {
+    if (loading || loadError || saving) return;
+    setSaving(true);
+    setSaved(false);
     try {
       await api.updateSubjects(subjects);
       setSaved(true);
       setTimeout(() => setSaved(false), 3000);
     } catch (err) {
       toast('保存失败: ' + (err.message || '未知错误'));
+    } finally {
+      setSaving(false);
     }
   }
 
@@ -71,6 +90,12 @@ function SubjectSection() {
         设置您教授的学科及顺序，新建班级时只会显示这些学科。
       </p>
 
+      {loading && <p role="status" className="mb-3 text-gray-500">正在加载学科…</p>}
+      {loadError && <div className="mb-3">
+        <p role="alert" className="text-red-500">学科加载失败：{loadError}</p>
+        <button onClick={() => setLoadAttempt(n => n + 1)} className="mt-2 px-3 py-1 bg-gray-200 dark:bg-gray-600 rounded">重试</button>
+      </div>}
+      <fieldset disabled={loading || !!loadError || saving} className="min-w-0 disabled:opacity-50">
       <div className="space-y-1 mb-4">
         {subjects.map((s, i) => (
           <div key={s} className="flex items-center gap-2 p-2 bg-white dark:bg-gray-700 rounded">
@@ -84,7 +109,7 @@ function SubjectSection() {
               className="px-2 py-0.5 text-sm text-red-500 hover:bg-red-100 dark:hover:bg-red-900/30 rounded">删除</button>
           </div>
         ))}
-        {subjects.length === 0 && (
+        {!loading && !loadError && subjects.length === 0 && (
           <p className="text-gray-400 text-sm">暂未添加学科</p>
         )}
       </div>
@@ -117,10 +142,11 @@ function SubjectSection() {
           className={`px-4 py-2 rounded text-sm font-medium ${saved
             ? 'bg-green-600 text-white'
             : 'bg-blue-600 text-white hover:bg-blue-700'}`}>
-          {saved ? '✓ 已保存' : '保存学科设置'}
+          {saving ? '保存中…' : saved ? '✓ 已保存' : '保存学科设置'}
         </button>
         {saved && <span className="text-sm text-green-600 dark:text-green-400">学科设置已更新</span>}
       </div>
+      </fieldset>
     </div>
   );
 }

@@ -186,6 +186,10 @@ export function detectDatedConflictGroups(items) {
   return groups;
 }
 
+export function findDatedConflictIds(items) {
+  return new Set(detectDatedConflictGroups(items).filter(group => group.length > 1).flat().map(s => s.id));
+}
+
 export function assignColumns(group) {
   const sorted = [...group].sort((a, b) => toMin(a.startTime) - toMin(b.startTime));
   const colEnds = [];

@@ -459,6 +459,8 @@ curl -X POST -H "X-API-Key: <key>" -H "Content-Type: application/json" \
   http://localhost:8443/api/backup/restore -d @backup.json
 ```
 
+`classes`、`students`、`schedules` 必须为数组；其余表字段可省略以兼容旧备份，但字段存在时必须为数组（包括 `null` 在内的非数组值返回 400，原数据保留）。
+
 还原为事务原子操作：先删除当前教师所有数据，再分批写入并为记录分配新 ID，班级、学生、排课和定价之间的关联会自动重映射，因此不会与其他账号的全局 ID 冲突。还原时 `teacherId` 强制覆盖为当前认证账号。成功返回 `{ok: true, preRestoreSnapshot, restored: {classes, students, classStudents, schedules, semesters, holidays, classPricing, pricingTiers, auditLog}}`。还原前必须成功保存当前数据快照到 `data/.backup_pre_restore_<teacherId>_<uuid>.json`，快照失败会返回 500 并中止还原（每个教师最多保留 5 份，互不影响）。写快照不卡大小，但撤销要把它整个读回内存，那一侧卡 50 MB：快照超过这个数时响应不带 `preRestoreSnapshot`，改为带 `preRestoreSnapshotUnavailable`——发一个拿回来只会换 413 的句柄，比直说没有可用撤销点更坏（文件仍在磁盘上）。
 
 还原不会因个别坏行拒绝整个文件，而是丢弃这些行并把条数按表放在 `skipped` 里：引用的班级/学生不在本文件内，或 `schedules.date`/`holidays.date` 越界、非法（日期范围为 1900-01-01 ~ 2999-12-31；这两张表的读取路径全都按区间查，写进去也看不到）。`semesters` 和 `classPricing` 的越界日期不丢（界面上改得了，而且定价影响报表收入）；学生的 `birthDate` 非法时只清空该字段，计入 `cleared`。缺整列（如 `schedules` 没有 `date`）仍会回滚并返回 500。

@@ -304,15 +304,15 @@ describe('月历出图的查询窗口覆盖整月', () => {
     expect(dates).toEqual(['2026-01-01', '2026-01-28', '2026-01-29', '2026-01-30', '2026-01-31']);
   });
 
-  // 2 月只有 28 天（2026 不是闰年）：窗口不能越到 3 月去。
-  it('2 月的窗口停在 28 号，不把 3 月的课卷进来', async () => {
+  // 2 月只有 28 天：多查 3 月 1 日用于跨午夜冲突，但不能继续扩展到 2 日。
+  it('2 月查询到 28 号及相邻的 3 月 1 日', async () => {
     const { classes, schedules } = await import('../db/schema.js');
     const { generateMonthlyImage } = await import('../services/image-gen-monthly.js');
     const c = drizzleDb.insert(classes).values({
       teacherId, name: '二月班', grade: '高三', subject: '数学', studentCount: 1, unitPrice: 100,
     }).run();
     const classId = Number(c.lastInsertRowid);
-    for (const date of ['2026-02-28', '2026-03-01']) {
+    for (const date of ['2026-02-28', '2026-03-01', '2026-03-02']) {
       drizzleDb.insert(schedules).values({
         classId, date, startTime: '09:00', endTime: '10:00', durationBilling: 60,
       }).run();
@@ -323,7 +323,7 @@ describe('月历出图的查询窗口覆盖整月', () => {
       .query({ year: 2026, month: 1 }).set(auth(token));
     expect(res.status).toBe(200);
     const dates = generateMonthlyImage.mock.calls[0][0].map(s => s.date);
-    expect(dates).toEqual(['2026-02-28']);
+    expect(dates).toEqual(['2026-02-28', '2026-03-01']);
   });
 
   it('跨月导出时窗口一直延到最后一个月的月末', async () => {
@@ -345,5 +345,27 @@ describe('月历出图的查询窗口覆盖整月', () => {
     const dates = generateMonthlyImage.mock.calls[0][0].map(s => s.date);
     expect(dates).toContain('2026-01-31');
     expect(dates).toContain('2026-03-31');
+  });
+});
+
+
+describe('出图查询含相邻日的冲突上下文', () => {
+  it.each([
+    ['/api/schedule-image?start=2026-10-01&end=2026-10-31', '../services/image-gen.js', 'generateScheduleImage'],
+    ['/api/schedule-image/monthly?year=2026&month=9', '../services/image-gen-monthly.js', 'generateMonthlyImage'],
+  ])('%s 带前后一天，但仍按教师隔离', async (url, module, fn) => {
+    const { classes, schedules } = await import('../db/schema.js');
+    const other = await makeUser(drizzleDb, 'other-context-user');
+    const createClass = owner => Number(drizzleDb.insert(classes).values({ teacherId: owner, name: '上下文班', grade: '高一', subject: '数学', studentCount: 1, unitPrice: 100 }).run().lastInsertRowid);
+    const classId = createClass(teacherId), otherId = createClass(other.id);
+    for (const [cid, date] of [[classId, '2026-09-29'], [classId, '2026-09-30'], [classId, '2026-10-01'], [classId, '2026-11-01'], [classId, '2026-11-02'], [otherId, '2026-09-30']]) {
+      drizzleDb.insert(schedules).values({ classId: cid, date, startTime: '23:00', endTime: '01:00', durationBilling: 120 }).run();
+    }
+    const res = await request(app).get(url).set(auth(token));
+    expect(res.status).toBe(200);
+    const generator = (await import(module))[fn];
+    const [rows] = generator.mock.calls.at(-1);
+    expect(rows.map(s => s.date).sort()).toEqual(['2026-09-30', '2026-10-01', '2026-11-01']);
+    expect(rows.every(s => s.classId === classId)).toBe(true);
   });
 });

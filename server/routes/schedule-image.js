@@ -7,8 +7,8 @@ import { eq, and, gte, lte, inArray } from 'drizzle-orm';
 import { generateScheduleImage } from '../services/image-gen.js';
 import { generateMonthlyImage } from '../services/image-gen-monthly.js';
 import { generateYearlyImage } from '../services/image-gen-yearly.js';
-import { resolveRange } from '../services/schedule-helpers.js';
-import { isValidDate, YEAR_MIN, YEAR_MAX, DATE_RANGE_SUFFIX } from '../validations/dates.js';
+import { resolveRange, toLocalDateStr } from '../services/schedule-helpers.js';
+import { isValidDate, DATE_MIN, DATE_MAX, YEAR_MIN, YEAR_MAX, DATE_RANGE_SUFFIX } from '../validations/dates.js';
 
 const router = Router();
 router.use(authMiddleware);
@@ -31,6 +31,14 @@ function imageRangeError(start, end) {
   return null;
 }
 
+// 多查相邻一天只用于跨午夜冲突，生成器仍只画请求范围。
+function adjacentDate(date, offset) {
+  const d = new Date(date + 'T00:00:00');
+  d.setDate(d.getDate() + offset);
+  const result = toLocalDateStr(d);
+  return result < DATE_MIN ? DATE_MIN : result > DATE_MAX ? DATE_MAX : result;
+}
+
 router.get('/', async (req, res) => {
   try {
     const { theme, rowH, scale, highlight } = req.query;
@@ -48,7 +56,7 @@ router.get('/', async (req, res) => {
     teacherClasses.forEach(c => classMap[c.id] = c);
 
     const scheds = drizzleDb.select().from(schedules)
-      .where(and(gte(schedules.date, start), lte(schedules.date, end), inArray(schedules.classId, classIds)))
+      .where(and(gte(schedules.date, adjacentDate(start, -1)), lte(schedules.date, adjacentDate(end, 1)), inArray(schedules.classId, classIds)))
       .all()
       .map(s => ({ ...s, class: classMap[s.classId] }));
 
@@ -98,7 +106,7 @@ router.get('/monthly', async (req, res) => {
     const endDate = `${ey}-${String(em + 1).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
 
     const scheds = drizzleDb.select().from(schedules)
-      .where(and(gte(schedules.date, startDate), lte(schedules.date, endDate), inArray(schedules.classId, classIds)))
+      .where(and(gte(schedules.date, adjacentDate(startDate, -1)), lte(schedules.date, adjacentDate(endDate, 1)), inArray(schedules.classId, classIds)))
       .all()
       .map(s => ({ ...s, class: classMap[s.classId] }));
 

@@ -1,6 +1,6 @@
 import { isDarkTheme, withBrowserPage } from './image-helpers.js';
 import { buildHolidayCalendar } from './holiday-calendar.js';
-import { toMin, blockGeometry, detectConflictGroups, assignColumns, toLocalDateStr, escapeHtml } from './schedule-helpers.js';
+import { toMin, blockGeometry, detectConflictGroups, findDatedConflictIds, assignColumns, toLocalDateStr, escapeHtml } from './schedule-helpers.js';
 import { getColor, getTextColor } from './colors.js';
 
 // ── Schedule helpers ─────────────────────────────────────────────
@@ -19,6 +19,7 @@ function getDateRange(startDateStr, endDateStr) {
 
 // ── Image generation ─────────────────────────────────────────────
 export async function generateScheduleImage(schedulesWithClasses, startDate, endDate, { theme = 'auto', rowH = 40, scale, highlight, dbHolidays = [] } = {}) {
+  const conflictIds = findDatedConflictIds(schedulesWithClasses);
   const dates = getDateRange(startDate, endDate);
   const numDays = dates.length;
   const todayStr = toLocalDateStr(new Date());
@@ -39,6 +40,7 @@ export async function generateScheduleImage(schedulesWithClasses, startDate, end
   let startHour = DEFAULT_START;
   let latestEndMin = DEFAULT_END * 60;
   schedulesWithClasses.forEach(s => {
+    if (!byDate[s.date]) return;
     const sh = parseInt(s.startTime.split(':')[0]);
     if (sh < startHour) startHour = sh;
     const eMin = toMin(s.endTime);
@@ -151,10 +153,10 @@ export async function generateScheduleImage(schedulesWithClasses, startDate, end
     const daySchedules = byDate[date] || [];
     const groups = detectConflictGroups(daySchedules);
     groups.forEach(group => {
-      const hasConflict = group.length > 1;
       const items = assignColumns(group);
       const totalCols = Math.max(...items.map(it => it._col)) + 1;
       items.forEach(item => {
+        const hasConflict = conflictIds.has(item.id);
         // 位置和高度走共享的 blockGeometry()，别在这里重写一遍：原来这里抄了一份
         // 时长公式，少了 duration() 的 s === e 分支，于是 08:00~08:00 在网页上是
         // 0（一行高的块），在导出的 PNG 里却算成 1440，画出一条覆盖整天的条。

@@ -105,7 +105,7 @@ function renderYearHtml(schedulesWithClasses, year, { theme }) {
     const data = byMonth[m] || { dates: new Set(), schedules: [] };
     const totalHours = data.schedules.reduce((sum, s) => sum + toHoursAbs(s.durationBilling), 0);
 
-    if (totalHours === 0) {
+    if (data.schedules.length === 0) {
       return `<div style="background:${c.cardBg};border-radius:8px;padding:12px;display:flex;align-items:center;justify-content:space-between">
         <span style="font-size:15px;font-weight:bold">${m + 1}月</span>
         <span style="font-size:12px;color:${c.mutedText}">无排课</span>
@@ -131,7 +131,7 @@ function renderYearHtml(schedulesWithClasses, year, { theme }) {
     let barHtml = displayEntries.map(entry => {
       const [label, h, dominantCat] = condensed ? entry : [entry[0], entry[1]];
       const color = resolveColor(label, dominantCat, isDark);
-      return `<div style="height:100%;width:${(h / totalHours) * 100}%;background:${color};border-radius:3px" title="${escapeHtml(label)}"></div>`;
+      return `<div style="height:100%;width:${totalHours > 0 ? (h / totalHours) * 100 : 0}%;background:${color};border-radius:3px" title="${escapeHtml(label)}"></div>`;
     }).join('');
 
     return `<div style="background:${c.cardBg};border-radius:8px;padding:12px;display:flex;flex-direction:column;justify-content:space-between">
@@ -150,14 +150,14 @@ function renderYearHtml(schedulesWithClasses, year, { theme }) {
   const monthCardsHtml = Array.from({ length: 12 }, (_, m) => renderMonthCard(m)).join('');
 
   let summaryHtml = '';
-  if (yearTotalHours > 0) {
+  if (schedulesWithClasses.length > 0) {
     const barsHtml = yearDisplayEntries.map(entry => {
       const [label, h, dominantCat] = yearCondensed ? entry : [entry[0], entry[1]];
       const color = resolveColor(label, dominantCat, isDark);
       return `<div style="display:flex;align-items:center;gap:8px;margin-bottom:3px">
         <span style="width:80px;text-align:right;font-size:11px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis">${escapeHtml(label)}</span>
         <div style="flex:1;height:14px;background:${c.barBg};border-radius:4px;overflow:hidden">
-          <div style="height:100%;width:${(h / yearMaxHours) * 100}%;background:${color};border-radius:4px"></div>
+          <div style="height:100%;width:${yearMaxHours > 0 ? (h / yearMaxHours) * 100 : 0}%;background:${color};border-radius:4px"></div>
         </div>
         <span style="width:48px;text-align:right;font-size:11px;font-weight:600">${h.toFixed(1)}h</span>
       </div>`;

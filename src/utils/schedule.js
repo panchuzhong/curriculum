@@ -77,6 +77,39 @@ export function findConflictGroups(schedules) {
   return groups.map(g => g.schedules);
 }
 
+// 跨日冲突按绝对时间计算；与服务端规则由回归用例保持一致。
+function scheduleBounds(schedule) {
+  const [year, month, day] = schedule.date.split('-').map(Number);
+  const dayStart = Date.UTC(year, month - 1, day) / 60000;
+  const start = dayStart + toMin(schedule.startTime);
+  return [start, start + duration(schedule.startTime, schedule.endTime)];
+}
+
+function datedConflictGroups(items) {
+  if (!items.length) return [];
+  const sorted = [...items].sort((a, b) => scheduleBounds(a)[0] - scheduleBounds(b)[0]);
+  const groups = [];
+  let group = [sorted[0]];
+  let groupEnd = scheduleBounds(sorted[0])[1];
+  for (let i = 1; i < sorted.length; i++) {
+    const [start, end] = scheduleBounds(sorted[i]);
+    if (start < groupEnd) {
+      group.push(sorted[i]);
+      groupEnd = Math.max(groupEnd, end);
+    } else {
+      groups.push(group);
+      group = [sorted[i]];
+      groupEnd = end;
+    }
+  }
+  groups.push(group);
+  return groups;
+}
+
+export function findDatedConflictIds(items) {
+  return new Set(datedConflictGroups(items).filter(group => group.length > 1).flat().map(s => s.id));
+}
+
 export function assignColumns(group) {
   const sorted = [...group].sort((a, b) => toMin(a.startTime) - toMin(b.startTime));
   const colEnds = [];

@@ -139,6 +139,10 @@ router.post('/restore', express.json({ limit: '50mb' }), (req, res) => {
   // 数组里混进 null / 标量时，下面的 pick() 会在 r.classId 上直接炸成一个带堆栈的 500。
   // 这是文件坏了，明说比抛栈好。
   for (const table of ['classes', 'students', 'classStudents', 'schedules', 'holidays', 'semesters', 'pricingTiers', 'classPricing', 'auditLog']) {
+    // 旧备份可以省略可选表；字段已经存在但类型错误时，不能把它解释成清空整表。
+    if (Object.hasOwn(data, table) && !Array.isArray(data[table])) {
+      return res.status(400).json({ error: `${table} 须为数组` });
+    }
     const rows = Array.isArray(data[table]) ? data[table] : [];
     if (rows.some(r => r === null || typeof r !== 'object' || Array.isArray(r))) {
       return res.status(400).json({ error: `${table} 中存在非对象元素` });

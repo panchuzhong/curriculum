@@ -3,11 +3,10 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { api } from '../api';
 import { getClassColor, getTextColor, DarkContext } from '../utils/colors';
 import { isHoliday, getHolidayName, isWorkday, subscribeHolidays } from '../utils/holidays';
-import { todayStr, getMonday, intParam, YEAR_MIN, YEAR_MAX } from '../utils/date';
-import { monthDayWindow, monthBarPct, findConflictGroups, assignColumns } from '../utils/schedule';
+import { todayStr, getMonday, addDays, clampDate, intParam, YEAR_MIN, YEAR_MAX } from '../utils/date';
+import { monthDayWindow, monthBarPct, findConflictGroups, findDatedConflictIds, assignColumns } from '../utils/schedule';
 import { setViewDate } from '../utils/viewDate';
 import { useSimpleSwipe } from '../hooks/useSimpleSwipe';
-import { useToast } from '../components/ToastProvider';
 import useBoundWarning from '../hooks/useBoundWarning';
 import BatchScheduleDialog from './BatchScheduleDialog';
 import ExportDialog from './ExportDialog';
@@ -36,7 +35,6 @@ function formatDate(y, m, d) {
 export default function MonthlySchedule() {
   const navigate = useNavigate();
   const dark = useContext(DarkContext);
-  const toast = useToast();
   // 按钮会变灰，但方向键和滑动走的是同一个 prevMonth/nextMonth，得自己说一声。
   const warnAtBound = useBoundWarning();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -44,6 +42,8 @@ export default function MonthlySchedule() {
   const [year, setYear] = useState(() => intParam(searchParams.get('year'), now.getFullYear(), { min: YEAR_MIN, max: YEAR_MAX }));
   const [month, setMonth] = useState(() => intParam(searchParams.get('month'), now.getMonth(), { min: 0, max: 11 }));
   const [schedules, setSchedules] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
   const [animKey, setAnimKey] = useState(0);
   const [, setHolidayRevision] = useState(0);
   const animDir = useRef(1);
@@ -62,12 +62,22 @@ export default function MonthlySchedule() {
   // previous month's fetch must not overwrite the newly displayed month
   const fetchGenRef = useRef(0);
 
-  useEffect(() => {
-    let cancelled = false;
+  const reload = useCallback(() => {
     const gen = ++fetchGenRef.current;
-    api.getSchedules(startDate, endStr).then(data => { if (!cancelled && gen === fetchGenRef.current) setSchedules(data); }).catch(e => { if (!cancelled) toast(e.message || '加载课表失败'); });
-    return () => { cancelled = true; };
-  }, [year, month]);
+    setLoading(true);
+    setLoadError('');
+    // 月首、月末也需要相邻一天，才能标记跨午夜的冲突；这些课不渲染在本月。
+    api.getSchedules(clampDate(addDays(startDate, -1)), clampDate(addDays(endStr, 1))).then(data => {
+      if (gen === fetchGenRef.current) setSchedules(data);
+    }).catch(e => {
+      if (gen === fetchGenRef.current) setLoadError(e.message || '加载课表失败');
+    }).finally(() => { if (gen === fetchGenRef.current) setLoading(false); });
+  }, [startDate, endStr]);
+
+  useEffect(() => {
+    reload();
+    return () => { ++fetchGenRef.current; };
+  }, [reload]);
 
   useEffect(() => { containerRef.current?.focus(); }, []);
 
@@ -91,6 +101,8 @@ export default function MonthlySchedule() {
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [year, month]);
+
+  const conflictIds = useMemo(() => findDatedConflictIds(schedules), [schedules]);
 
   const { dates, byDate } = useMemo(() => {
     const d = getMonthDates(year, month);
@@ -132,11 +144,6 @@ export default function MonthlySchedule() {
     setAnimKey(k => k + 1);
   }
 
-  const reload = useCallback(() => {
-    const gen = ++fetchGenRef.current;
-    api.getSchedules(startDate, endStr).then(data => { if (gen === fetchGenRef.current) setSchedules(data); }).catch(e => toast(e.message || '加载课表失败'));
-  }, [year, month]);
-
   const navBtn = "px-2 sm:px-4 py-1.5 sm:py-2 text-xs sm:text-base bg-gray-200 dark:bg-gray-700 rounded hover:bg-gray-300 dark:hover:bg-gray-600 active:scale-95 transition-transform select-none";
   const actBtn = "px-2 sm:px-3 py-1.5 sm:py-2 text-white rounded text-xs sm:text-sm select-none active:scale-95 transition-transform";
 
@@ -171,7 +178,14 @@ export default function MonthlySchedule() {
           </div>
         </div>
       </div>
-      <div key={animKey} className={`flex-1 min-h-0 flex flex-col ${animDir.current > 0 ? 'slide-in-right' : 'slide-in-left'}`}>
+      {loading ? (
+        <p role="status" className="py-8 text-center text-gray-500">正在加载课表…</p>
+      ) : loadError ? (
+        <div className="py-8 text-center">
+          <p role="alert" className="mb-3 text-red-500">课表加载失败：{loadError}</p>
+          <button onClick={reload} className={navBtn}>重试</button>
+        </div>
+      ) : <div key={animKey} className={`flex-1 min-h-0 flex flex-col ${animDir.current > 0 ? 'slide-in-right' : 'slide-in-left'}`}>
       <div className="grid grid-cols-7 gap-0.5 sm:gap-1 flex-1 min-h-0"
         style={{ gridTemplateRows: `auto repeat(${dayRows}, 1fr)` }}>
         {['一','二','三','四','五','六','日'].map(d => (
@@ -210,10 +224,10 @@ export default function MonthlySchedule() {
                 const groups = findConflictGroups(daySchedules);
                 const els = [];
                 for (const group of groups) {
-                  const hasConflict = group.length > 1;
-                  const items = hasConflict ? assignColumns(group) : group.map(s => ({ ...s, _col: 0 }));
+                  const items = assignColumns(group);
                   const totalCols = Math.max(...items.map(it => (it._col || 0))) + 1;
                   for (const item of items) {
+                    const hasConflict = conflictIds.has(item.id);
                     const { topPct, heightPct, isEarly, isLate } =
                       monthBarPct(item.startTime, item.endTime, { dayStart, dayTotal });
                     const widthPct = hasConflict ? 100 / totalCols : 100;
@@ -244,7 +258,7 @@ export default function MonthlySchedule() {
           );
         })}
       </div>
-      </div>
+      </div>}
 
       {showBatch && (
         <BatchScheduleDialog
