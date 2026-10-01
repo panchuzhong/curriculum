@@ -8,7 +8,7 @@ import handle from '../validations/handle.js';
 import { validateCreateSchedule, validateBatchCreate, validateBatchUpdate, validateBatchDelete, validateUpdateSchedule } from '../validations/schedules.js';
 import { isCalendarDate, isValidDate, isValidScheduleEndTime, isValidScheduleSpan, isValidTime, normalizeScheduleEndTime, DATE_RANGE_SUFFIX } from '../validations/dates.js';
 import { logAudit } from '../services/audit.js';
-import { toLocalDateStr, toMin, resolveRange, toCSV, detectDatedConflictGroups, getScheduleWithClass, calcDurationBilling, getTeacherSemesters, buildPricingLookup, scheduleBounds, schedulesOverlap } from '../services/schedule-helpers.js';
+import { toLocalDateStr, shiftDate, toMin, resolveRange, toCSV, detectDatedConflictGroups, getScheduleWithClass, calcDurationBilling, getTeacherSemesters, buildPricingLookup, scheduleBounds, schedulesOverlap } from '../services/schedule-helpers.js';
 import { clearReportCache, getReportCache, setReportCache } from '../services/report-cache.js';
 import { students as studentsTable } from '../db/schema.js';
 
@@ -76,7 +76,8 @@ function attachBatchUpdateWarnings(resp, { semesterFiltered = 0, holidayDates, h
 }
 
 // 与其他排课的时间重叠。单条写入（POST /、PUT /:id）和批量修改共用这一份：每个冲突
-// 对象 {id, classId, className, startTime, endTime} 的形状因此天然一致。外层不同——
+// 对象 {id, classId, className, date, startTime, endTime} 的形状因此天然一致（date 是撞上的
+// 那节的日期：跨午夜的课会撞上相邻一天的课）。外层不同——
 // 单条写入直接返回这个数组；批量修改返回 [{id: 被改的那节, date, conflicts: 这个数组}]，
 // 因为它得说清是哪一节撞了。
 // finals 是「改完之后的样子」（id/classId/date/startTime/endTime），所以写之前就能算，
@@ -111,7 +112,7 @@ function findConflicts(finals, teacherId) {
   for (const r of [...finals].sort((a, b) => a.date.localeCompare(b.date) || a.startTime.localeCompare(b.startTime))) {
     const conflicts = neighbours(r.date).flatMap(d => byDate.get(d) ?? [])
       .filter(o => o.id !== r.id && schedulesOverlap(r, o))
-      .map(o => ({ id: o.id, classId: o.classId, className: classMap.get(o.classId)?.name, startTime: o.startTime, endTime: o.endTime }));
+      .map(o => ({ id: o.id, classId: o.classId, className: classMap.get(o.classId)?.name, date: o.date, startTime: o.startTime, endTime: o.endTime }));
     if (conflicts.length > 0) out.push({ id: r.id, date: r.date, conflicts });
   }
   return out;
@@ -151,12 +152,6 @@ function loadHolidayCalendar(teacherId) {
 // 同一个缺口，批量创建和批量位移给同一句事实和同一个补救办法，只有后果不同。
 function missingHolidayDataHint(years, consequence) {
   return `${years.join('、')} 年没有可用的法定节假日数据（库里只要有这一年的记录，内置数据就整年不用），${consequence}，请先通过 POST /api/holidays/batch 导入`;
-}
-
-function shiftDate(date, days) {
-  const d = new Date(date + 'T00:00:00');
-  d.setDate(d.getDate() + days);
-  return toLocalDateStr(d);
 }
 
 function getConflictsForSchedule(scheduleId, teacherId) {

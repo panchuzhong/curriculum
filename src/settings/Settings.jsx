@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { api, setToken } from '../api';
 import PricingTierManager from '../pricing/PricingTierManager';
 import HolidayManager from './HolidayManager';
@@ -18,6 +18,9 @@ function SubjectSection() {
   const [loadError, setLoadError] = useState('');
   const [loadAttempt, setLoadAttempt] = useState(0);
   const [saving, setSaving] = useState(false);
+  // 只留最近一次保存的计时器：不清掉的话，前一次保存的三秒会提前收走后一次的「已保存」。
+  const savedTimer = useRef(null);
+  useEffect(() => () => clearTimeout(savedTimer.current), []);
 
   useEffect(() => {
     let cancelled = false;
@@ -67,13 +70,13 @@ function SubjectSection() {
   }
 
   async function save() {
-    if (loading || loadError || saving) return;
     setSaving(true);
     setSaved(false);
     try {
       await api.updateSubjects(subjects);
       setSaved(true);
-      setTimeout(() => setSaved(false), 3000);
+      clearTimeout(savedTimer.current);
+      savedTimer.current = setTimeout(() => setSaved(false), 3000);
     } catch (err) {
       toast('保存失败: ' + (err.message || '未知错误'));
     } finally {

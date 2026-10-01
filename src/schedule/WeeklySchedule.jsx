@@ -10,6 +10,7 @@ import WeekNavBar from './WeekNavBar';
 import { shortcutBlocked } from '../utils/keys';
 import { isUsableDate, DATE_INVALID_HINT } from '../utils/date';
 import { useToast } from '../components/ToastProvider';
+import LoadingHint from '../components/LoadingHint';
 
 export default function WeeklySchedule() {
   const toast = useToast();
@@ -58,8 +59,10 @@ export default function WeeklySchedule() {
         exporting={exporting} openExport={openExport}
       />
 
-      <div ref={gridRef} className="flex-1 min-h-0 relative" aria-busy={loading}>
-        <div className={`h-full ${loading || loadError ? 'invisible' : ''}`}>
+      <div ref={gridRef} className="flex-1 min-h-0 relative">
+        {/* 加载时网格照常显示、照常能点能滑：翻页后缓冲里已有的课不该被藏起来，
+            提示为什么不接触摸见 LoadingHint。只有加载失败才藏网格：那时屏上是别的日期范围的旧数据。 */}
+        <div className={`h-full ${loadError ? 'invisible' : ''}`} aria-busy={loading}>
         <ScheduleGrid
           dates={allDates}
           schedules={allSchedules}
@@ -74,11 +77,10 @@ export default function WeeklySchedule() {
           }}
         />
         </div>
-        {(loading || loadError) && <div className="absolute inset-0 flex flex-col items-center justify-center">
-          {loading ? <p role="status" className="text-gray-500">正在加载课表…</p> : <>
-            <p role="alert" className="mb-3 text-red-500">课表加载失败：{loadError}</p>
-            <button onClick={reload} className="px-4 py-2 bg-gray-200 dark:bg-gray-700 rounded">重试</button>
-          </>}
+        {loading && <LoadingHint />}
+        {loadError && <div className="absolute inset-0 flex flex-col items-center justify-center">
+          <p role="alert" className="mb-3 text-red-500">课表加载失败：{loadError}</p>
+          <button onClick={reload} className="px-4 py-2 bg-gray-200 dark:bg-gray-700 rounded">重试</button>
         </div>}
       </div>
 

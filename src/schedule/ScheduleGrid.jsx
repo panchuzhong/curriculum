@@ -79,7 +79,11 @@ export default function ScheduleGrid({ dates, schedules, visibleDays = 7, weekSt
 
   const N = dates.length;
 
-  const { byDate, conflictMap, conflictIds, startHour, bottomMin } = useMemo(() => {
+  // 冲突按绝对时间判断，含 dates 之外多取的相邻日（见 useWeekNavigation 的 fetchRange）；
+  // 只跟着数据变，翻页换 dates 时不用重算。
+  const conflictIds = useMemo(() => findDatedConflictIds(schedules || []), [schedules]);
+
+  const { byDate, conflictMap, startHour, bottomMin } = useMemo(() => {
     const ss = schedules || [];
     const bd = {};
     dates.forEach(d => bd[d] = []);
@@ -90,11 +94,10 @@ export default function ScheduleGrid({ dates, schedules, visibleDays = 7, weekSt
 
     const cm = {};
     for (const [date, dayScheds] of Object.entries(bd)) {
+      // 这里只管分列；标不标红看上面的 conflictIds，按天的分组漏掉跨午夜的冲突。
       cm[date] = findConflictGroups(dayScheds).map(group => {
-        const hasConflict = group.length > 1;
-        const items = hasConflict ? assignColumns(group) : group.map(s => ({ ...s, _col: 0 }));
-        const totalCols = Math.max(...items.map(it => it._col)) + 1;
-        return { hasConflict, items, totalCols };
+        const items = assignColumns(group);
+        return { items, totalCols: Math.max(...items.map(it => it._col)) + 1 };
       });
     }
 
@@ -115,7 +118,7 @@ export default function ScheduleGrid({ dates, schedules, visibleDays = 7, weekSt
     sh = Math.max(0, Math.min(sh, DEFAULT_START));
     const minBottom = DEFAULT_END * 60 + BOTTOM_OFFSET_MIN;
     const bm = latest > minBottom ? latest + BOTTOM_OFFSET_MIN : minBottom;
-    return { byDate: bd, conflictMap: cm, conflictIds: findDatedConflictIds(ss), startHour: sh, bottomMin: bm };
+    return { byDate: bd, conflictMap: cm, startHour: sh, bottomMin: bm };
   }, [schedules, dates, weekStart, visibleDays]);
   const endHour = Math.max(DEFAULT_END, Math.floor(bottomMin / 60));
 

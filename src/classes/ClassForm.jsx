@@ -10,6 +10,9 @@ export default function ClassForm({ initial, onSubmit, onCancel, compact, action
   const [subjects, setSubjects] = useState([]);
   const [geocodeAvailable, setGeocodeAvailable] = useState(false);
   const geocodeRequest = useRef(0);
+  // 经纬度是按哪个地点名填的。改地点不清坐标：同一个地方补个楼层、改个错字很常见，
+  // 没配高德 key 时清掉就只能手抄回来。改成在地点下面提示一句，让人自己决定要不要改。
+  const [coordsFor, setCoordsFor] = useState(initial?.defaultLocationName || '');
   const [form, setForm] = useState(initial || {
     name: '', grade: '初三', subject: '', studentCount: 1,
     unitPrice: 800, discountAmount: 0, discountReason: '',
@@ -33,9 +36,16 @@ export default function ClassForm({ initial, onSubmit, onCancel, compact, action
 
   useEffect(() => {
     ++geocodeRequest.current;
-    if (initial) setForm(initial);
+    if (initial) {
+      setForm(initial);
+      setCoordsFor(initial.defaultLocationName || '');
+    }
     return () => { ++geocodeRequest.current; };
   }, [initial]);
+
+  // 不知道坐标是按哪个地点填的（先填坐标、后填地点）时不提示。
+  const hasCoords = [form.defaultLocationLat, form.defaultLocationLng].some(v => v != null && v !== '');
+  const coordsStale = hasCoords && coordsFor.trim() !== '' && (form.defaultLocationName || '').trim() !== coordsFor.trim();
 
   return (
     <form onSubmit={e => {
@@ -109,7 +119,7 @@ export default function ClassForm({ initial, onSubmit, onCancel, compact, action
             <input className="flex-1 p-2 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded" value={form.defaultLocationName || ''}
               onChange={e => {
                 ++geocodeRequest.current;
-                setForm(f => ({ ...f, defaultLocationName: e.target.value, defaultLocationLat: '', defaultLocationLng: '' }));
+                setForm(f => ({ ...f, defaultLocationName: e.target.value }));
               }} />
             {geocodeAvailable && (
               <button type="button" onClick={async () => {
@@ -124,8 +134,10 @@ export default function ClassForm({ initial, onSubmit, onCancel, compact, action
                 try {
                   const { lat, lng, error } = await api.geocode(loc);
                   if (request !== geocodeRequest.current) return;
-                  if (lat != null) setForm(f => ({ ...f, defaultLocationLat: String(lat), defaultLocationLng: String(lng) }));
-                  else toast(error || '未找到该地点的经纬度');
+                  if (lat != null) {
+                    setForm(f => ({ ...f, defaultLocationLat: String(lat), defaultLocationLng: String(lng) }));
+                    setCoordsFor(loc);
+                  } else toast(error || '未找到该地点的经纬度');
                 } catch (e) { if (request === geocodeRequest.current) toast(e.message || '地理编码失败'); }
                 // 置灰条件必须和上面的 loc 用同一套归一化：只写空格时
                 // form.defaultLocationName 是真值、按钮亮着，而 loc 为空直接 return。
@@ -133,16 +145,21 @@ export default function ClassForm({ initial, onSubmit, onCancel, compact, action
                 className="px-3 py-2 bg-indigo-600 text-white rounded text-xs hover:bg-indigo-700 disabled:opacity-50 whitespace-nowrap">获取经纬度</button>
             )}
           </div>
+          {coordsStale && (
+            <p className="mt-1 text-xs text-amber-600 dark:text-amber-400">
+              经纬度是按「{coordsFor}」填的，地点换了的话请{geocodeAvailable ? '重新获取或' : ''}手动修改
+            </p>
+          )}
         </div>
         <div>
           <label className="block text-sm text-gray-500 dark:text-gray-400 mb-1">纬度（可选）</label>
           <input type="number" step="any" min="-90" max="90" className="w-full p-2 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded" value={form.defaultLocationLat ?? ''}
-            onChange={e => { ++geocodeRequest.current; setForm(f => ({ ...f, defaultLocationLat: e.target.value })); }} placeholder="如 31.2" />
+            onChange={e => { ++geocodeRequest.current; setCoordsFor(form.defaultLocationName || ''); setForm(f => ({ ...f, defaultLocationLat: e.target.value })); }} placeholder="如 31.2" />
         </div>
         <div>
           <label className="block text-sm text-gray-500 dark:text-gray-400 mb-1">经度（可选）</label>
           <input type="number" step="any" min="-180" max="180" className="w-full p-2 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded" value={form.defaultLocationLng ?? ''}
-            onChange={e => { ++geocodeRequest.current; setForm(f => ({ ...f, defaultLocationLng: e.target.value })); }} placeholder="如 121.4" />
+            onChange={e => { ++geocodeRequest.current; setCoordsFor(form.defaultLocationName || ''); setForm(f => ({ ...f, defaultLocationLng: e.target.value })); }} placeholder="如 121.4" />
         </div>
         <div className="flex items-center">
           <label className="flex items-center gap-2 cursor-pointer">

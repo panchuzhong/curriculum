@@ -10,6 +10,7 @@ import { useSimpleSwipe } from '../hooks/useSimpleSwipe';
 import useBoundWarning from '../hooks/useBoundWarning';
 import BatchScheduleDialog from './BatchScheduleDialog';
 import ExportDialog from './ExportDialog';
+import LoadingHint from '../components/LoadingHint';
 import useScheduleExport from './useScheduleExport';
 import { shortcutBlocked } from '../utils/keys';
 
@@ -160,7 +161,7 @@ export default function MonthlySchedule() {
   const canNext = (month === 11 ? year + 1 : year) <= YEAR_MAX;
 
   return (
-    <div ref={containerRef} tabIndex={-1} className="outline-none h-full flex flex-col" {...swipe}>
+    <div ref={containerRef} tabIndex={-1} className="outline-none h-full flex flex-col relative" {...swipe}>
       <div className="flex items-center justify-between mb-2 shrink-0">
         <button onClick={prevMonth} disabled={!canPrev} className={`${navBtn} disabled:opacity-40`}><span className="sm:hidden">‹</span><span className="hidden sm:inline">上月</span></button>
         <h2 className="text-base sm:text-xl font-medium">{year}年{month + 1}月</h2>
@@ -178,14 +179,16 @@ export default function MonthlySchedule() {
           </div>
         </div>
       </div>
-      {loading ? (
-        <p role="status" className="py-8 text-center text-gray-500">正在加载课表…</p>
-      ) : loadError ? (
+      {/* 加载时月历照常显示（和周视图一样，见 LoadingHint）：换掉它的话每次 reload 都会
+          卸载整张月历、重放滑入动画，从提示上开始的滑动也会在请求回来时丢掉 touchend。
+          只有加载失败才换成错误：那时屏上是别的月份或改动之前的旧数据。 */}
+      {loading && <LoadingHint />}
+      {loadError ? (
         <div className="py-8 text-center">
           <p role="alert" className="mb-3 text-red-500">课表加载失败：{loadError}</p>
           <button onClick={reload} className={navBtn}>重试</button>
         </div>
-      ) : <div key={animKey} className={`flex-1 min-h-0 flex flex-col ${animDir.current > 0 ? 'slide-in-right' : 'slide-in-left'}`}>
+      ) : <div key={animKey} aria-busy={loading} className={`flex-1 min-h-0 flex flex-col ${animDir.current > 0 ? 'slide-in-right' : 'slide-in-left'}`}>
       <div className="grid grid-cols-7 gap-0.5 sm:gap-1 flex-1 min-h-0"
         style={{ gridTemplateRows: `auto repeat(${dayRows}, 1fr)` }}>
         {['一','二','三','四','五','六','日'].map(d => (
@@ -230,8 +233,10 @@ export default function MonthlySchedule() {
                     const hasConflict = conflictIds.has(item.id);
                     const { topPct, heightPct, isEarly, isLate } =
                       monthBarPct(item.startTime, item.endTime, { dayStart, dayTotal });
-                    const widthPct = hasConflict ? 100 / totalCols : 100;
-                    const leftPct = hasConflict ? (item._col || 0) * widthPct : 0;
+                    // 分列只看当天的分组，不看 hasConflict：两者不一致时（比如库里有 '9:00'
+                    // 这种没补零的旧时间），按 hasConflict 给宽度会把分成两列的课叠画在一起。
+                    const widthPct = 100 / totalCols;
+                    const leftPct = (item._col || 0) * widthPct;
                     const isOvertime = isEarly || isLate;
                     const rounded = isEarly && isLate ? 'rounded-none' : isEarly ? 'rounded-b' : isLate ? 'rounded-t' : 'rounded';
                     els.push(

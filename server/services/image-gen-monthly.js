@@ -116,8 +116,9 @@ function renderMonthHtml(schedulesWithClasses, year, month, { theme, checkIsHoli
           const barTop = HEADER_H_CELL + topPct / 100 * CONTENT_H;
           const barH = Math.max(6, heightPct / 100 * CONTENT_H);
           const isOvertime = isEarly || isLate;
-          const widthPct = hasConflict ? 100 / totalCols : 100;
-          const leftPct = hasConflict ? (item._col || 0) * widthPct : 0;
+          // 分列只看当天的分组，不看 hasConflict，理由见 MonthlySchedule.jsx 同一处。
+          const widthPct = 100 / totalCols;
+          const leftPct = (item._col || 0) * widthPct;
           const cellInnerW = isOvertime ? CELL_W : CELL_W - 8;
           const barLeft = isOvertime ? (leftPct / 100 * CELL_W) : (leftPct / 100 * (CELL_W - 8) + 4);
           const barW = (widthPct / 100 * cellInnerW) - (isOvertime ? 0 : 2);

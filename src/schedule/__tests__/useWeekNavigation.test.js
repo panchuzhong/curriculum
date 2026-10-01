@@ -50,9 +50,12 @@ describe('useWeekNavigation 的日期边界', () => {
   });
 
   describe('fetchRange：±7 天的预取缓冲必须夹回合法区间', () => {
-    it('中间的一周原样请求', () => {
+    // 两头各多一天：缓冲最外侧那两列滑进屏幕时，要和屏外相邻一天的课比才标得出跨午夜的冲突。
+    it('中间的一周两头各多取一天', () => {
       const dates = getAllDates('2026-05-11');
-      expect(fetchRange(dates)).toEqual([dates[0], dates[dates.length - 1]]);
+      expect(dates[0]).toBe('2026-05-04');
+      expect(dates[dates.length - 1]).toBe('2026-05-24');
+      expect(fetchRange(dates)).toEqual(['2026-05-03', '2026-05-25']);
     });
 
     // 不夹的话边界那一周会把 1899-12-25 发出去，服务端 400，

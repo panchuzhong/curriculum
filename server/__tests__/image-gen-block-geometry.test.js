@@ -517,3 +517,44 @@ describe('跨午夜冲突与零计费课程的导出', () => {
     expect(captured.html).not.toMatch(/(?:NaN|Infinity)%/);
   });
 });
+
+// 路由会把请求范围前后各一天的课一起传进来，只为标跨午夜的冲突。那些课既不画，
+// 也不能把时间轴撑开：漏掉这一点的话，一天的导出会围着两节画不出来的课画一张 06:00~25:00 的网格。
+describe('相邻日的上下文课不影响周图的时间轴', () => {
+  const hourLabels = html => [...html.matchAll(/>(\d{2}):00<\/span>/g)].map(m => +m[1]);
+
+  it('只看请求范围内的课', async () => {
+    const inRange = makeSchedule({ id: 601, date: '2026-10-01', startTime: '09:00', endTime: '10:00' });
+    const early = makeSchedule({ id: 602, date: '2026-10-02', startTime: '06:00', endTime: '07:00' });
+    const late = makeSchedule({ id: 603, date: '2026-10-02', startTime: '23:00', endTime: '01:00' });
+    await generateScheduleImage([inRange, early, late], '2026-10-01', '2026-10-01');
+    const hours = hourLabels(captured.html);
+    expect(Math.min(...hours)).toBe(8);
+    expect(Math.max(...hours)).toBe(22);
+    // 对照：同样的课落在范围内就会撑开时间轴，说明上面的 8~22 不是因为没认出这两节课。
+    await generateScheduleImage([inRange, early, late], '2026-10-01', '2026-10-02');
+    const stretched = hourLabels(captured.html);
+    expect(Math.min(...stretched)).toBe(6);
+    expect(Math.max(...stretched)).toBeGreaterThan(22);
+  });
+});
+
+// 月历条的分列只看当天的分组。按日期的冲突判断和按天的分组在库里有坏数据时会不一致：
+// '9:00'（没补零）按字符串排在 '09:00' 后面，于是按天分组时它和 09:00~10:00 落在一组、
+// 分成两列，而按日期判断两者并不重叠。按 hasConflict 给宽度的话，两条都画成满宽、叠在一起。
+describe('月历条按当天的分列画，和冲突标记无关', () => {
+  const bars = html => [...html.matchAll(/position:absolute;left:([\d.]+)px;top:[\d.]+px;width:([\d.]+)px;/g)]
+    .map(m => ({ left: +m[1], width: +m[2] }));
+
+  it('分成两列的课并排画，不叠在一起', async () => {
+    const { generateMonthlyImage } = await import('../services/image-gen-monthly.js');
+    const zero = makeSchedule({ id: 701, date: '2026-10-05', startTime: '9:00', endTime: '9:00', class: makeClass({ id: 2, name: '旧数据班' }) });
+    const normal = makeSchedule({ id: 702, date: '2026-10-05', startTime: '09:00', endTime: '10:00' });
+    await generateMonthlyImage([zero, normal], 2026, 9);
+    expect(captured.html).not.toContain('[冲突]');
+    const [a, b] = bars(captured.html);
+    expect(a.left).not.toBe(b.left);
+    expect(a.width).toBeCloseTo(b.width);
+    expect(Math.min(a.left, b.left) + a.width).toBeLessThanOrEqual(Math.max(a.left, b.left));
+  });
+});

@@ -7,8 +7,8 @@ import { eq, and, gte, lte, inArray } from 'drizzle-orm';
 import { generateScheduleImage } from '../services/image-gen.js';
 import { generateMonthlyImage } from '../services/image-gen-monthly.js';
 import { generateYearlyImage } from '../services/image-gen-yearly.js';
-import { resolveRange, toLocalDateStr } from '../services/schedule-helpers.js';
-import { isValidDate, DATE_MIN, DATE_MAX, YEAR_MIN, YEAR_MAX, DATE_RANGE_SUFFIX } from '../validations/dates.js';
+import { resolveRange, shiftDate } from '../services/schedule-helpers.js';
+import { isValidDate, YEAR_MIN, YEAR_MAX, DATE_RANGE_SUFFIX } from '../validations/dates.js';
 
 const router = Router();
 router.use(authMiddleware);
@@ -31,14 +31,6 @@ function imageRangeError(start, end) {
   return null;
 }
 
-// 多查相邻一天只用于跨午夜冲突，生成器仍只画请求范围。
-function adjacentDate(date, offset) {
-  const d = new Date(date + 'T00:00:00');
-  d.setDate(d.getDate() + offset);
-  const result = toLocalDateStr(d);
-  return result < DATE_MIN ? DATE_MIN : result > DATE_MAX ? DATE_MAX : result;
-}
-
 router.get('/', async (req, res) => {
   try {
     const { theme, rowH, scale, highlight } = req.query;
@@ -55,8 +47,11 @@ router.get('/', async (req, res) => {
     const classMap = {};
     teacherClasses.forEach(c => classMap[c.id] = c);
 
+    // 多查前后各一天只为标出跨午夜的冲突，生成器只画请求的范围（见 image-gen.js）。
+    // 排序和 GET /api/schedules 一致，网页和图片里并列的项才会排成一样的顺序。
     const scheds = drizzleDb.select().from(schedules)
-      .where(and(gte(schedules.date, adjacentDate(start, -1)), lte(schedules.date, adjacentDate(end, 1)), inArray(schedules.classId, classIds)))
+      .where(and(gte(schedules.date, shiftDate(start, -1)), lte(schedules.date, shiftDate(end, 1)), inArray(schedules.classId, classIds)))
+      .orderBy(schedules.date, schedules.startTime)
       .all()
       .map(s => ({ ...s, class: classMap[s.classId] }));
 
@@ -106,7 +101,8 @@ router.get('/monthly', async (req, res) => {
     const endDate = `${ey}-${String(em + 1).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
 
     const scheds = drizzleDb.select().from(schedules)
-      .where(and(gte(schedules.date, adjacentDate(startDate, -1)), lte(schedules.date, adjacentDate(endDate, 1)), inArray(schedules.classId, classIds)))
+      .where(and(gte(schedules.date, shiftDate(startDate, -1)), lte(schedules.date, shiftDate(endDate, 1)), inArray(schedules.classId, classIds)))
+      .orderBy(schedules.date, schedules.startTime)
       .all()
       .map(s => ({ ...s, class: classMap[s.classId] }));
 
@@ -142,8 +138,11 @@ router.get('/yearly', async (req, res) => {
     teacherClasses.forEach(c => classMap[c.id] = c);
 
     const ey = endYear != null ? endYear : year;
+    // 不排序的话行按索引里的 class_id 先后出来；并列的分类（比如全年都计 0 小时）
+    // 就会和网页（GET /api/schedules 按日期、开始时间排）排成相反的顺序、配上不同的颜色。
     const scheds = drizzleDb.select().from(schedules)
       .where(and(gte(schedules.date, `${year}-01-01`), lte(schedules.date, `${ey}-12-31`), inArray(schedules.classId, classIds)))
+      .orderBy(schedules.date, schedules.startTime)
       .all()
       .map(s => ({ ...s, class: classMap[s.classId] }));
 

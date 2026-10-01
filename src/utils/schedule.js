@@ -1,3 +1,5 @@
+import { isCalendarDate } from './date';
+
 export function toMin(t) {
   const [h, m] = t.split(':').map(Number);
   return h * 60 + m;
@@ -85,20 +87,28 @@ function scheduleBounds(schedule) {
   return [start, start + duration(schedule.startTime, schedule.endTime)];
 }
 
+// 解析不了的行不参与，理由见服务端 detectDatedConflictGroups 的注释：NaN 会把扫描切断，
+// '2026-10-1' 会和一节没有列显示它的课「冲突」。
 function datedConflictGroups(items) {
-  if (!items.length) return [];
-  const sorted = [...items].sort((a, b) => scheduleBounds(a)[0] - scheduleBounds(b)[0]);
+  const spans = [];
+  for (const s of items) {
+    if (!isCalendarDate(s.date)) continue;
+    const [start, end] = scheduleBounds(s);
+    if (Number.isFinite(start) && Number.isFinite(end)) spans.push({ s, start, end });
+  }
+  if (!spans.length) return [];
+  spans.sort((a, b) => a.start - b.start);
   const groups = [];
-  let group = [sorted[0]];
-  let groupEnd = scheduleBounds(sorted[0])[1];
-  for (let i = 1; i < sorted.length; i++) {
-    const [start, end] = scheduleBounds(sorted[i]);
+  let group = [spans[0].s];
+  let groupEnd = spans[0].end;
+  for (let i = 1; i < spans.length; i++) {
+    const { s, start, end } = spans[i];
     if (start < groupEnd) {
-      group.push(sorted[i]);
+      group.push(s);
       groupEnd = Math.max(groupEnd, end);
     } else {
       groups.push(group);
-      group = [sorted[i]];
+      group = [s];
       groupEnd = end;
     }
   }

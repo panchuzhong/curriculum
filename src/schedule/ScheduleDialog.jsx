@@ -103,7 +103,9 @@ export default function ScheduleDialog({ date, startTime, schedule, onClose, onS
 
   function notifyConflicts(result) {
     if (result.warnings?.length) {
-      toast(`排课已保存，与 ${result.warnings.length} 节课时间冲突：${result.warnings.map(s => `${s.className} ${s.startTime}–${s.endTime}`).join('；')}`);
+      // 跨午夜的冲突在相邻一天：不写日期的话，「23:00–01:00」读着像当天一节并不重叠的课。
+      const when = s => (s.date && s.date !== result.date ? `${s.date} ` : '') + `${s.startTime}–${s.endTime}`;
+      toast(`排课已保存，与 ${result.warnings.length} 节课时间冲突：${result.warnings.map(s => `${s.className} ${when(s)}`).join('；')}`);
     }
   }
 

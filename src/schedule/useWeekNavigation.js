@@ -34,10 +34,12 @@ export function dateParam(value) {
   return isUsableDate(value) ? value : null;
 }
 
-// 前后各多取 BUFFER 天做缓冲，贴着上下限时这几天会越界。夹的是请求参数；
-// 这些列在屏外，不影响看得见的那一段。
+// 前后各多取 BUFFER 天做缓冲，两头再各多一天：缓冲最外侧那两列滑进屏幕时，上面的课
+// 得和屏外相邻一天的课比，才标得出跨午夜的冲突（多出来的这两天不画，ScheduleGrid
+// 只按 dates 取课）。贴着上下限时这几天会越界。夹的是请求参数；这些列在屏外，
+// 不影响看得见的那一段。
 export function fetchRange(dates) {
-  return [clampDate(dates[0]), clampDate(dates[TOTAL_COLS - 1])];
+  return [clampDate(addDays(dates[0], -1)), clampDate(addDays(dates[TOTAL_COLS - 1], 1))];
 }
 
 // 约束的是首列，不是整个可见窗口。一个 7 列的网格无法同时做到：整段不越界、

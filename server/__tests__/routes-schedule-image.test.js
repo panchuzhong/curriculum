@@ -196,6 +196,9 @@ describe('图片接口的年份上下限', () => {
   it.each([
     '/api/schedule-image/monthly?year=1900&month=0',
     '/api/schedule-image/yearly?year=2999',
+    // 相邻一天的上下文查询会越出上下限（1899-12-31、3000-01-01），那只是查询条件，不能因此报错。
+    '/api/schedule-image?start=1900-01-01&end=1900-01-07',
+    '/api/schedule-image/monthly?year=2999&month=11',
   ])('accepts the boundary years themselves: %s', async (url) => {
     const { classes } = await import('../db/schema.js');
     drizzleDb.insert(classes).values({
@@ -367,5 +370,27 @@ describe('出图查询含相邻日的冲突上下文', () => {
     const [rows] = generator.mock.calls.at(-1);
     expect(rows.map(s => s.date).sort()).toEqual(['2026-09-30', '2026-10-01', '2026-11-01']);
     expect(rows.every(s => s.classId === classId)).toBe(true);
+  });
+});
+
+// 不排序时行按 (class_id, date, start_time) 索引出来。并列的分类会照着输入顺序排，
+// 所以出图和网页（GET /api/schedules 按日期、开始时间排）得拿到同样顺序的行。
+// 编号小的班排在后面的日期上，索引顺序才会和期望的顺序不同。
+describe('出图查询按日期、开始时间排序，与网页一致', () => {
+  it.each([
+    ['/api/schedule-image?start=2026-10-01&end=2026-10-07', '../services/image-gen.js', 'generateScheduleImage'],
+    ['/api/schedule-image/monthly?year=2026&month=9', '../services/image-gen-monthly.js', 'generateMonthlyImage'],
+    ['/api/schedule-image/yearly?year=2026', '../services/image-gen-yearly.js', 'generateYearlyImage'],
+  ])('%s', async (url, module, fn) => {
+    const { classes, schedules } = await import('../db/schema.js');
+    const createClass = name => Number(drizzleDb.insert(classes).values({ teacherId, name, grade: '高一', subject: '数学', studentCount: 1, unitPrice: 100 }).run().lastInsertRowid);
+    const first = createClass('先建的班'), second = createClass('后建的班');
+    for (const [classId, date, startTime] of [[first, '2026-10-05', '09:00'], [second, '2026-10-03', '09:00'], [second, '2026-10-05', '08:00']]) {
+      drizzleDb.insert(schedules).values({ classId, date, startTime, endTime: '10:00', durationBilling: 60 }).run();
+    }
+    const res = await request(app).get(url).set(auth(token));
+    expect(res.status).toBe(200);
+    const [rows] = (await import(module))[fn].mock.calls.at(-1);
+    expect(rows.map(s => `${s.date} ${s.startTime}`)).toEqual(['2026-10-03 09:00', '2026-10-05 08:00', '2026-10-05 09:00']);
   });
 });

@@ -842,6 +842,8 @@ describe('GET /api/schedules/conflicts', () => {
     const created = await request(app).post('/api/schedules').set(auth(token))
       .send({ classId: classId2, date: '2026-05-05', startTime: '00:30', endTime: '02:00' });
     expect(created.body.warnings).toHaveLength(1);
+    // 冲突的是前一天的课：不带日期的话，「23:00–01:00」读起来像同一天一节并不重叠的课。
+    expect(created.body.warnings[0]).toEqual(expect.objectContaining({ date: '2026-05-04', startTime: '23:00', endTime: '01:00' }));
 
     const res = await request(app).get('/api/schedules/conflicts?start=2026-05-05&end=2026-05-05').set(auth(token));
     expect(res.body.total).toBe(1);

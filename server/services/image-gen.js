@@ -18,6 +18,8 @@ function getDateRange(startDateStr, endDateStr) {
 }
 
 // ── Image generation ─────────────────────────────────────────────
+// schedulesWithClasses 可以带上请求范围前后各一天的课（路由就是这么查的）：那些只用来
+// 标跨午夜的冲突。画哪些块、时间轴撑多长，只看下面按请求范围建的 byDate。
 export async function generateScheduleImage(schedulesWithClasses, startDate, endDate, { theme = 'auto', rowH = 40, scale, highlight, dbHolidays = [] } = {}) {
   const conflictIds = findDatedConflictIds(schedulesWithClasses);
   const dates = getDateRange(startDate, endDate);
@@ -39,8 +41,7 @@ export async function generateScheduleImage(schedulesWithClasses, startDate, end
 
   let startHour = DEFAULT_START;
   let latestEndMin = DEFAULT_END * 60;
-  schedulesWithClasses.forEach(s => {
-    if (!byDate[s.date]) return;
+  Object.values(byDate).flat().forEach(s => {
     const sh = parseInt(s.startTime.split(':')[0]);
     if (sh < startHour) startHour = sh;
     const eMin = toMin(s.endTime);

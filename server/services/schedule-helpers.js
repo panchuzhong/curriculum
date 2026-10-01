@@ -1,5 +1,6 @@
 import { schedules, classes, semesters } from '../db/schema.js';
 import { eq } from 'drizzle-orm';
+import { isCalendarDate } from '../validations/dates.js';
 
 // 年份补到 4 位，和前端的 fmt() 一致。不补的话年份小于 1000 会算出 '261-04-30'，
 // 而库里存的是 '0261-05-01'——按字符串比大小 '0261-...' 反而小于 '261-...'。
@@ -11,6 +12,13 @@ export function toLocalDateStr(d) {
   const m = String(d.getMonth() + 1).padStart(2, '0');
   const day = String(d.getDate()).padStart(2, '0');
   return `${y}-${m}-${day}`;
+}
+
+// 不夹上下限：只拿来拼查询条件和按日期取键，'1899-12-31' 当查询下界照样能用。
+export function shiftDate(date, days) {
+  const d = new Date(date + 'T00:00:00');
+  d.setDate(d.getDate() + days);
+  return toLocalDateStr(d);
 }
 
 export function escapeHtml(s) {
@@ -165,20 +173,30 @@ export function schedulesOverlap(a, b) {
 // Unlike detectConflictGroups(), this accepts schedules from multiple dates
 // and therefore catches a late class overlapping an early class on the next
 // calendar day.
+// 解析不了的行（校验加上之前存进来的 '2026-10-1'、'2026-10-01T00:00:00'、空的开始时间）
+// 不参与：算出来的 NaN 会把扫描从中切断，两边真实的冲突一起丢掉；'2026-10-1' 又会被
+// 当成一个真实的日子，而没有哪一列按这个写法取课，于是一节看得见的课会和一节看不见的课
+// 「冲突」。前端 src/utils/schedule.js 的同名逻辑和这里一致（data-consistency 盯着）。
 export function detectDatedConflictGroups(items) {
-  if (!items.length) return [];
-  const sorted = [...items].sort((a, b) => scheduleBounds(a)[0] - scheduleBounds(b)[0]);
+  const spans = [];
+  for (const s of items) {
+    if (!isCalendarDate(s.date)) continue;
+    const [start, end] = scheduleBounds(s);
+    if (Number.isFinite(start) && Number.isFinite(end)) spans.push({ s, start, end });
+  }
+  if (!spans.length) return [];
+  spans.sort((a, b) => a.start - b.start);
   const groups = [];
-  let group = [sorted[0]];
-  let groupEnd = scheduleBounds(sorted[0])[1];
-  for (let i = 1; i < sorted.length; i++) {
-    const [start, end] = scheduleBounds(sorted[i]);
+  let group = [spans[0].s];
+  let groupEnd = spans[0].end;
+  for (let i = 1; i < spans.length; i++) {
+    const { s, start, end } = spans[i];
     if (start < groupEnd) {
-      group.push(sorted[i]);
+      group.push(s);
       groupEnd = Math.max(groupEnd, end);
     } else {
       groups.push(group);
-      group = [sorted[i]];
+      group = [s];
       groupEnd = end;
     }
   }
