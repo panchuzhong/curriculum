@@ -1,4 +1,4 @@
-import { test, expect, ensureTestUser, toDateString, getCurrentMonday } from './auth';
+import { test, expect, ensureTestUser, toDateString } from './auth';
 import type { Route } from '@playwright/test';
 import Database from 'better-sqlite3';
 
@@ -189,14 +189,14 @@ test.describe('月/年课表交互', () => {
   test.use({ baseURL: 'http://127.0.0.1:5174' });
 
   test('月视图点击日期格跳转周课表', async ({ authenticatedPage: page }) => {
-    await page.goto('/monthly');
-    // 种子数据本周一 09:00 有课，当前月视图必含本周一；点击格子应带日期跳周课表
-    const monday = toDateString(getCurrentMonday());
+    // 不能用「本周一」配「当前月」：月初那几天（如 2026-10-01 周四）本周一还在上个月，
+    // 当前月的网格里根本没有那一格。改用固定种子日 2026-05-13 所在的月份。
+    await page.goto('/monthly?year=2026&month=4');
     // role=generic 的 aria-label 不参与可访问名计算，用属性定位器
-    const cell = page.locator(`[aria-label="查看${monday}课表"]`);
+    const cell = page.locator('[aria-label="查看2026-05-13课表"]');
     await expect(cell).toBeVisible();
     await cell.click();
-    await expect(page).toHaveURL(new RegExp(`date=${monday}`));
+    await expect(page).toHaveURL(/date=2026-05-13/);
   });
 
   test('年视图年度统计显示实际数字', async ({ authenticatedPage: page }) => {
@@ -247,9 +247,12 @@ test.describe('月/年视图 reload 竞态防护', () => {
         db.close();
       }
     }
+    // 初始数据加载完成后再挂拦截，只挂 reload 发出的当月请求。
+    // 等的是当月这次请求本身，而不是「看见 E2E数学班」：那节种子课在本周一、三，
+    // 月初那几天（如 2026-10-01 周四）它们都在上个月，当月网格里一节都没有。
+    const initialLoad = page.waitForResponse(r => r.url().includes('/api/schedules?') && r.url().includes(`start=${monthStart}`));
     await page.goto('/monthly');
-    // 初始数据加载完成后再挂拦截，只挂 reload 发出的当月请求
-    await expect(page.locator('main').getByText('E2E数学班').first()).toBeVisible();
+    await initialLoad;
     const held: Route[] = [];
     await page.route('**/api/schedules?**', async (route) => {
       if (route.request().url().includes(`start=${monthStart}`)) { held.push(route); return; }
