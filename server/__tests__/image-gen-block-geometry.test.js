@@ -36,6 +36,11 @@ function blockHeights(html) {
     .map(m => ({ top: +m[1], left: +m[2], width: +m[3], height: +m[4], bg: m[5], fg: m[6] }));
 }
 
+function monthBars(html) {
+  return [...html.matchAll(/position:absolute;left:([\d.]+)px;top:([\d.]+)px;width:([\d.]+)px;height:([\d.]+)px;background:/g)]
+    .map(m => ({ left: +m[1], top: +m[2], width: +m[3], height: +m[4] }));
+}
+
 const ROW_H = 40;
 const render = (sched) => generateScheduleImage([sched], '2026-05-11', '2026-05-17', { theme: 'light', rowH: ROW_H });
 
@@ -250,10 +255,6 @@ const { duration } = await import('../services/schedule-helpers.js');
 // 12 小时，1250 全绿）。而且两份都自己算时长、少了 duration() 的 s === e 分支，
 // 于是 08:00~08:00 在月历里是一条覆盖整天的长条——周视图里同一节课只有一行高。
 describe('monthly PNG 的条形几何', () => {
-  const monthBars = (html) =>
-    [...html.matchAll(/position:absolute;left:([\d.]+)px;top:([\d.]+)px;width:([\d.]+)px;height:([\d.]+)px;background:/g)]
-      .map(m => ({ left: +m[1], top: +m[2], width: +m[3], height: +m[4] }));
-
   const renderMonth = (...scheds) =>
     generateMonthlyImage(scheds, 2026, 4, { theme: 'light' });
 
@@ -273,6 +274,18 @@ describe('monthly PNG 的条形几何', () => {
     // 抄回旧公式的话这两个一样高（都按 1440 分钟算）。
     expect(same[0].height).toBeLessThan(allDay[0].height);
     expect(same[0].height).toBe(6); // Math.max(6, 0)
+  });
+
+  // 最小条高是从条顶往下长的：窗口末尾的零时长课顶在内容区底边上，往下 6px 全在格子外，
+  // 今天那格的 2px 边框一占，整条被裁掉。底边要和一节占满整个窗口的课对齐，而不是越过它。
+  it('窗口末尾的零时长课不掉出格子', async () => {
+    await renderMonth(
+      sched({ id: 1, date: '2026-05-11', startTime: '08:00', endTime: '22:30' }),
+      sched({ id: 2, date: '2026-05-12', startTime: '22:30', endTime: '22:30' }),
+    );
+    const [full, zero] = monthBars(captured.html);
+    expect(zero.height).toBe(6);
+    expect(zero.top + zero.height).toBeCloseTo(full.top + full.height, 6);
   });
 
   // 纵向比例尺（dayStart/dayTotal）是**逐日**算的，所以只有同一天的条高才可比。
@@ -543,18 +556,79 @@ describe('相邻日的上下文课不影响周图的时间轴', () => {
 // '9:00'（没补零）按字符串排在 '09:00' 后面，于是按天分组时它和 09:00~10:00 落在一组、
 // 分成两列，而按日期判断两者并不重叠。按 hasConflict 给宽度的话，两条都画成满宽、叠在一起。
 describe('月历条按当天的分列画，和冲突标记无关', () => {
-  const bars = html => [...html.matchAll(/position:absolute;left:([\d.]+)px;top:[\d.]+px;width:([\d.]+)px;/g)]
-    .map(m => ({ left: +m[1], width: +m[2] }));
-
   it('分成两列的课并排画，不叠在一起', async () => {
     const { generateMonthlyImage } = await import('../services/image-gen-monthly.js');
     const zero = makeSchedule({ id: 701, date: '2026-10-05', startTime: '9:00', endTime: '9:00', class: makeClass({ id: 2, name: '旧数据班' }) });
     const normal = makeSchedule({ id: 702, date: '2026-10-05', startTime: '09:00', endTime: '10:00' });
-    await generateMonthlyImage([zero, normal], 2026, 9);
+    // 正常课在前：路由按 (date, startTime) 排序，'09:00' < '9:00'，送进生成器的就是这个顺序。
+    // 零时长课曾在这个顺序下挤进正常课的组被误标冲突（反序则不会），所以用例必须钉生产顺序。
+    await generateMonthlyImage([normal, zero], 2026, 9);
     expect(captured.html).not.toContain('[冲突]');
-    const [a, b] = bars(captured.html);
+    const [a, b] = monthBars(captured.html);
     expect(a.left).not.toBe(b.left);
     expect(a.width).toBeCloseTo(b.width);
     expect(Math.min(a.left, b.left) + a.width).toBeLessThanOrEqual(Math.max(a.left, b.left));
+  });
+});
+
+// 空时间的旧行（校验加上之前存进来的）周视图的 ScheduleBlock 会跳过，月历和出图
+// 此前却会画成 NaN 几何的野块贴在格子顶上，还会把 monthDayWindow 给早/晚课的
+// 时间窗延伸吞掉（NaN 的比较全是 false，窗口退回默认值）。
+describe('空时间的旧行不画，也不影响同一天的其它课', () => {
+  it('周图：只画时间解析得了的课', async () => {
+    const rot = makeSchedule({ id: 801, startTime: '', endTime: '10:00' });
+    const ok = makeSchedule({ id: 802, startTime: '09:00', endTime: '10:00' });
+    await generateScheduleImage([rot, ok], '2026-05-11', '2026-05-17', { theme: 'light' });
+    expect(captured.html).not.toContain('NaN');
+    expect(blockHeights(captured.html)).toHaveLength(1);
+  });
+
+  it('月图：不画野块，早课照常撑开时间窗', async () => {
+    const { generateMonthlyImage } = await import('../services/image-gen-monthly.js');
+    const rot = makeSchedule({ id: 803, startTime: '', endTime: '10:00' });
+    const early = makeSchedule({ id: 804, startTime: '06:00', endTime: '07:00' });
+    await generateMonthlyImage([rot, early], 2026, 4);
+    expect(captured.html).not.toContain('NaN');
+    const bars = monthBars(captured.html);
+    expect(bars).toHaveLength(1);
+    // 窗口被早课撑到 06:00 时条形从内容区顶端画起；没撑开的话 topPct 是负的，
+    // 条形会画出格子外（top < 表头高度）。
+    expect(bars[0].top).toBeGreaterThanOrEqual(22);
+  });
+});
+
+// 只判「非空」拦不住非空但解析不了的旧值（'1030'、'9点'、全角冒号）：toMin 照样是 NaN，
+// 进了按天分组把 groupEnd 写成 NaN，后面那节真重叠的课被踢成单独一组、满宽叠在前一节上；
+// 进了时间轴会为一节画不出来的课撑开格子。两种出图都得按 hasDrawableTimes 取课。
+describe('非空但解析不了的时间同样不画、不影响分列和时间轴', () => {
+  it.each(['1030', '9点', '10：30'])('周图：结束时间 %s 的旧行不拆散真冲突', async (bad) => {
+    const a = makeSchedule({ id: 811, startTime: '09:00', endTime: '11:00' });
+    const rot = makeSchedule({ id: 812, startTime: '09:30', endTime: bad, class: makeClass({ id: 2, name: '旧数据班' }) });
+    const c = makeSchedule({ id: 813, startTime: '10:00', endTime: '12:00', class: makeClass({ id: 3, name: '英语班' }) });
+    await generateScheduleImage([a, rot, c], '2026-05-11', '2026-05-17', { theme: 'light' });
+    expect(captured.html).not.toContain('NaN');
+    const blocks = blockHeights(captured.html);
+    expect(blocks).toHaveLength(2);
+    expect(blocks[0].width).toBeCloseTo(blocks[1].width);
+    expect(blocks[0].left).not.toBe(blocks[1].left);
+  });
+
+  it('周图：开始时间有效、结束时间解析不了的旧行不撑开时间轴', async () => {
+    const rot = makeSchedule({ id: 814, startTime: '06:00', endTime: '1030' });
+    const ok = makeSchedule({ id: 815, startTime: '09:00', endTime: '10:00' });
+    await generateScheduleImage([rot, ok], '2026-05-11', '2026-05-17', { theme: 'light' });
+    const hours = [...captured.html.matchAll(/>(\d{2}):00<\/span>/g)].map(m => +m[1]);
+    expect(Math.min(...hours)).toBe(8);
+  });
+
+  it('月图：开始时间解析不了的旧行不吞掉早课的时间窗', async () => {
+    const { generateMonthlyImage } = await import('../services/image-gen-monthly.js');
+    const rot = makeSchedule({ id: 816, startTime: '9点', endTime: '10:00' });
+    const early = makeSchedule({ id: 817, startTime: '06:00', endTime: '07:00' });
+    await generateMonthlyImage([rot, early], 2026, 4);
+    expect(captured.html).not.toContain('NaN');
+    const bars = monthBars(captured.html);
+    expect(bars).toHaveLength(1);
+    expect(bars[0].top).toBeGreaterThanOrEqual(22);
   });
 });

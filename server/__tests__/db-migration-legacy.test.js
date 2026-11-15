@@ -53,7 +53,7 @@ describe('legacy database upgrade', () => {
 
       initDb();
       expect(db.prepare('SELECT pwd_version FROM teachers').get()).toEqual({ pwd_version: 0 });
-      expect(db.prepare('SELECT version FROM _migrations ORDER BY version').all().map(r => r.version)).toEqual([1, 2, 3, 4]);
+      expect(db.prepare('SELECT version FROM _migrations ORDER BY version').all().map(r => r.version)).toEqual([1, 2, 3, 4, 5]);
       expect(db.prepare('SELECT student_count, unit_price, effective_from FROM class_pricing WHERE class_id = 1').all())
         .toEqual([{ student_count: 3, unit_price: 150, effective_from: '2026-03-01' }]);
       if (!recorded) {
@@ -155,7 +155,7 @@ describe('legacy database upgrade', () => {
       expect(studentCols).toContain('birth_date');
       expect(studentCols).toContain('parent_name');
       expect(db.prepare('SELECT version FROM _migrations ORDER BY version').all().map(r => r.version))
-        .toEqual([1, 2, 3, 4]);
+        .toEqual([1, 2, 3, 4, 5]);
     } finally {
       db.close();
     }
@@ -186,5 +186,23 @@ describe('legacy database upgrade', () => {
     } finally {
       db.close();
     }
+  });
+
+  // 坐标溯源：classes 加两列记「经纬度各按哪个地点名填的」，旧库没有，迁移 v5 补上。
+  it('adds coordinate-provenance columns to a legacy classes table', async () => {
+    tmp = mkdtempSync(join(tmpdir(), 'curr-coords-mig-'));
+    const dbPath = join(tmp, 'legacy.db');
+    seedLegacyDb(dbPath);
+    process.env.DB_PATH = dbPath;
+    vi.resetModules();
+    const { initDb } = await import('../db/index.js');
+    expect(() => initDb()).not.toThrow();
+    const check = new Database(dbPath, { readonly: true });
+    const cols = check.prepare('PRAGMA table_info(classes)').all().map(c => c.name);
+    const versions = check.prepare('SELECT version FROM _migrations ORDER BY version').all().map(r => r.version);
+    check.close();
+    expect(cols).toContain('default_location_lat_for');
+    expect(cols).toContain('default_location_lng_for');
+    expect(versions).toContain(5);
   });
 });

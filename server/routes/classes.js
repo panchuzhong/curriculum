@@ -57,7 +57,8 @@ router.get('/:id', (req, res) => {
 
 router.post('/', validateCreateClass, handle, (req, res) => {
   const { name, grade, subject, studentCount, unitPrice, discountAmount, discountReason,
-          isCompetition, defaultLocationName, defaultLocationLat, defaultLocationLng } = req.body;
+          isCompetition, defaultLocationName, defaultLocationLat, defaultLocationLng,
+          defaultLocationLatFor, defaultLocationLngFor } = req.body;
   const price = unitPrice ?? getDefaultPrice(req.teacherId, studentCount);
   let newId;
   db.transaction(() => {
@@ -68,6 +69,7 @@ router.post('/', validateCreateClass, handle, (req, res) => {
       defaultLocationName,
       defaultLocationLat: optionalCoordinate(defaultLocationLat),
       defaultLocationLng: optionalCoordinate(defaultLocationLng),
+      defaultLocationLatFor, defaultLocationLngFor,
     }).run();
     newId = Number(result.lastInsertRowid);
 
@@ -92,11 +94,16 @@ router.put('/:id', validateUpdateClass, handle, (req, res) => {
   const existing = drizzleDb.select().from(classes)
     .where(and(eq(classes.id, +id), eq(classes.teacherId, req.teacherId))).get();
   if (!existing) return res.status(404).json({ error: 'Not found' });
-  const allowed = ['name', 'grade', 'subject', 'studentCount', 'unitPrice', 'discountAmount', 'discountReason', 'isCompetition', 'defaultLocationName', 'defaultLocationLat', 'defaultLocationLng'];
+  const allowed = ['name', 'grade', 'subject', 'studentCount', 'unitPrice', 'discountAmount', 'discountReason', 'isCompetition', 'defaultLocationName', 'defaultLocationLat', 'defaultLocationLng', 'defaultLocationLatFor', 'defaultLocationLngFor'];
   const safeUpdates = Object.fromEntries(Object.entries(req.body).filter(([k]) => allowed.includes(k)));
   if (Object.keys(safeUpdates).length === 0) return res.status(400).json({ error: 'No valid fields' });
   if ('defaultLocationLat' in safeUpdates) safeUpdates.defaultLocationLat = optionalCoordinate(safeUpdates.defaultLocationLat);
   if ('defaultLocationLng' in safeUpdates) safeUpdates.defaultLocationLng = optionalCoordinate(safeUpdates.defaultLocationLng);
+  // 改了坐标却没带它的来源（API 客户端常见）：原来的来源说的是旧坐标，留着的话表单一打开
+  // 就会说这对新坐标是按旧地点填的。置 NULL，由表单按当时的地点名推定（src/utils/locationCoords.js）。
+  for (const field of ['defaultLocationLat', 'defaultLocationLng']) {
+    if (field in safeUpdates && !(`${field}For` in safeUpdates)) safeUpdates[`${field}For`] = null;
+  }
   drizzleDb.update(classes).set(safeUpdates).where(eq(classes.id, +id)).run();
   const updated = drizzleDb.select().from(classes).where(eq(classes.id, +id)).get();
   clearReportCache(req.teacherId);

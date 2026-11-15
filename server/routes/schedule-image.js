@@ -7,7 +7,7 @@ import { eq, and, gte, lte, inArray } from 'drizzle-orm';
 import { generateScheduleImage } from '../services/image-gen.js';
 import { generateMonthlyImage } from '../services/image-gen-monthly.js';
 import { generateYearlyImage } from '../services/image-gen-yearly.js';
-import { resolveRange, shiftDate } from '../services/schedule-helpers.js';
+import { resolveRange, conflictContextRange } from '../services/schedule-helpers.js';
 import { isValidDate, YEAR_MIN, YEAR_MAX, DATE_RANGE_SUFFIX } from '../validations/dates.js';
 
 const router = Router();
@@ -49,8 +49,9 @@ router.get('/', async (req, res) => {
 
     // 多查前后各一天只为标出跨午夜的冲突，生成器只画请求的范围（见 image-gen.js）。
     // 排序和 GET /api/schedules 一致，网页和图片里并列的项才会排成一样的顺序。
+    const [ctxStart, ctxEnd] = conflictContextRange(start, end);
     const scheds = drizzleDb.select().from(schedules)
-      .where(and(gte(schedules.date, shiftDate(start, -1)), lte(schedules.date, shiftDate(end, 1)), inArray(schedules.classId, classIds)))
+      .where(and(gte(schedules.date, ctxStart), lte(schedules.date, ctxEnd), inArray(schedules.classId, classIds)))
       .orderBy(schedules.date, schedules.startTime)
       .all()
       .map(s => ({ ...s, class: classMap[s.classId] }));
@@ -100,8 +101,9 @@ router.get('/monthly', async (req, res) => {
     const lastDay = new Date(ey, em + 1, 0).getDate();
     const endDate = `${ey}-${String(em + 1).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
 
+    const [ctxStart, ctxEnd] = conflictContextRange(startDate, endDate);
     const scheds = drizzleDb.select().from(schedules)
-      .where(and(gte(schedules.date, shiftDate(startDate, -1)), lte(schedules.date, shiftDate(endDate, 1)), inArray(schedules.classId, classIds)))
+      .where(and(gte(schedules.date, ctxStart), lte(schedules.date, ctxEnd), inArray(schedules.classId, classIds)))
       .orderBy(schedules.date, schedules.startTime)
       .all()
       .map(s => ({ ...s, class: classMap[s.classId] }));

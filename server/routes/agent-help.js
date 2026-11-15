@@ -218,6 +218,8 @@ router.get('/help', authMiddleware, (req, res) => {
         defaultLocationName: '默认上课地点名称',
         defaultLocationLat: '纬度',
         defaultLocationLng: '经度',
+        defaultLocationLatFor: '纬度按哪个地点名填的（坐标溯源，可选，最多200字符；PUT 改了纬度却没传它时置 null，按当时的地点名算）',
+        defaultLocationLngFor: '经度按哪个地点名填的（坐标溯源，可选，最多200字符；PUT 改了经度却没传它时置 null，按当时的地点名算）',
       },
       student: {
         name: '姓名（必填）',
@@ -321,8 +323,8 @@ router.get('/help', authMiddleware, (req, res) => {
         updateSubjects: { subjects: '字符串数组，最多100项，每项1-20字符' },
       },
       classes: {
-        create: { name: '必填，最多100字符', grade: '枚举：初一/初二/初三/高一/高二/高三/大学', subject: '必填，最多50字符', studentCount: '≥1整数', unitPrice: '可选≥0', discountAmount: '可选≥0', discountReason: '可选，最多500字符', isCompetition: '可选布尔', defaultLocationName: '可选，最多200字符', defaultLocationLat: '可选数字', defaultLocationLng: '可选数字' },
-        update: { name: '可选（不为空，最多100字符）', grade: '可选枚举', subject: '可选（不为空，最多50字符）', studentCount: '可选≥1', unitPrice: '可选≥0', discountAmount: '可选≥0', discountReason: '可选，最多500字符', isCompetition: '可选布尔', defaultLocationName: '可选，最多200字符', defaultLocationLat: '可选数字', defaultLocationLng: '可选数字' },
+        create: { name: '必填，最多100字符', grade: '枚举：初一/初二/初三/高一/高二/高三/大学', subject: '必填，最多50字符', studentCount: '≥1整数', unitPrice: '可选≥0', discountAmount: '可选≥0', discountReason: '可选，最多500字符', isCompetition: '可选布尔', defaultLocationName: '可选，最多200字符', defaultLocationLat: '可选数字', defaultLocationLng: '可选数字', defaultLocationLatFor: '可选，最多200字符', defaultLocationLngFor: '可选，最多200字符' },
+        update: { name: '可选（不为空，最多100字符）', grade: '可选枚举', subject: '可选（不为空，最多50字符）', studentCount: '可选≥1', unitPrice: '可选≥0', discountAmount: '可选≥0', discountReason: '可选，最多500字符', isCompetition: '可选布尔', defaultLocationName: '可选，最多200字符', defaultLocationLat: '可选数字', defaultLocationLng: '可选数字', defaultLocationLatFor: '可选，最多200字符', defaultLocationLngFor: '可选，最多200字符' },
         addStudent: { name: '必填，最多100字符', birthDate: '有效 YYYY 或 YYYY-MM-DD（可选，空字符串等同不填）', phone: '可选 11 位手机号', parentPhone: '可选 11 位手机号', parentName: '可选，最多100字符', note: '可选，最多2000字符' },
       },
       students: {

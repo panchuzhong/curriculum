@@ -1,7 +1,7 @@
 import { isDarkTheme, withBrowserPage } from './image-helpers.js';
 import { buildHolidayCalendar } from './holiday-calendar.js';
 import { getColor, getTextColor } from './colors.js';
-import { monthDayWindow, monthBarPct, toLocalDateStr, escapeHtml, detectConflictGroups, findDatedConflictIds, assignColumns } from './schedule-helpers.js';
+import { monthDayWindow, monthBarPct, MONTH_BAR_MIN_HEIGHT, hasDrawableTimes, toLocalDateStr, escapeHtml, detectConflictGroups, findDatedConflictIds, assignColumns } from './schedule-helpers.js';
 
 // 导出仅为可测：月历是周一开头的，getDay() 的 0=周日要映射到第 7 列，
 // 否则整个月的每一天都会落到错误的星期列上（以周日开头的月份更是整体错一周）。
@@ -43,8 +43,10 @@ function renderMonthHtml(schedulesWithClasses, year, month, { theme, checkIsHoli
     const ds = formatDate(year, month, d);
     byDate[ds] = [];
   });
+  // 时间解析不了的旧行不画（见 hasDrawableTimes）：monthBarPct 会算出 NaN，条形贴到
+  // 格子顶上；它还会把 monthDayWindow 的早/晚延伸吞掉。网页的月视图按同一条规则跳过。
   schedulesWithClasses.forEach(s => {
-    if (byDate[s.date]) byDate[s.date].push(s);
+    if (byDate[s.date] && hasDrawableTimes(s)) byDate[s.date].push(s);
   });
   Object.values(byDate).forEach(arr => arr.sort((a, b) => a.startTime.localeCompare(b.startTime)));
 
@@ -113,8 +115,11 @@ function renderMonthHtml(schedulesWithClasses, year, month, { theme, checkIsHoli
           const hasConflict = conflictIds.has(item.id);
           const { topPct, heightPct, isEarly, isLate } =
             monthBarPct(item.startTime, item.endTime, { dayStart, dayTotal });
-          const barTop = HEADER_H_CELL + topPct / 100 * CONTENT_H;
-          const barH = Math.max(6, heightPct / 100 * CONTENT_H);
+          const barH = Math.max(MONTH_BAR_MIN_HEIGHT, heightPct / 100 * CONTENT_H);
+          // 最小条高从条顶往下长，窗口末尾的零时长课（22:30~22:30）会整条掉出内容区、被格子裁掉，
+          // 所以底边不越过内容区。只有撑到最小高度的条会碰到这一步：窗口本来就装得下每节课的真实长度。
+          // 网页（MonthlySchedule.jsx）同规则。
+          const barTop = Math.min(HEADER_H_CELL + topPct / 100 * CONTENT_H, HEADER_H_CELL + CONTENT_H - barH);
           const isOvertime = isEarly || isLate;
           // 分列只看当天的分组，不看 hasConflict，理由见 MonthlySchedule.jsx 同一处。
           const widthPct = 100 / totalCols;

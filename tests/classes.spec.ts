@@ -24,6 +24,23 @@ function ensureZeroPricingClass() {
   }
 }
 
+// 坐标溯源提示用的班级：地点名和「经纬度按哪个地点填的」可以故意错配。
+// 幂等：先删同名班级再插，避免历史运行残留。
+function ensureCoordsClass(name: string, locName: string, latFor: string | null, lngFor: string | null) {
+  const teacherId = ensureTestUser();
+  const db = new Database(E2E_DB_PATH);
+  try {
+    db.prepare('DELETE FROM classes WHERE teacher_id = ? AND name = ?').run(teacherId, name);
+    db.prepare(
+      `INSERT INTO classes (teacher_id, name, grade, subject, student_count, unit_price, discount_amount, is_competition,
+        default_location_name, default_location_lat, default_location_lng, default_location_lat_for, default_location_lng_for)
+       VALUES (?, ?, '初三', '英语', 1, 100, 0, 0, ?, 31.2, 121.4, ?, ?)`
+    ).run(teacherId, name, locName, latFor, lngFor);
+  } finally {
+    db.close();
+  }
+}
+
 test.describe('班级管理', () => {
   test.use({ baseURL: 'http://127.0.0.1:5174' });
 
@@ -574,5 +591,115 @@ test.describe('被拦下的操作要说明原因', () => {
     await expect(btn).toBeDisabled();
     await input.fill('上海市徐汇区');
     await expect(btn).toBeEnabled();
+  });
+});
+
+test.describe('坐标溯源提示', () => {
+  test.use({ baseURL: 'http://127.0.0.1:5174' });
+
+  // 改地点后坐标还是旧地点的 → 提示。只手动修一个坐标时另一个仍是旧的，提示不能消
+  // （此前任一坐标的 onChange 都把整对坐标重新锚到当前地点，错配的经纬度就此可保存）。
+  test('改地点后只修一个坐标，提示不消；两个都修才消', async ({ authenticatedPage: page }) => {
+    await page.route('**/api/geocode/status', route => route.fulfill({ json: { available: true } }));
+    ensureCoordsClass('E2E溯源A班', '上海', '上海', '上海');
+    await page.goto('/classes');
+    await page.getByText('E2E溯源A班').first().click();
+    const btn = page.getByRole('button', { name: '获取经纬度' });
+    const locInput = page.locator('div.flex.gap-2').filter({ has: btn }).locator('input');
+    const hint = page.getByText(/经纬度是按/);
+    await expect(hint).toHaveCount(0);
+    await locInput.fill('北京');
+    await expect(hint).toContainText('上海');
+    await page.getByPlaceholder('如 31.2').fill('39.9');
+    await expect(hint).toContainText('上海');
+    await page.getByPlaceholder('如 121.4').fill('116.4');
+    await expect(hint).toHaveCount(0);
+  });
+
+  // 来源持久化在班级上：之前保存过的错配坐标，重开编辑表单仍要提示
+  // （此前 coordsFor 每次从当前地点名重新初始化，忽略一次提示后就永久不再提醒）。
+  test('保存过的错配坐标，重开编辑表单仍提示', async ({ authenticatedPage: page }) => {
+    await page.route('**/api/geocode/status', route => route.fulfill({ json: { available: true } }));
+    ensureCoordsClass('E2E溯源B班', '北京', '上海', '上海');
+    await page.goto('/classes');
+    await page.getByText('E2E溯源B班').first().click();
+    await expect(page.getByText(/经纬度是按/)).toContainText('上海');
+  });
+
+  // 库里没记来源（NULL：加列之前存的行、旧备份、没带来源的 API 写入）的班按载入时的地点名算，
+  // 改地点照样提示。当成「来源未知、不提示」的话，升级前建的班改地点时坐标既不清也不提示。
+  test('没记来源的旧班改地点也提示', async ({ authenticatedPage: page }) => {
+    await page.route('**/api/geocode/status', route => route.fulfill({ json: { available: true } }));
+    ensureCoordsClass('E2E溯源C班', '上海', null, null);
+    await page.goto('/classes');
+    await page.getByText('E2E溯源C班').first().click();
+    const btn = page.getByRole('button', { name: '获取经纬度' });
+    const locInput = page.locator('div.flex.gap-2').filter({ has: btn }).locator('input');
+    const hint = page.getByText(/经纬度是按/);
+    await expect(locInput).toHaveValue('上海');
+    expect(await hint.count()).toBe(0);
+    await locInput.fill('北京');
+    await expect(hint).toContainText('上海');
+  });
+
+  // 同一个地方改了个名（补楼层、改错字）：提示要能点掉，而且点掉这件事要存下来，
+  // 否则每次打开都提示，只能把两个坐标原样重敲一遍。查库而不是只看重开后没提示：
+  // 来源要是没送到服务端、库里是 NULL，载入时也会按当前地点名补上，重开同样不提示。
+  test('同一地点改名后点「坐标不用改」，保存后重开不再提示', async ({ authenticatedPage: page }) => {
+    await page.route('**/api/geocode/status', route => route.fulfill({ json: { available: true } }));
+    ensureCoordsClass('E2E溯源E班', '上海', '上海', '上海');
+    await page.goto('/classes');
+    await page.getByText('E2E溯源E班').first().click();
+    const btn = page.getByRole('button', { name: '获取经纬度' });
+    const locInput = page.locator('div.flex.gap-2').filter({ has: btn }).locator('input');
+    const hint = page.getByText(/经纬度是按/);
+    await locInput.fill('上海3楼');
+    await expect(hint).toContainText('上海');
+    await page.getByRole('button', { name: '坐标不用改' }).click();
+    await expect(hint).toHaveCount(0);
+    await expect(page.getByPlaceholder('如 31.2')).toHaveValue('31.2');
+    await expect(page.getByPlaceholder('如 121.4')).toHaveValue('121.4');
+    const put = page.waitForResponse(r => r.request().method() === 'PUT' && /\/api\/classes\/\d+$/.test(r.url()));
+    await page.getByRole('button', { name: '保存', exact: true }).click();
+    expect((await put).status()).toBe(200);
+
+    const db = new Database(E2E_DB_PATH, { readonly: true });
+    try {
+      expect(db.prepare(
+        `SELECT default_location_name AS name, default_location_lat AS lat, default_location_lng AS lng,
+                default_location_lat_for AS latFor, default_location_lng_for AS lngFor
+         FROM classes WHERE teacher_id = ? AND name = ?`
+      ).get(ensureTestUser(), 'E2E溯源E班')).toEqual({ name: '上海3楼', lat: 31.2, lng: 121.4, latFor: '上海3楼', lngFor: '上海3楼' });
+    } finally { db.close(); }
+
+    await page.reload();
+    await page.getByText('E2E溯源E班').first().click();
+    await expect(locInput).toHaveValue('上海3楼');
+    expect(await hint.count()).toBe(0);
+  });
+
+  // 地点名清空了，按原地点填的坐标没有归属：提示说清楚，保存时一并清掉，
+  // 不然之后新建的排课会继承一对没有地点名的坐标（「获取经纬度」此时是灰的，提示不能叫人去重新获取）。
+  test('清空地点后保存，按原地点填的坐标一并清掉', async ({ authenticatedPage: page }) => {
+    await page.route('**/api/geocode/status', route => route.fulfill({ json: { available: true } }));
+    let saved: any;
+    await page.route('**/api/classes/*', async route => {
+      if (route.request().method() !== 'PUT') { await route.fallback(); return; }
+      saved = route.request().postDataJSON();
+      await route.fulfill({ json: { ...saved } });
+    });
+    ensureCoordsClass('E2E溯源D班', '上海', '上海', '上海');
+    await page.goto('/classes');
+    await page.getByText('E2E溯源D班').first().click();
+    const btn = page.getByRole('button', { name: '获取经纬度' });
+    const locInput = page.locator('div.flex.gap-2').filter({ has: btn }).locator('input');
+    await locInput.fill('');
+    await expect(page.getByText('地点已清空，保存时会一并清掉按「上海」填的经纬度')).toBeVisible();
+    await page.getByRole('button', { name: '保存', exact: true }).click();
+    await expect.poll(() => saved).toBeTruthy();
+    expect(saved).toMatchObject({
+      defaultLocationName: '', defaultLocationLat: '', defaultLocationLng: '',
+      defaultLocationLatFor: '', defaultLocationLngFor: '',
+    });
   });
 });

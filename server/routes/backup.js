@@ -238,7 +238,7 @@ router.post('/restore', express.json({ limit: '50mb' }), (req, res) => {
     return out;
   };
 
-  const classFields = ['id', 'teacherId', 'name', 'grade', 'subject', 'studentCount', 'unitPrice', 'discountAmount', 'discountReason', 'isCompetition', 'defaultLocationName', 'defaultLocationLat', 'defaultLocationLng', 'deleted', 'createdAt'];
+  const classFields = ['id', 'teacherId', 'name', 'grade', 'subject', 'studentCount', 'unitPrice', 'discountAmount', 'discountReason', 'isCompetition', 'defaultLocationName', 'defaultLocationLat', 'defaultLocationLng', 'defaultLocationLatFor', 'defaultLocationLngFor', 'deleted', 'createdAt'];
   const studentFields = ['id', 'teacherId', 'name', 'birthDate', 'phone', 'parentName', 'parentPhone', 'note', 'createdAt'];
   const scheduleFields = ['id', 'classId', 'date', 'startTime', 'endTime', 'durationBilling', 'locationName', 'locationLat', 'locationLng', 'createdAt'];
   const semesterFields = ['id', 'teacherId', 'name', 'type', 'startDate', 'endDate', 'createdAt'];
@@ -264,6 +264,9 @@ router.post('/restore', express.json({ limit: '50mb' }), (req, res) => {
   // 这份备份里，或者日期越界/非法——这两种行就算写进去也是死数据。
   // 其它残缺列（如 schedules.startTime 缺失）仍会让事务回滚成 500：那是文件坏了，
   // 敲掉一批行悄悄写下去不如整单报错、原数据原封不动。
+  // 时间写错（'1030'、全角冒号）或零时长的排课故意照原样写回，不算死数据：排课历史、
+  // 年视图、报表都算它，丢了会让报表收入在一次往返后变掉（同下面 classPricing 不丢的道理）；
+  // 画不出来的由 hasDrawableTimes 挡在周/月视图和 PNG 之外。
   const skipped = {};
   const dropRows = (table, keep) => {
     const before = restoreData[table].length;

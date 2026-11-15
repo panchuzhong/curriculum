@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import request from 'supertest';
 import { setupApp, makeUser, auth } from './route-helpers.js';
 import { clearSemesterCache } from '../services/schedule-helpers.js';
@@ -28,6 +28,15 @@ describe('built-in holiday data sanity', () => {
 });
 
 describe('batch create holiday precedence (per-year DB override)', () => {
+  // 批量排课把学期起点夹到今天（semesterStart = max(today, startDate)），写死
+  // 2026-10 的学期一旦整体过期就一节都排不出来，用例随真实日期腐烂。把时钟钉在
+  // 学期开始之前：只 fake Date，supertest 依赖的真实计时器不受影响。
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date('2026-09-01T12:00:00'));
+  });
+  afterEach(() => { vi.useRealTimers(); });
+
   it('ignores built-in holidays for a year once the teacher has ANY holiday record in it', async () => {
     const { holidays, semesters } = await import('../db/schema.js');
     // One unrelated 2026 record is enough to make DB data authoritative for 2026

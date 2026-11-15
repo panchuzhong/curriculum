@@ -832,6 +832,10 @@ describe('还原时的日期校验', () => {
     // getDefaultsFromSemesters 自己会把这种行筛掉，不靠还原把它删掉。
     ['只有年份的学期', { semesters: [{ id: 1, name: '年份', type: 'spring', startDate: '2026', endDate: '2026' }] }],
     ['越界的定价', { classPricing: [{ id: 1, classId: 10, studentCount: 1, unitPrice: 900, effectiveFrom: '0261-01-01' }] }],
+    // 时间写错或零时长的排课也不丢：排课历史、年视图、报表都算它（durationBilling 进收入），
+    // 丢了同样会让一次往返改掉报表；画不出来的由 hasDrawableTimes 挡在周/月视图和 PNG 外面。
+    ['时间解析不了的排课', { schedules: [{ id: 20, classId: 10, date: '2026-05-01', startTime: '09:30', endTime: '10：30', durationBilling: 60 }] }],
+    ['零时长的排课', { schedules: [{ id: 20, classId: 10, date: '2026-05-01', startTime: '09:30', endTime: '09:30', durationBilling: 0 }] }],
   ])('%s 照常还原，不计入 skipped', async (_label, overrides) => {
     const res = await request(app).post('/api/backup/restore').set(auth(token)).send(baseBackup(overrides));
     expect(res.status).toBe(200);
@@ -861,6 +865,7 @@ describe('导出-还原的字段保真', () => {
       unitPrice: 880.5, discountAmount: 60.25, discountReason: '老生续费',
       isCompetition: true, defaultLocationName: '一号教室',
       defaultLocationLat: 31.2304, defaultLocationLng: 121.4737,
+      defaultLocationLatFor: '一号教室', defaultLocationLngFor: '一号教室',
       deleted: true, createdAt: '2026-01-02 03:04:05',
     }).run();
     const classId = Number(cls.lastInsertRowid);

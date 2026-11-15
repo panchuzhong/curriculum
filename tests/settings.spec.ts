@@ -74,6 +74,38 @@ test.describe('设置页面', () => {
     expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(FAKE_KEY);
   });
 
+  // 和「已保存」同一类问题：两秒内连点两次，第一次的计时器不能提前收走第二次的「已复制」。
+  // 页面时钟由测试来推，不真睡（理由见 review-fixes.spec.ts 里「已保存」那条）。
+  test('连续两次复制，后一次的「已复制」不会被前一次的计时器提前收走', async ({ authenticatedPage: page }) => {
+    await page.context().grantPermissions(['clipboard-read', 'clipboard-write']);
+    // 第二次点击时按钮本来就显示「已复制」，看按钮等不到第二次复制落地；推时钟抢在它前面的话，
+    // 第二次的计时器从更晚的时刻起算，用例就测不到想测的那一刻。所以数写进剪贴板的次数。
+    await page.addInitScript(() => {
+      const write = Clipboard.prototype.writeText;
+      (window as any).__writes = 0;
+      Clipboard.prototype.writeText = async function (text: string) {
+        await write.call(this, text);
+        (window as any).__writes++;
+      };
+    });
+    await page.clock.install();
+    await regenerateFakeKey(page);
+    const copied = page.getByRole('button', { name: '已复制' });
+    await page.getByRole('button', { name: '复制' }).click();
+    await expect(copied).toBeVisible();
+    await page.clock.pauseAt(await page.evaluate(() => Date.now()) + 200);
+    await page.clock.runFor(1500);
+    await copied.click();
+    await expect.poll(() => page.evaluate(() => (window as any).__writes)).toBe(2);
+    await expect(copied).toBeVisible();
+    // 第一次的 2 秒已经到点（没清计时器的话已变回「复制」），第二次的还剩一秒多。
+    await page.clock.runFor(800);
+    await expect(copied).toBeVisible();
+    // 第二次的 2 秒到点后照常收起。
+    await page.clock.runFor(1300);
+    await expect(copied).toHaveCount(0);
+  });
+
   test('复制没成功时不显示「已复制」', async ({ authenticatedPage: page }) => {
     // execCommand 失败时多半返回 false 而不是抛错；原先只看有没有抛错，于是在
     // 什么都没复制的情况下也会显示「已复制」。

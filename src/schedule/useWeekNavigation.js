@@ -1,8 +1,9 @@
-import { useState, useEffect, useLayoutEffect, useRef } from 'react';
+import { useState, useEffect, useLayoutEffect, useRef, useCallback } from 'react';
 import { flushSync } from 'react-dom';
 import { api } from '../api';
 import { parseDateStr, todayStr, getMonday, addDays, isUsableDate, clampDate } from '../utils/date';
 import { setViewDate } from '../utils/viewDate';
+import { conflictContextRange } from '../utils/schedule';
 import useSwipeNavigation from '../hooks/useSwipeNavigation';
 import useBoundWarning from '../hooks/useBoundWarning';
 
@@ -34,12 +35,13 @@ export function dateParam(value) {
   return isUsableDate(value) ? value : null;
 }
 
-// 前后各多取 BUFFER 天做缓冲，两头再各多一天：缓冲最外侧那两列滑进屏幕时，上面的课
-// 得和屏外相邻一天的课比，才标得出跨午夜的冲突（多出来的这两天不画，ScheduleGrid
-// 只按 dates 取课）。贴着上下限时这几天会越界。夹的是请求参数；这些列在屏外，
+// 前后各多取 BUFFER 天做缓冲；两头再各多一天（conflictContextRange）：缓冲最外侧那两列
+// 滑进屏幕时，上面的课得和屏外相邻一天的课比，才标得出跨午夜的冲突（多出来的这两天不画，
+// ScheduleGrid 只按 dates 取课）。贴着上下限时这几天会越界，夹的是请求参数；这些列在屏外，
 // 不影响看得见的那一段。
 export function fetchRange(dates) {
-  return [clampDate(addDays(dates[0], -1)), clampDate(addDays(dates[TOTAL_COLS - 1], 1))];
+  const [start, end] = conflictContextRange(dates[0], dates[TOTAL_COLS - 1]);
+  return [clampDate(start), clampDate(end)];
 }
 
 // 约束的是首列，不是整个可见窗口。一个 7 列的网格无法同时做到：整段不越界、
@@ -97,7 +99,17 @@ export default function useWeekNavigation({ searchParams, setSearchParams }) {
     }
   }, [allDates]);
 
+  // 写入之后（保存、删除、批量操作都走 reload）新数据回来之前，allSchedules 里还是改动之前的行。
+  // 这时点开一节课，弹窗会拿旧值回填，再保存一次就把刚做的修改写回去。翻页不算：缓冲里已有的课
+  // 仍是最新的，照常能点（见 CLAUDE.md 的 Loading 一条）。在 allSchedules 真换掉时才算刷新完：
+  // 手势中途回来的数据要等松手才落地（pendingSchedulesRef），在那之前屏上的还是旧行。
+  // 这个 effect 得排在下面首次 reload 的 effect 之前，挂载时才不会把刚置上的标记又清掉。
+  const staleRef = useRef(false);
+  useEffect(() => { staleRef.current = false; }, [allSchedules]);
+  const isStale = useCallback(() => staleRef.current, []);
+
   function reload() {
+    staleRef.current = true;
     loadSchedules(getAllDates(centerRef.current));
   }
 
@@ -282,6 +294,6 @@ export default function useWeekNavigation({ searchParams, setSearchParams }) {
 
   return {
     gridRef, weekStart, allDates, allSchedules, isMobile, visibleDays, loading, loadError,
-    navigateTo, navigateByDays, goToThisWeek, reload,
+    navigateTo, navigateByDays, goToThisWeek, reload, isStale,
   };
 }

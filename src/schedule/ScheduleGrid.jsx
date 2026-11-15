@@ -13,7 +13,7 @@ const TOP_OFFSET_MIN = 5;
 const BOTTOM_OFFSET_MIN = 30;
 const HEADER_HEIGHT = 52;
 
-import { toMin, findConflictGroups, findDatedConflictIds, assignColumns } from '../utils/schedule';
+import { toMin, duration, hasDrawableTimes, findConflictGroups, findDatedConflictIds, assignColumns } from '../utils/schedule';
 
 function useTouchTime() {
   const ref = useRef(0);
@@ -88,6 +88,10 @@ export default function ScheduleGrid({ dates, schedules, visibleDays = 7, weekSt
     const bd = {};
     dates.forEach(d => bd[d] = []);
     ss.forEach(s => {
+      // 时间解析不了的旧行不参与分列（见 hasDrawableTimes）：它带着有限的 startTime
+      // 挤进真课的小组，把 groupEnd 写成 NaN，后面的真课全被踢成单独一组——真正重叠的课
+      // 反而叠画在一起。
+      if (!hasDrawableTimes(s)) return;
       if (bd[s.date] !== undefined) bd[s.date].push(s);
     });
     Object.values(bd).forEach(arr => arr.sort((a, b) => a.startTime.localeCompare(b.startTime)));
@@ -107,12 +111,11 @@ export default function ScheduleGrid({ dates, schedules, visibleDays = 7, weekSt
     let sh = DEFAULT_START;
     let latest = DEFAULT_END * 60;
     ss.forEach(s => {
-      if (!visibleDateSet.has(s.date)) return;
+      // 时间轴只为画得出来的课撑开（和出图的 image-gen.js 一样只看可画的行）。
+      if (!visibleDateSet.has(s.date) || !hasDrawableTimes(s)) return;
       const sh2 = parseInt(s.startTime.split(':')[0]);
       if (sh2 < sh) sh = sh2;
-      const eMin = toMin(s.endTime);
-      const sMin = toMin(s.startTime);
-      const actualEnd = eMin < sMin ? eMin + 24 * 60 : eMin;
+      const actualEnd = toMin(s.startTime) + duration(s.startTime, s.endTime);
       if (actualEnd > latest) latest = actualEnd;
     });
     sh = Math.max(0, Math.min(sh, DEFAULT_START));

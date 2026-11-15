@@ -116,6 +116,14 @@ const migrations = [
       addColumn(db, 'teachers', 'pwd_version INTEGER NOT NULL DEFAULT 0');
     },
   },
+  {
+    version: 5,
+    name: 'add_class_location_coords_for',
+    up(db) {
+      addColumn(db, 'classes', 'default_location_lat_for TEXT');
+      addColumn(db, 'classes', 'default_location_lng_for TEXT');
+    },
+  },
 ];
 
 export function initDb() {
@@ -150,6 +158,8 @@ export function initDb() {
       default_location_name TEXT,
       default_location_lat REAL,
       default_location_lng REAL,
+      default_location_lat_for TEXT,
+      default_location_lng_for TEXT,
       deleted INTEGER DEFAULT 0,
       created_at TEXT DEFAULT CURRENT_TIMESTAMP
     );

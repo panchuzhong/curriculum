@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { toMin, duration, calcDurationBilling, resolveRange, toCSV, detectConflictGroups, detectDatedConflictGroups, schedulesOverlap, toLocalDateStr, buildPricingLookup, escapeHtml, scheduleBounds } from '../services/schedule-helpers.js';
+import { toMin, duration, calcDurationBilling, resolveRange, toCSV, detectConflictGroups, detectDatedConflictGroups, schedulesOverlap, datedSpan, toLocalDateStr, buildPricingLookup, escapeHtml, scheduleBounds } from '../services/schedule-helpers.js';
 
 // ── toMin ──
 
@@ -441,5 +441,35 @@ describe('duration', () => {
     ['08:00', '08:00', 0],     // 零长度：不是整整一天
   ])('%s ~ %s = %i 分钟', (a, b, expected) => {
     expect(duration(a, b)).toBe(expected);
+  });
+});
+
+// 零时长的旧行（只有还原备份塞得进来）是空区间：保存时的冲突警告（schedulesOverlap）、
+// 标红和 GET /conflicts（detectDatedConflictGroups）、空闲时段（datedSpan）必须同一个说法。
+// 夹在另一节课中间的那种最容易分叉：只比 aStart < bEnd && bStart < aEnd 时它算「重叠」。
+describe('零时长的课和谁都不重叠，三处同一条规则', () => {
+  const s = (id, date, startTime, endTime) => ({ id, date, startTime, endTime });
+  const host = s(1, '2026-10-05', '09:00', '11:00');
+
+  it.each([
+    ['夹在中间', s(9, '2026-10-05', '09:30', '09:30')],
+    ['贴着开头', s(9, '2026-10-05', '09:00', '09:00')],
+    ['贴着结尾', s(9, '2026-10-05', '11:00', '11:00')],
+  ])('%s', (_label, zero) => {
+    expect(schedulesOverlap(host, zero)).toBe(false);
+    expect(schedulesOverlap(zero, host)).toBe(false);
+    expect(detectDatedConflictGroups([host, zero]).map(g => g.length)).toEqual([1]);
+    expect(datedSpan(zero)).toBeNull();
+  });
+
+  it('正常的课照常算重叠（守卫只拦空区间）', () => {
+    expect(schedulesOverlap(host, s(2, '2026-10-05', '10:59', '11:30'))).toBe(true);
+    expect(datedSpan(host)).toEqual(scheduleBounds(host));
+  });
+
+  it('解析不了的行 datedSpan 给 null', () => {
+    expect(datedSpan(s(9, '2026-10-1', '09:00', '10:00'))).toBeNull();
+    expect(datedSpan(s(9, '2026-10-01T00:00:00', '09:00', '10:00'))).toBeNull();
+    expect(datedSpan(s(9, '2026-10-01', '', '10:00'))).toBeNull();
   });
 });

@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import { api, setToken } from '../api';
 import PricingTierManager from '../pricing/PricingTierManager';
 import HolidayManager from './HolidayManager';
@@ -18,9 +18,15 @@ function SubjectSection() {
   const [loadError, setLoadError] = useState('');
   const [loadAttempt, setLoadAttempt] = useState(0);
   const [saving, setSaving] = useState(false);
-  // 只留最近一次保存的计时器：不清掉的话，前一次保存的三秒会提前收走后一次的「已保存」。
-  const savedTimer = useRef(null);
-  useEffect(() => () => clearTimeout(savedTimer.current), []);
+  // 「已保存」三秒后自动收起，计时器挂在 [saved] 上：每次保存完成 false→true 重新计时，
+  // 前一次的随 cleanup 清掉，不会提前收走后一次的提示；改学科（下面置 false）和卸载同样清掉。
+  // 保存请求还在路上时卸载的话，续体里的 setSaved(true) 落在已卸载的组件上、不再触发 effect，
+  // 也就没有「卸载清理跑完之后才武装、谁都清不掉」的计时器。
+  useEffect(() => {
+    if (!saved) return;
+    const t = setTimeout(() => setSaved(false), 3000);
+    return () => clearTimeout(t);
+  }, [saved]);
 
   useEffect(() => {
     let cancelled = false;
@@ -70,13 +76,12 @@ function SubjectSection() {
   }
 
   async function save() {
+    if (loading || loadError || saving) return;
     setSaving(true);
     setSaved(false);
     try {
       await api.updateSubjects(subjects);
       setSaved(true);
-      clearTimeout(savedTimer.current);
-      savedTimer.current = setTimeout(() => setSaved(false), 3000);
     } catch (err) {
       toast('保存失败: ' + (err.message || '未知错误'));
     } finally {
@@ -160,6 +165,13 @@ function ApiKeySection() {
   const [profile, setProfile] = useState(null);
   const [copied, setCopied] = useState(false);
   const [fullKey, setFullKey] = useState(null);
+  // 「已复制」两秒后自动收起，和上面「已保存」同一个做法：计时器挂在 [copied] 上，每次复制
+  // 先置 false 再置 true 重新计时，前一次的随 cleanup 清掉，不会提前收走后一次的提示。
+  useEffect(() => {
+    if (!copied) return;
+    const t = setTimeout(() => setCopied(false), 2000);
+    return () => clearTimeout(t);
+  }, [copied]);
 
   useEffect(() => {
     api.getProfile().then(p => { setProfile(p); setFullKey(null); }).catch(e => toast(e.message || '加载个人信息失败'));
@@ -179,9 +191,9 @@ function ApiKeySection() {
 
   async function copyKey() {
     if (!displayKey) return;
+    setCopied(false);
     if (await copyText(fullKey || displayKey)) {
       setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
     } else {
       // 不能什么都不说：刚重新生成过、旧 Key 已经作废，剪贴板里留着的可能正是旧 Key。
       toast('复制失败，请手动选中上面的 Key 复制');

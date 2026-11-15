@@ -32,6 +32,8 @@ export function createTestDb() {
       default_location_name TEXT,
       default_location_lat REAL,
       default_location_lng REAL,
+      default_location_lat_for TEXT,
+      default_location_lng_for TEXT,
       deleted INTEGER DEFAULT 0,
       created_at TEXT DEFAULT CURRENT_TIMESTAMP
     );

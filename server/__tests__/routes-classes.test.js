@@ -115,6 +115,81 @@ describe('POST /api/classes', () => {
   });
 });
 
+// 坐标溯源：经纬度各记「按哪个地点名填的」，改地点后靠它判断提示是否过期。
+// 逐字段持久化，只改一个坐标时另一个的来源不动（前端 staleCoordNames 据此继续提示）。
+describe('班级坐标溯源（defaultLocationLatFor/LngFor）', () => {
+  it('建班时存入并返回两个来源地点名', async () => {
+    const res = await request(app).post('/api/classes').set(auth(token))
+      .send({ name: '溯源班', grade: '高一', subject: '数学', studentCount: 1,
+        defaultLocationName: '上海', defaultLocationLat: 31.2, defaultLocationLng: 121.4,
+        defaultLocationLatFor: '上海', defaultLocationLngFor: '上海' });
+    expect(res.status).toBe(200);
+    expect(res.body.defaultLocationLatFor).toBe('上海');
+    expect(res.body.defaultLocationLngFor).toBe('上海');
+  });
+
+  it('改班时能单独更新一个来源（只改了纬度）', async () => {
+    const { body: { id } } = await request(app).post('/api/classes').set(auth(token))
+      .send({ name: '溯源班2', grade: '高一', subject: '数学', studentCount: 1,
+        defaultLocationName: '上海', defaultLocationLat: 31.2, defaultLocationLng: 121.4,
+        defaultLocationLatFor: '上海', defaultLocationLngFor: '上海' });
+    const res = await request(app).put(`/api/classes/${id}`).set(auth(token))
+      .send({ defaultLocationName: '北京', defaultLocationLat: 39.9, defaultLocationLatFor: '北京' });
+    expect(res.status).toBe(200);
+    expect(res.body.defaultLocationLatFor).toBe('北京');
+    expect(res.body.defaultLocationLngFor).toBe('上海');
+  });
+
+  it('没传来源时存 null（表单按载入时的地点名推定，见 locationCoords.withCoordSources）', async () => {
+    const res = await request(app).post('/api/classes').set(auth(token))
+      .send({ name: '旧班', grade: '高一', subject: '数学', studentCount: 1,
+        defaultLocationName: '上海', defaultLocationLat: 31.2, defaultLocationLng: 121.4 });
+    expect(res.status).toBe(200);
+    expect(res.body.defaultLocationLatFor).toBeNull();
+    expect(res.body.defaultLocationLngFor).toBeNull();
+  });
+
+  // 表单保存时两个来源都会带上：改班这一半的白名单和校验也得钉住（建班那一半上面钉了）。
+  it('改班时两个来源都能写，校验和建班一样', async () => {
+    const { body: { id } } = await request(app).post('/api/classes').set(auth(token))
+      .send({ name: '溯源班5', grade: '高一', subject: '数学', studentCount: 1 });
+    const ok = await request(app).put(`/api/classes/${id}`).set(auth(token))
+      .send({ defaultLocationName: '北京', defaultLocationLat: 39.9, defaultLocationLng: 116.4,
+        defaultLocationLatFor: '北京', defaultLocationLngFor: '北京' });
+    expect(ok.status).toBe(200);
+    expect(ok.body).toMatchObject({ defaultLocationLatFor: '北京', defaultLocationLngFor: '北京' });
+    for (const patch of [{ defaultLocationLatFor: ['北京'] }, { defaultLocationLngFor: 'x'.repeat(201) }]) {
+      const bad = await request(app).put(`/api/classes/${id}`).set(auth(token)).send(patch);
+      expect(bad.status).toBe(400);
+    }
+  });
+
+  // API 客户端常只改坐标、不带来源：留着旧来源的话，表单一打开就会说这对新坐标是按旧地点填的。
+  it('改了坐标却没带来源时，那一项的来源置 null；只改地点名时来源不动', async () => {
+    const { body: { id } } = await request(app).post('/api/classes').set(auth(token))
+      .send({ name: '溯源班4', grade: '高一', subject: '数学', studentCount: 1,
+        defaultLocationName: '上海', defaultLocationLat: 31.2, defaultLocationLng: 121.4,
+        defaultLocationLatFor: '上海', defaultLocationLngFor: '上海' });
+    const renamed = await request(app).put(`/api/classes/${id}`).set(auth(token))
+      .send({ defaultLocationName: '北京' });
+    expect(renamed.body).toMatchObject({ defaultLocationLatFor: '上海', defaultLocationLngFor: '上海' });
+    const moved = await request(app).put(`/api/classes/${id}`).set(auth(token))
+      .send({ defaultLocationLat: 39.9 });
+    expect(moved.status).toBe(200);
+    expect(moved.body.defaultLocationLatFor).toBeNull();
+    expect(moved.body.defaultLocationLngFor).toBe('上海');
+  });
+
+  it.each([
+    ['数组', { defaultLocationLatFor: ['上海'] }],
+    ['超长', { defaultLocationLngFor: 'x'.repeat(201) }],
+  ])('建班时来源字段%s被拒', async (_label, patch) => {
+    const res = await request(app).post('/api/classes').set(auth(token))
+      .send({ name: '溯源班3', grade: '高一', subject: '数学', studentCount: 1, ...patch });
+    expect(res.status).toBe(400);
+  });
+});
+
 describe('GET /api/classes', () => {
   it('lists classes for teacher', async () => {
     await request(app).post('/api/classes').set(auth(token))

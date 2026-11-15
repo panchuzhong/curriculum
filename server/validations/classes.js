@@ -30,6 +30,8 @@ export const validateCreateClass = [
   body('defaultLocationName').optional({ values: 'null' }).isString().withMessage('默认地点最多200个字符').bail().isLength({ max: 200 }).withMessage('默认地点最多200个字符'),
   body('defaultLocationLat').optional({ checkFalsy: true }).isFloat({ min: -90, max: 90 }).withMessage('纬度须为 -90 到 90'),
   body('defaultLocationLng').optional({ checkFalsy: true }).isFloat({ min: -180, max: 180 }).withMessage('经度须为 -180 到 180'),
+  body('defaultLocationLatFor').optional({ values: 'null' }).isString().withMessage('坐标来源地点最多200个字符').bail().isLength({ max: 200 }).withMessage('坐标来源地点最多200个字符'),
+  body('defaultLocationLngFor').optional({ values: 'null' }).isString().withMessage('坐标来源地点最多200个字符').bail().isLength({ max: 200 }).withMessage('坐标来源地点最多200个字符'),
 ];
 
 export const validateUpdateClass = [
@@ -45,6 +47,8 @@ export const validateUpdateClass = [
   body('defaultLocationName').optional({ values: 'null' }).isString().withMessage('默认地点最多200个字符').bail().isLength({ max: 200 }).withMessage('默认地点最多200个字符'),
   body('defaultLocationLat').optional({ checkFalsy: true }).isFloat({ min: -90, max: 90 }).withMessage('纬度须为 -90 到 90'),
   body('defaultLocationLng').optional({ checkFalsy: true }).isFloat({ min: -180, max: 180 }).withMessage('经度须为 -180 到 180'),
+  body('defaultLocationLatFor').optional({ values: 'null' }).isString().withMessage('坐标来源地点最多200个字符').bail().isLength({ max: 200 }).withMessage('坐标来源地点最多200个字符'),
+  body('defaultLocationLngFor').optional({ values: 'null' }).isString().withMessage('坐标来源地点最多200个字符').bail().isLength({ max: 200 }).withMessage('坐标来源地点最多200个字符'),
 ];
 
 export const validateCreatePricing = [

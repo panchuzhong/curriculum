@@ -8,7 +8,7 @@ import handle from '../validations/handle.js';
 import { validateCreateSchedule, validateBatchCreate, validateBatchUpdate, validateBatchDelete, validateUpdateSchedule } from '../validations/schedules.js';
 import { isCalendarDate, isValidDate, isValidScheduleEndTime, isValidScheduleSpan, isValidTime, normalizeScheduleEndTime, DATE_RANGE_SUFFIX } from '../validations/dates.js';
 import { logAudit } from '../services/audit.js';
-import { toLocalDateStr, shiftDate, toMin, resolveRange, toCSV, detectDatedConflictGroups, getScheduleWithClass, calcDurationBilling, getTeacherSemesters, buildPricingLookup, scheduleBounds, schedulesOverlap } from '../services/schedule-helpers.js';
+import { toLocalDateStr, shiftDate, conflictContextRange, toMin, resolveRange, toCSV, detectDatedConflictGroups, getScheduleWithClass, calcDurationBilling, getTeacherSemesters, buildPricingLookup, scheduleBounds, schedulesOverlap, datedSpan } from '../services/schedule-helpers.js';
 import { clearReportCache, getReportCache, setReportCache } from '../services/report-cache.js';
 import { students as studentsTable } from '../db/schema.js';
 
@@ -94,7 +94,7 @@ function findConflicts(finals, teacherId) {
     .where(and(eq(classes.teacherId, teacherId), eq(classes.deleted, false))).all();
   if (teacherClasses.length === 0) return [];
   const classMap = new Map(teacherClasses.map(c => [c.id, c]));
-  const neighbours = (date) => [shiftDate(date, -1), date, shiftDate(date, 1)];
+  const neighbours = (date) => { const [prev, next] = conflictContextRange(date, date); return [prev, date, next]; };
 
   const byDate = new Map();
   const add = (row) => {
@@ -1047,10 +1047,14 @@ function computeFreeSlots(daySchedules, dayStart, dayEnd, dateStr) {
   const startMin = toMin(dayStart);
   const endMin = toMin(dayEnd);
   const targetDayStart = scheduleBounds({ date: dateStr, startTime: '00:00', endTime: '00:01' })[0];
-  const busyRanges = daySchedules.map(schedule => {
-    const [start, end] = scheduleBounds(schedule);
-    return { start: start - targetDayStart, end: end - targetDayStart };
-  }).sort((a, b) => a.start - b.start);
+  // 参与的行和冲突扫描同一条规则（datedSpan）：解析不了的行算出 NaN，会把游标变成 NaN，
+  // 之后每段比较都是 false，整天被报成已约满；零时长是空区间，不占时间，不能把空闲切成两段。
+  const busyRanges = [];
+  for (const schedule of daySchedules) {
+    const span = datedSpan(schedule);
+    if (span) busyRanges.push({ start: span[0] - targetDayStart, end: span[1] - targetDayStart });
+  }
+  busyRanges.sort((a, b) => a.start - b.start);
   const freeSlots = [];
   let cursor = startMin;
 
@@ -1168,8 +1172,9 @@ router.get('/conflicts', (req, res) => {
   const classMap = {};
   teacherClasses.forEach(c => classMap[c.id] = c);
 
+  const [ctxStart, ctxEnd] = conflictContextRange(start, end);
   const allSchedules = drizzleDb.select().from(schedules)
-    .where(and(gte(schedules.date, shiftDate(start, -1)), lte(schedules.date, shiftDate(end, 1)), inArray(schedules.classId, classIds)))
+    .where(and(gte(schedules.date, ctxStart), lte(schedules.date, ctxEnd), inArray(schedules.classId, classIds)))
     .all()
     .map(s => ({ ...s, class: classMap[s.classId] || null }));
 

@@ -1,6 +1,6 @@
 import { isDarkTheme, withBrowserPage } from './image-helpers.js';
 import { buildHolidayCalendar } from './holiday-calendar.js';
-import { toMin, blockGeometry, detectConflictGroups, findDatedConflictIds, assignColumns, toLocalDateStr, escapeHtml } from './schedule-helpers.js';
+import { toMin, duration, hasDrawableTimes, blockGeometry, detectConflictGroups, findDatedConflictIds, assignColumns, toLocalDateStr, escapeHtml } from './schedule-helpers.js';
 import { getColor, getTextColor } from './colors.js';
 
 // ── Schedule helpers ─────────────────────────────────────────────
@@ -31,8 +31,10 @@ export async function generateScheduleImage(schedulesWithClasses, startDate, end
 
   const byDate = {};
   dates.forEach(d => byDate[d] = []);
+  // 时间解析不了的旧行不画（见 hasDrawableTimes）：blockGeometry 会算出 NaN，
+  // 画出一条贴在顶上的野块。周视图按同一条规则跳过这种行。
   schedulesWithClasses.forEach(s => {
-    if (byDate[s.date]) byDate[s.date].push(s);
+    if (byDate[s.date] && hasDrawableTimes(s)) byDate[s.date].push(s);
   });
 
   const DEFAULT_START = 8;
@@ -44,9 +46,7 @@ export async function generateScheduleImage(schedulesWithClasses, startDate, end
   Object.values(byDate).flat().forEach(s => {
     const sh = parseInt(s.startTime.split(':')[0]);
     if (sh < startHour) startHour = sh;
-    const eMin = toMin(s.endTime);
-    const sMin = toMin(s.startTime);
-    const actualEnd = eMin < sMin ? eMin + 24 * 60 : eMin;
+    const actualEnd = toMin(s.startTime) + duration(s.startTime, s.endTime);
     if (actualEnd > latestEndMin) latestEndMin = actualEnd;
   });
   startHour = Math.max(0, Math.min(startHour, DEFAULT_START));

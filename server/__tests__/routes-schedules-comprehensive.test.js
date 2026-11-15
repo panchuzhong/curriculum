@@ -1005,14 +1005,12 @@ describe('GET /api/schedules — comma-separated classId', () => {
 describe('POST /api/schedules/batch — semester+weekday mode', () => {
   it('creates schedules on correct weekday within active semester', async () => {
     const { semesters } = await import('../db/schema.js');
-    // Use a semester that wraps around today so the max(today, startDate) logic works
-    const today = new Date();
-    const y = today.getFullYear();
-    const m = String(today.getMonth() + 1).padStart(2, '0');
-    const d = String(today.getDate()).padStart(2, '0');
+    // Use a semester that wraps around today so the max(today, startDate) logic works.
+    // It ends two weeks out rather than on Dec 31: a calendar-year range has no
+    // Sunday left after the year's last one, so the test failed in late December.
     const r = drizzleDb.insert(semesters).values({
       teacherId, name: '当前期', type: 'spring',
-      startDate: `${y}-01-01`, endDate: `${y}-12-31`,
+      startDate: daysFromToday(-7), endDate: daysFromToday(13),
     }).run();
     const semId = Number(r.lastInsertRowid);
 
@@ -1271,9 +1269,9 @@ describe('学期模式的日期上下限', () => {
 describe('validator coercion of string-typed fields', () => {
   it('semester+weekday mode accepts weekday as a numeric string', async () => {
     const { semesters } = await import('../db/schema.js');
-    const y = new Date().getFullYear();
+    // Two weeks from today always contains a Monday; a calendar-year range does not in late December.
     const r = drizzleDb.insert(semesters).values({
-      teacherId, name: '当前期', type: 'spring', startDate: `${y}-01-01`, endDate: `${y}-12-31`,
+      teacherId, name: '当前期', type: 'spring', startDate: daysFromToday(-7), endDate: daysFromToday(13),
     }).run();
     const res = await request(app).post('/api/schedules/batch').set(auth(token))
       .send({ classId, semesterId: Number(r.lastInsertRowid), weekday: '1', startTime: '09:00', endTime: '10:00' });

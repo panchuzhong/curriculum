@@ -27,6 +27,10 @@ export const classes = sqliteTable('classes', {
   defaultLocationName: text('default_location_name'),
   defaultLocationLat: real('default_location_lat'),
   defaultLocationLng: real('default_location_lng'),
+  // 经纬度各按哪个地点名填的（坐标溯源）。改地点不清坐标，靠这两列判断提示是否过期；
+  // NULL（加列之前的行、旧备份、没带来源的 API 写入）由表单按载入时的地点名推定。
+  defaultLocationLatFor: text('default_location_lat_for'),
+  defaultLocationLngFor: text('default_location_lng_for'),
   deleted: integer('deleted', { mode: 'boolean' }).default(false),
   createdAt: text('created_at').default(sql`CURRENT_TIMESTAMP`),
 });

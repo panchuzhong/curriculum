@@ -329,6 +329,22 @@ describe('conflict grouping: server (image export) vs frontend (UI)', () => {
       expect(shape(fn(CASES[3][1]))).toEqual([[1, 2]]);
     }
   });
+
+  // 同一分钟开始的两个块顶边重合，不分列就一个整个盖住另一个、点不到。零时长课的
+  // 区间是空的，按时长分组/分列的话结果随输入顺序变：它排在前面时自成一组（或和正常课
+  // 挤进同一列），两块画成同一个满宽矩形。SQLite 对同 startTime 的行按 class_id 给顺序，
+  // 所以两种顺序都会真的出现。
+  it.each([
+    ['零时长在前', [s('09:00', '09:00', 1), s('09:00', '10:00', 2)]],
+    ['正常课在前', [s('09:00', '10:00', 2), s('09:00', '09:00', 1)]],
+    ['两节零时长', [s('09:00', '09:00', 1), s('09:00', '09:00', 2)]],
+  ])('同一分钟开始的块不论顺序都分到不同列（%s，两边都是）', (_label, input) => {
+    for (const [groupFn, colFn] of [[srvConflictGroups, srvAssignColumns], [cliConflictGroups, cliAssignColumns]]) {
+      const groups = groupFn(input);
+      expect(groups).toHaveLength(1);
+      expect(new Set(colFn(groups[0]).map(x => x._col)).size).toBe(2);
+    }
+  });
 });
 
 // 月历网格在两边各有一份逐字相同的实现（网页日历 / 导出 PNG）。此前只有服务端
@@ -608,6 +624,13 @@ describe('month bar geometry: server (image export) vs frontend (UI)', () => {
     // 0 时长的课不该被当成"上到第二天"而误标成晚课。
     expect(srvMonthBar('08:00', '08:00', { dayStart: 480, dayTotal: 870 }).isLate).toBe(false);
   });
+
+  it('零时长/极短课的最小条高两边一致（网页 minHeight 与 PNG 下限同一个数）', async () => {
+    const { MONTH_BAR_MIN_HEIGHT: cli } = await import('../../src/utils/schedule.js');
+    const { MONTH_BAR_MIN_HEIGHT: srv } = await import('../services/schedule-helpers.js');
+    expect(cli).toBeGreaterThan(0);
+    expect(cli).toBe(srv);
+  });
 });
 
 // 「复制表格」按钮放进剪贴板的文本，和服务端的 CSV 导出一样是给表格软件吃的，
@@ -642,10 +665,57 @@ describe('按日期判断跨午夜冲突：网页和出图保持一致', () => {
     ['带时间的旧日期不切断扫描', [at(1, '2026-09-30', '23:00', '01:00'), at(9, '2026-09-30T00:00:00', '09:00', '10:00'), at(2, '2026-10-01', '00:30', '02:00')], [1, 2]],
     ['开始时间为空的行不切断扫描', [at(1, '2026-10-01', '09:30', '10:30'), at(9, '2026-10-01', '', '10:00'), at(2, '2026-10-01', '10:00', '11:00')], [1, 2]],
     ['不补零的日期不参与', [at(9, '2026-10-1', '09:00', '11:00'), at(2, '2026-10-01', '10:00', '12:00')], []],
+    // 零时长（'9:00'~'9:00'）是空区间，和谁都不重叠（schedulesOverlap 同规则）。
+    // 扫描也得一致，且不能依赖输入顺序：路由按 (date, startTime) 排序，'09:00' < '9:00'，
+    // 正常课排在零时长课前面——正是会误标冲突的那个顺序。
+    ['零时长课不冲突（正常课在前，路由排序）', [at(1, '2026-10-05', '09:00', '10:00'), at(9, '2026-10-05', '9:00', '9:00')], []],
+    ['零时长课不冲突（零时长在前）', [at(9, '2026-10-05', '9:00', '9:00'), at(1, '2026-10-05', '09:00', '10:00')], []],
+    ['零时长课夹在中间不拆散真冲突', [at(1, '2026-10-05', '09:00', '11:00'), at(9, '2026-10-05', '09:30', '09:30'), at(2, '2026-10-05', '10:00', '12:00')], [1, 2]],
   ])('%s', async (_label, rows, expected) => {
     const { findDatedConflictIds: client } = await import('../../src/utils/schedule.js');
     const { findDatedConflictIds: server } = await import('../services/schedule-helpers.js');
     expect([...client(rows)].sort()).toEqual(expected);
     expect([...server(rows)].sort()).toEqual(expected);
+  });
+});
+
+// 标跨午夜冲突要在请求范围前后各多取一天。这条 ±1 规则此前在六处手写（周/月抓取、
+// 周/月出图、findConflicts 的相邻日、GET /conflicts），下一个消费方忘了补边就会 silently
+// 漏掉范围边缘的跨午夜冲突。集中成 conflictContextRange，两端各一份、由这里钉住。
+// 返回的是原始外推（不夹上下限）：'1899-12-31' 当查询下界照样能用；夹不夹由调用方按
+// 自己的参数语义决定（请求参数要夹，内部查询边界不用）。
+describe('冲突上下文补边：网页和出图同一条 ±1 规则', () => {
+  it.each([
+    ['2026-10-05', '2026-10-11', '2026-10-04', '2026-10-12'],
+    ['2026-01-01', '2026-01-01', '2025-12-31', '2026-01-02'],
+    ['1900-01-01', '1900-01-01', '1899-12-31', '1900-01-02'],
+    ['2999-12-31', '2999-12-31', '2999-12-30', '3000-01-01'],
+  ])('%s ~ %s → [%s, %s]，两端一致', async (start, end, prev, next) => {
+    const { conflictContextRange: cli } = await import('../../src/utils/schedule.js');
+    const { conflictContextRange: srv } = await import('../services/schedule-helpers.js');
+    expect(typeof srv).toBe('function');
+    expect(typeof cli).toBe('function');
+    expect(srv(start, end)).toEqual([prev, next]);
+    expect(cli(start, end)).toEqual([prev, next]);
+  });
+});
+
+// 「画不画得出来」网页和出图各有一份（周/月视图、两种 PNG 都按它取课），两边必须同一个说法：
+// 只判非空的话 '1030'、'9点' 这种非空但解析不了的旧值会漏过去，NaN 进了按天分组。
+describe('hasDrawableTimes：网页和出图同一条规则', () => {
+  it.each([
+    ['09:00', '10:00', true],
+    ['9:00', '9:00', true],
+    ['23:00', '01:00', true],
+    ['', '10:00', false],
+    ['09:00', '', false],
+    ['09:30', '1030', false],
+    ['9点', '10:00', false],
+    ['10：30', '11:00', false],
+  ])('%s ~ %s → %s', async (startTime, endTime, expected) => {
+    const { hasDrawableTimes: cli } = await import('../../src/utils/schedule.js');
+    const { hasDrawableTimes: srv } = await import('../services/schedule-helpers.js');
+    expect(cli({ startTime, endTime })).toBe(expected);
+    expect(srv({ startTime, endTime })).toBe(expected);
   });
 });

@@ -687,6 +687,36 @@ describe('GET /api/schedules/free-slots', () => {
     ]);
   });
 
+  it('空时间的旧行不会把整天空闲吞掉', async () => {
+    const { schedules } = await import('../db/schema.js');
+    // 校验加上之前存进来的行：空开始时间让 scheduleBounds 算出 NaN，游标一旦被
+    // 写成 NaN，之后每段比较都是 false，整天被报成已约满（批量模式则整天消失）。
+    drizzleDb.insert(schedules).values({ classId, date: '2026-05-04', startTime: '', endTime: '10:00', durationBilling: 60 }).run();
+    await request(app).post('/api/schedules').set(auth(token))
+      .send({ classId, date: '2026-05-04', startTime: '09:00', endTime: '10:30' });
+    const expected = [
+      { start: '08:00', end: '09:00' },
+      { start: '10:30', end: '22:30' },
+    ];
+    const res = await request(app).get('/api/schedules/free-slots?date=2026-05-04').set(auth(token));
+    expect(res.status).toBe(200);
+    expect(res.body.slots).toEqual(expected);
+    const bulk = await request(app).get('/api/schedules/free-slots?start=2026-05-04&end=2026-05-04').set(auth(token));
+    expect(bulk.status).toBe(200);
+    expect(bulk.body).toEqual([{ date: '2026-05-04', slots: expected }]);
+  });
+
+  // 零时长的旧行是空区间，不占时间：不能把一整段空闲切成两段，再被 minDuration 整段筛掉。
+  it('零时长的旧行不切开空闲时段', async () => {
+    const { schedules } = await import('../db/schema.js');
+    drizzleDb.insert(schedules).values({ classId, date: '2026-05-04', startTime: '09:30', endTime: '09:30', durationBilling: 0 }).run();
+    const res = await request(app).get('/api/schedules/free-slots?date=2026-05-04&minDuration=800').set(auth(token));
+    expect(res.status).toBe(200);
+    expect(res.body.slots).toEqual([{ start: '08:00', end: '22:30' }]);
+    const bulk = await request(app).get('/api/schedules/free-slots?start=2026-05-04&end=2026-05-04&minDuration=800').set(auth(token));
+    expect(bulk.body).toEqual([{ date: '2026-05-04', slots: [{ start: '08:00', end: '22:30' }] }]);
+  });
+
   it('respects after/before parameters', async () => {
     await request(app).post('/api/schedules').set(auth(token))
       .send({ classId, date: '2026-05-04', startTime: '14:00', endTime: '16:00' });
@@ -751,6 +781,21 @@ describe('GET /api/schedules/free-slots', () => {
   it('requires date or start+end', async () => {
     const res = await request(app).get('/api/schedules/free-slots').set(auth(token));
     expect(res.status).toBe(400);
+  });
+});
+
+// 保存时的冲突警告和标红/GET /conflicts 得是同一个说法：夹在新课中间的零时长旧行，
+// 前者曾报「冲突」、后两者不认。
+describe('零时长旧行：保存警告与 GET /conflicts 一致', () => {
+  it('夹在新课中间的零时长旧行不算冲突', async () => {
+    const { schedules } = await import('../db/schema.js');
+    drizzleDb.insert(schedules).values({ classId, date: '2026-05-04', startTime: '09:30', endTime: '09:30', durationBilling: 0 }).run();
+    const created = await request(app).post('/api/schedules').set(auth(token))
+      .send({ classId, date: '2026-05-04', startTime: '09:00', endTime: '11:00' });
+    expect(created.status).toBe(200);
+    expect(created.body.warnings ?? []).toEqual([]);
+    const conflicts = await request(app).get('/api/schedules/conflicts?start=2026-05-04&end=2026-05-04').set(auth(token));
+    expect(conflicts.body.total).toBe(0);
   });
 });
 
@@ -846,6 +891,27 @@ describe('GET /api/schedules/conflicts', () => {
     expect(created.body.warnings[0]).toEqual(expect.objectContaining({ date: '2026-05-04', startTime: '23:00', endTime: '01:00' }));
 
     const res = await request(app).get('/api/schedules/conflicts?start=2026-05-05&end=2026-05-05').set(auth(token));
+    expect(res.body.total).toBe(1);
+    expect(res.body.groups[0].schedules).toHaveLength(2);
+  });
+
+  // 上面那条只走了「往前看一天」：后建的是次日早课。反过来——先有次日早课、后建当晚的
+  // 跨午夜课，或者只查晚课那一天——要靠「往后看一天」（findConflicts 的相邻日、
+  // GET /conflicts 的 ctxEnd）。conflictContextRange 两端的单测钉不住调用方少取的那一天。
+  it('detects the overlap from the night side too (next-day context)', async () => {
+    const { classes } = await import('../db/schema.js');
+    const r2 = drizzleDb.insert(classes).values({
+      teacherId, name: '次日班', grade: '高一', subject: '物理', studentCount: 3, unitPrice: 120,
+    }).run();
+    const classId2 = Number(r2.lastInsertRowid);
+
+    await request(app).post('/api/schedules').set(auth(token))
+      .send({ classId: classId2, date: '2026-05-05', startTime: '00:30', endTime: '02:00' });
+    const created = await request(app).post('/api/schedules').set(auth(token))
+      .send({ classId, date: '2026-05-04', startTime: '23:00', endTime: '01:00' });
+    expect(created.body.warnings).toEqual([expect.objectContaining({ date: '2026-05-05', startTime: '00:30', endTime: '02:00' })]);
+
+    const res = await request(app).get('/api/schedules/conflicts?start=2026-05-04&end=2026-05-04').set(auth(token));
     expect(res.body.total).toBe(1);
     expect(res.body.groups[0].schedules).toHaveLength(2);
   });

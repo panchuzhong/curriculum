@@ -3,8 +3,8 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { api } from '../api';
 import { getClassColor, getTextColor, DarkContext } from '../utils/colors';
 import { isHoliday, getHolidayName, isWorkday, subscribeHolidays } from '../utils/holidays';
-import { todayStr, getMonday, addDays, clampDate, intParam, YEAR_MIN, YEAR_MAX } from '../utils/date';
-import { monthDayWindow, monthBarPct, findConflictGroups, findDatedConflictIds, assignColumns } from '../utils/schedule';
+import { todayStr, getMonday, clampDate, intParam, YEAR_MIN, YEAR_MAX } from '../utils/date';
+import { monthDayWindow, monthBarPct, MONTH_BAR_MIN_HEIGHT, conflictContextRange, hasDrawableTimes, findConflictGroups, findDatedConflictIds, assignColumns } from '../utils/schedule';
 import { setViewDate } from '../utils/viewDate';
 import { useSimpleSwipe } from '../hooks/useSimpleSwipe';
 import useBoundWarning from '../hooks/useBoundWarning';
@@ -67,8 +67,9 @@ export default function MonthlySchedule() {
     const gen = ++fetchGenRef.current;
     setLoading(true);
     setLoadError('');
-    // 月首、月末也需要相邻一天，才能标记跨午夜的冲突；这些课不渲染在本月。
-    api.getSchedules(clampDate(addDays(startDate, -1)), clampDate(addDays(endStr, 1))).then(data => {
+    // 月首、月末也需要相邻一天（conflictContextRange），才能标记跨午夜的冲突；这些课不渲染在本月。
+    const [ctxStart, ctxEnd] = conflictContextRange(startDate, endStr);
+    api.getSchedules(clampDate(ctxStart), clampDate(ctxEnd)).then(data => {
       if (gen === fetchGenRef.current) setSchedules(data);
     }).catch(e => {
       if (gen === fetchGenRef.current) setLoadError(e.message || '加载课表失败');
@@ -109,6 +110,9 @@ export default function MonthlySchedule() {
     const d = getMonthDates(year, month);
     const bd = {};
     schedules.forEach(s => {
+      // 时间解析不了的旧行不画（见 hasDrawableTimes）：NaN 的条形会贴到日期格
+      // 顶上，还会把 monthDayWindow 给早/晚课的时间窗延伸吞掉。
+      if (!hasDrawableTimes(s)) return;
       if (!bd[s.date]) bd[s.date] = [];
       bd[s.date].push(s);
     });
@@ -243,8 +247,12 @@ export default function MonthlySchedule() {
                       <div key={item.id}
                         className={`absolute truncate px-0.5 flex items-center ${hasConflict ? 'ring-1 ring-red-500 z-10' : ''} ${rounded} ${isOvertime ? 'border-x-2 border-amber-500' : ''}`}
                         style={{
-                          top: `${topPct}%`,
+                          // 底边不越过容器：最小条高从条顶往下长，窗口末尾的零时长课否则掉到格子外
+                          // 被裁掉（窄屏格子只剩 2px 内边距）。月图 PNG 同规则。
+                          top: `min(${topPct}%, calc(100% - ${MONTH_BAR_MIN_HEIGHT}px))`,
                           height: `${heightPct}%`,
+                          // 和月图 PNG 的 Math.max 下限同一个数：0 时长的课不然完全看不见。
+                          minHeight: MONTH_BAR_MIN_HEIGHT,
                           left: isOvertime ? `${leftPct}%` : `${leftPct + 0.5}%`,
                           width: isOvertime ? `${widthPct}%` : `calc(${widthPct}% - 2px)`,
                           backgroundColor: hasConflict ? '#ef4444' : getClassColor(item.class, dark),

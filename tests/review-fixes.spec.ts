@@ -58,15 +58,25 @@ test('学科加载前不能保存；加载后保存保留已有学科，保存�
 test('连续两次保存，后一次的「已保存」不会被前一次的计时器提前收走', async ({ authenticatedPage: page }) => {
   await page.route('**/api/auth/profile', route => route.fulfill({ json: profile }));
   await page.route('**/api/auth/subjects', route => route.fulfill({ json: route.request().postDataJSON() }));
+  // 页面时钟由测试来推，不真睡：真睡的话两次点击之间、断言之前任何一次一秒多的卡顿，
+  // 都会让 3 秒计时器先到点，用例和修复无关地挂掉。
+  await page.clock.install();
   await page.goto('/settings');
   const done = page.getByText('学科设置已更新', { exact: true });
   await page.getByRole('button', { name: '保存学科设置' }).click();
   await expect(done).toBeVisible();
-  await page.waitForTimeout(2000);
+  // 停在「此刻稍后」：从读到页面时间到 pauseAt 生效，页面时钟还在走，停在读到的那一刻就成了往回拨。
+  await page.clock.pauseAt(await page.evaluate(() => Date.now()) + 200);
+  await page.clock.runFor(1500);
   await page.getByRole('button', { name: '✓ 已保存' }).click();
-  // 此时第一次保存的 3 秒已经到点，第二次的还剩一秒多。
-  await page.waitForTimeout(1500);
-  expect(await done.isVisible()).toBe(true);
+  // 点下去先变回「保存学科设置」，第二次保存落地才又是「✓ 已保存」。
+  await expect(page.getByRole('button', { name: '✓ 已保存' })).toBeVisible();
+  // 第一次保存的 3 秒已经到点（没清计时器的话提示已被收走），第二次的还剩一秒多。
+  await page.clock.runFor(1800);
+  await expect(done).toBeVisible();
+  // 第二次的 3 秒到点后照常收起。
+  await page.clock.runFor(1300);
+  await expect(done).toHaveCount(0);
 });
 
 test('学科加载失败时保持禁用，重试成功后才允许保存', async ({ authenticatedPage: page }) => {
@@ -223,6 +233,88 @@ for (const view of ['week', 'month'] as const) {
   });
 }
 
+// 保存后新数据回来之前，屏上那节课还是改动之前的样子。加载时网格照常能点（翻页时缓冲里的课
+// 是新的），但写入之后的这一段不行：拿旧行回填弹窗、再保存一次，会把刚做的修改写回去。
+test('周视图：保存后新数据回来之前，点旧课块不会拿改动前的数据打开弹窗', async ({ authenticatedPage: page }) => {
+  const held = gate();
+  let hold = false;
+  let current: any = lesson(940, '2026-10-06', '09:00', '10:00');
+  await page.route('**/api/classes', route => route.fulfill({ json: [cls] }));
+  await page.route('**/api/schedules?**', async route => {
+    if (hold) await held.promise;
+    await route.fulfill({ json: [current] });
+  });
+  await page.route('**/api/schedules/940', async route => {
+    if (route.request().method() !== 'PUT') { await route.fallback(); return; }
+    current = { ...current, ...route.request().postDataJSON(), class: cls };
+    hold = true;
+    await route.fulfill({ json: current });
+  });
+  try {
+    await page.goto('/?week=2026-10-05');
+    const block = page.locator('[data-date="2026-10-06"] div.absolute.rounded-md.cursor-pointer');
+    const heading = page.getByRole('heading', { name: '编辑排课' });
+    await block.click();
+    await page.getByPlaceholder(/地点/).fill('新地点');
+    await page.getByRole('button', { name: '保存', exact: true }).click();
+    await expect(heading).toHaveCount(0);
+    await block.click();
+    await expect(page.getByText('课表正在刷新，请稍后再点')).toBeVisible();
+    expect(await heading.count()).toBe(0);
+    held.release();
+    await expect(page.getByRole('status')).toHaveCount(0);
+    await block.click();
+    await expect(page.getByPlaceholder(/地点/)).toHaveValue('新地点');
+  } finally { held.release(); }
+});
+
+test('移动端：加载提示画在侧栏遮罩之下，不浮在变暗的内容上', async ({ authenticatedPage: page }) => {
+  // 提示和遮罩都是根堆叠上下文里的定位元素：z-index 打平时按 DOM 顺序画，提示是后写的
+  // 兄弟节点，会浮在 bg-black/40 的遮罩上面。提示必须严格低于遮罩。
+  await page.setViewportSize({ width: 390, height: 844 });
+  const held = gate();
+  await mockSchedules(page, [lesson(916, '2026-10-08', '09:00', '10:00')]);
+  await page.route('**/api/schedules?**', async route => { await held.promise; await route.fallback(); });
+  try {
+    await page.goto('/?week=2026-10-05');
+    await expect(page.getByRole('status')).toHaveText('正在加载课表…');
+    await page.getByRole('button', { name: '打开导航' }).click();
+    await expect(page.locator('div[aria-hidden="true"].fixed.inset-0')).toBeVisible();
+    const z = await page.evaluate(() => {
+      const hint = document.querySelector('[role="status"]') as HTMLElement;
+      const mask = document.querySelector('div[aria-hidden="true"].fixed.inset-0') as HTMLElement;
+      return { hint: Number(getComputedStyle(hint).zIndex), mask: Number(getComputedStyle(mask).zIndex) };
+    });
+    expect(z.hint).toBeLessThan(z.mask);
+    held.release();
+  } finally { held.release(); }
+});
+
+test('月视图：零时长的旧课也看得见，和导出 PNG 一样有最小条高', async ({ authenticatedPage: page }) => {
+  // '9:00'~'9:00' 时长为 0：网页此前 height:0% 完全看不见，PNG 却有 6px 下限。
+  // 两边共用 MONTH_BAR_MIN_HEIGHT，网页条形也得有这条最小高度。
+  await mockSchedules(page, [lesson(920, '2026-10-05', '9:00', '9:00', 0)]);
+  await page.goto('/monthly?year=2026&month=9');
+  const bar = page.locator('[aria-label="查看2026-10-05课表"] div.absolute');
+  await expect(bar).toHaveCount(1);
+  const box = (await bar.boundingBox())!;
+  expect(box.height).toBeGreaterThanOrEqual(6);
+});
+
+test('月视图：窗口末尾的零时长课底边不越出格子（窄屏）', async ({ authenticatedPage: page }) => {
+  // 最小条高从条顶往下长：22:30~22:30 顶在条形区底边上，往下 6px 全落在格子外，窄屏格子
+  // 只剩 2px 内边距，几乎整条被 overflow-hidden 裁掉。底边要收在条形区以内（PNG 同规则）。
+  await page.setViewportSize({ width: 390, height: 844 });
+  await mockSchedules(page, [lesson(921, '2026-10-05', '22:30', '22:30', 0)]);
+  await page.goto('/monthly?year=2026&month=9');
+  const bar = page.locator('[aria-label="查看2026-10-05课表"] div.absolute');
+  await expect(bar).toHaveCount(1);
+  const box = (await bar.boundingBox())!;
+  const area = (await bar.locator('..').boundingBox())!;
+  expect(box.height).toBeGreaterThanOrEqual(6);
+  expect(box.y + box.height).toBeLessThanOrEqual(area.y + area.height + 0.5);
+});
+
 test('周视图缓冲最外侧那一列也和屏外的相邻日比冲突', async ({ authenticatedPage: page }) => {
   // 10-05 那一周的 21 列是 09-28 ~ 10-18：09-28 是缓冲最左一列，09-27 那节晚课不在任何一列上，
   // 但它和 09-28 的早课重叠。上一周/滑动时这一列会滑进屏幕，得已经标好红。
@@ -236,6 +328,62 @@ test('周视图缓冲最外侧那一列也和屏外的相邻日比冲突', async
   const edge = page.locator('[data-date="2026-09-28"] div.absolute.rounded-md.cursor-pointer');
   await expect(edge).toHaveCount(1);
   await expect(edge).toHaveClass(/ring-red-500/);
+});
+
+for (const bad of ['', '1030']) {
+test(`周视图：结束时间为「${bad}」的旧行不会把真正重叠的课挤成叠画`, async ({ authenticatedPage: page }) => {
+  // 旧行 startTime 有限、endTime 解析不了（空，或非空但没有冒号）：它会挤进真课的小组把
+  // groupEnd 写成 NaN，后面的真课被踢成单独一组——两节真重叠的课以 50% 和 100% 宽度叠画。
+  // ScheduleBlock 只藏旧行本身，救不了被带坏的分列；只判非空也拦不住 '1030'。
+  await mockSchedules(page, [
+    lesson(920, '2026-10-06', '09:00', '11:00', 120),
+    lesson(921, '2026-10-06', '09:30', bad, 0),
+    lesson(922, '2026-10-06', '10:00', '12:00', 120),
+  ]);
+  await page.goto('/?week=2026-10-05');
+  const blocks = page.locator('[data-date="2026-10-06"] div.absolute.rounded-md.cursor-pointer');
+  await expect(blocks).toHaveCount(2); // 旧行本身不画
+  const boxes = await blocks.evaluateAll(els => els.map(el => {
+    const r = el.getBoundingClientRect();
+    return { left: r.left, width: r.width };
+  }));
+  // 两节真课并排分列：等宽、互不叠压。
+  expect(boxes[0].width).toBeCloseTo(boxes[1].width, 0);
+  expect(Math.min(boxes[0].left, boxes[1].left) + boxes[0].width)
+    .toBeLessThanOrEqual(Math.max(boxes[0].left, boxes[1].left) + 1);
+});
+}
+
+test('周视图：画不出来的旧行不撑开时间轴', async ({ authenticatedPage: page }) => {
+  // 开始时间有效、结束时间为空的旧行不画，也不该把时间轴从 08:00 撑到 06:00：
+  // 导出的 PNG 只按画得出来的课定时间轴（image-gen-block-geometry 钉着），网页得一致。
+  await mockSchedules(page, [lesson(925, '2026-10-06', '06:00', '', 0), lesson(926, '2026-10-06', '09:00', '10:00')]);
+  await page.goto('/?week=2026-10-05');
+  await expect(page.locator('[data-date="2026-10-06"]').getByText(cls.name, { exact: true })).toBeVisible();
+  // 课已经画出来了，时间轴和它同一次渲染算出：直接数一次，不让 toHaveCount 在数据到之前就通过。
+  expect(await page.locator('main').getByText('08:00', { exact: true }).count()).toBe(1);
+  expect(await page.locator('main').getByText('06:00', { exact: true }).count()).toBe(0);
+});
+
+test('月视图：分列只看当天的分组，解析不了的旧行不画', async ({ authenticatedPage: page }) => {
+  // 和月图 PNG 同一条规则（image-gen-block-geometry 钉着出图那份）：'9:00'~'9:00' 和
+  // 09:00~10:00 按天分成两列、按日期判断却不冲突，按冲突标记给宽度的话两条都满宽叠在一起；
+  // 结束时间解析不了的旧行（'1030'）不画，也不进分组。
+  await mockSchedules(page, [
+    lesson(930, '2026-10-05', '09:00', '10:00'),
+    lesson(931, '2026-10-05', '9:00', '9:00', 0),
+    lesson(932, '2026-10-05', '09:30', '1030', 0),
+  ]);
+  await page.goto('/monthly?year=2026&month=9');
+  const bars = page.locator('[aria-label="查看2026-10-05课表"] div.absolute');
+  await expect(bars).toHaveCount(2);
+  const boxes = await bars.evaluateAll(els => els.map(el => {
+    const r = el.getBoundingClientRect();
+    return { left: r.left, width: r.width };
+  }));
+  expect(boxes[0].width).toBeCloseTo(boxes[1].width, 0);
+  expect(Math.min(boxes[0].left, boxes[1].left) + boxes[0].width)
+    .toBeLessThanOrEqual(Math.max(boxes[0].left, boxes[1].left) + 1);
 });
 
 test('周视图跨午夜冲突标红，月首也能看见与上月晚课的冲突', async ({ authenticatedPage: page }) => {
@@ -297,8 +445,13 @@ for (const view of ['week', 'month'] as const) {
       await page.getByRole('button', { name: view === 'week' ? '下一周' : '下月', exact: true }).click();
       const rendered = page.locator('main').getByText(cls.name, { exact: true }).first();
       await expect(rendered).toBeVisible();
+      // 下面全是负断言，等不到什么出现，所以先确认那条 503 真的送进了页面，再留一小段让它的
+      // 回调和渲染跑完——光从 release 起算一个固定时长，机器一忙 503 还没到断言就已经过了。
+      const delivered = page.waitForResponse(r => r.url().includes('/api/schedules?')
+        && new URL(r.url()).searchParams.get('start') === initialStart);
       old.release();
-      await page.waitForTimeout(150);
+      await (await delivered).finished();
+      await page.waitForTimeout(100);
       await expect(rendered).toBeVisible();
       await expect(page.getByRole('alert')).toHaveCount(0);
       await expect(page.getByRole('status')).toHaveCount(0);

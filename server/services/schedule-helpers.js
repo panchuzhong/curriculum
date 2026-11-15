@@ -14,11 +14,20 @@ export function toLocalDateStr(d) {
   return `${y}-${m}-${day}`;
 }
 
-// 不夹上下限：只拿来拼查询条件和按日期取键，'1899-12-31' 当查询下界照样能用。
+// 不夹上下限的原始日期算术。多数调用拿它拼查询条件、按日期取键（'1899-12-31' 当查询
+// 下界照样能用）；也有调用方把结果写库或拼进错误消息（批量位移的目标日期、挪出学期的
+// 提示）——那类调用方自己负责校验/夹取（位移目标逐个过 isValidDate），别指望这里兜底。
 export function shiftDate(date, days) {
   const d = new Date(date + 'T00:00:00');
   d.setDate(d.getDate() + days);
   return toLocalDateStr(d);
+}
+
+// 标跨午夜冲突要在范围前后各多取一天，相邻日的晚课才比得上。原始外推、不夹上下限
+// （'1899-12-31' 当查询下界照样能用）；请求参数要夹的调用方自己夹。前端同名函数同规则，
+// data-consistency 钉着两边。新增标冲突的消费方调它，别再手写 ±1。
+export function conflictContextRange(start, end) {
+  return [shiftDate(start, -1), shiftDate(end, 1)];
 }
 
 export function escapeHtml(s) {
@@ -84,6 +93,15 @@ export function toCSV(rows) {
   ).join('\n');
 }
 
+// 画得出来的课：开始、结束时间都算得出分钟数。校验加上之前存进来的旧行（空时间、'10'、
+// '9点'）toMin 是 NaN：进了按天分组会把 groupEnd 写成 NaN、把真正重叠的课拆开叠画，进了
+// monthDayWindow 会吞掉早/晚课的时间窗延伸，进了周视图的时间轴会为一节画不出来的课撑开格子。
+// 只判非空不够——非空但解析不了的值照样是 NaN。周/月视图和两种出图都按它取课，
+// 前端 src/utils/schedule.js 同名函数同规则（data-consistency 钉着两边）。
+export function hasDrawableTimes(s) {
+  return [s.startTime, s.endTime].every(t => typeof t === 'string' && Number.isFinite(toMin(t)));
+}
+
 export function duration(startTime, endTime) {
   const s = toMin(startTime);
   const e = toMin(endTime);
@@ -109,6 +127,9 @@ export function blockGeometry(startTime, endTime, { rowHeight, topGapHeight, fir
 // 当成上到次日 08:00，把窗口拉到 32 点，当天其它课的条形全被压扁。
 export const MONTH_DAY_START = 8 * 60;
 export const MONTH_DAY_END = 22 * 60 + 30;
+// 零时长/极短课的最小条高（px）：网页用 minHeight、PNG 用 Math.max 下限，必须是同一个数，
+// 否则 0 时长的课在网页上 height:0% 看不见、PNG 里却画出一条。data-consistency 钉着两边。
+export const MONTH_BAR_MIN_HEIGHT = 6;
 
 export function monthDayWindow(daySchedules) {
   const earliest = Math.min(...daySchedules.map(s => toMin(s.startTime)));
@@ -134,22 +155,29 @@ export function monthBarPct(startTime, endTime, { dayStart, dayTotal }) {
   };
 }
 
+// 分组、分列用的结束分钟。零时长按 1 分钟算：判冲突时它是空区间（见 datedSpan），
+// 但画出来的块有最小高度，和同一分钟开始的课顶边重合。按 0 算的话结果随输入顺序变，
+// 两块会画成同一个满宽矩形、一个盖住另一个。src/utils/schedule.js 同规则（data-consistency 钉着）。
+function layoutEnd(s) {
+  return toMin(s.startTime) + Math.max(duration(s.startTime, s.endTime), 1);
+}
+
 export function detectConflictGroups(daySchedules) {
   if (!daySchedules.length) return [];
   const sorted = [...daySchedules].sort((a, b) => toMin(a.startTime) - toMin(b.startTime));
   const groups = [];
   let group = [sorted[0]];
-  let groupEnd = toMin(sorted[0].startTime) + duration(sorted[0].startTime, sorted[0].endTime);
+  let groupEnd = layoutEnd(sorted[0]);
   for (let i = 1; i < sorted.length; i++) {
     const s = sorted[i];
     const sStart = toMin(s.startTime);
     if (sStart < groupEnd) {
       group.push(s);
-      groupEnd = Math.max(groupEnd, sStart + duration(s.startTime, s.endTime));
+      groupEnd = Math.max(groupEnd, layoutEnd(s));
     } else {
       groups.push({ schedules: group, end: groupEnd });
       group = [s];
-      groupEnd = sStart + duration(s.startTime, s.endTime);
+      groupEnd = layoutEnd(s);
     }
   }
   groups.push({ schedules: group, end: groupEnd });
@@ -167,22 +195,31 @@ export function scheduleBounds(schedule) {
 export function schedulesOverlap(a, b) {
   const [aStart, aEnd] = scheduleBounds(a);
   const [bStart, bEnd] = scheduleBounds(b);
-  return aStart < bEnd && bStart < aEnd;
+  // 零时长是空区间，和谁都不重叠（与 datedSpan 同规则）。只比 aStart < bEnd && bStart < aEnd
+  // 的话，夹在另一节课中间的零时长旧行会让保存报冲突，而标红和 GET /conflicts 都不认它。
+  return aStart !== aEnd && bStart !== bEnd && aStart < bEnd && bStart < aEnd;
+}
+
+// 能按绝对时间参与比较的区间 [start, end]（分钟），否则 null：解析不了的行（校验加上之前
+// 存进来的 '2026-10-1'、'2026-10-01T00:00:00'、空时间）算出的 NaN 会把扫描从中切断；
+// '2026-10-1' 又会被当成一个真实的日子，而没有哪一列按这个写法取课，于是一节看得见的课
+// 会和一节看不见的课「冲突」。零时长是空区间，和谁都不重叠，也不占空闲时段——不排除的话
+// 冲突结果随输入顺序变，空闲时段会在那个点被切成两段。冲突扫描和空闲时段共用这一条，
+// 前端 src/utils/schedule.js 的 datedConflictGroups 和这里一致（data-consistency 盯着）。
+export function datedSpan(s) {
+  if (!isCalendarDate(s.date)) return null;
+  const [start, end] = scheduleBounds(s);
+  return Number.isFinite(start) && Number.isFinite(end) && start !== end ? [start, end] : null;
 }
 
 // Unlike detectConflictGroups(), this accepts schedules from multiple dates
 // and therefore catches a late class overlapping an early class on the next
-// calendar day.
-// 解析不了的行（校验加上之前存进来的 '2026-10-1'、'2026-10-01T00:00:00'、空的开始时间）
-// 不参与：算出来的 NaN 会把扫描从中切断，两边真实的冲突一起丢掉；'2026-10-1' 又会被
-// 当成一个真实的日子，而没有哪一列按这个写法取课，于是一节看得见的课会和一节看不见的课
-// 「冲突」。前端 src/utils/schedule.js 的同名逻辑和这里一致（data-consistency 盯着）。
+// calendar day. 参与比较的行由 datedSpan 决定（解析不了的、零时长的不参与）。
 export function detectDatedConflictGroups(items) {
   const spans = [];
   for (const s of items) {
-    if (!isCalendarDate(s.date)) continue;
-    const [start, end] = scheduleBounds(s);
-    if (Number.isFinite(start) && Number.isFinite(end)) spans.push({ s, start, end });
+    const span = datedSpan(s);
+    if (span) spans.push({ s, start: span[0], end: span[1] });
   }
   if (!spans.length) return [];
   spans.sort((a, b) => a.start - b.start);
@@ -213,7 +250,7 @@ export function assignColumns(group) {
   const colEnds = [];
   return sorted.map(s => {
     const start = toMin(s.startTime);
-    const end = start + duration(s.startTime, s.endTime);
+    const end = layoutEnd(s);
     let col = colEnds.findIndex(ce => ce <= start);
     if (col === -1) { col = colEnds.length; colEnds.push(0); }
     colEnds[col] = end;

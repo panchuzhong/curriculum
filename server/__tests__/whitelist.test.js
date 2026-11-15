@@ -1,70 +1,68 @@
 import { describe, it, expect } from 'vitest';
+import request from 'supertest';
+import { eq } from 'drizzle-orm';
+import { setupApp, makeUser, auth } from './route-helpers.js';
 
-// Simulates the field whitelisting pattern used in PUT handlers
-function whitelist(body, allowed) {
-  return Object.fromEntries(
-    Object.entries(body).filter(([k]) => allowed.includes(k))
-  );
-}
+// PUT 只认白名单字段（防 mass assignment）。这里原先测的是本文件自己写的一份过滤函数和
+// 手抄的字段表：路由里的白名单整段删掉、或者把 teacherId 放进去，这些用例照样全绿。
+// 现在直接打真的路由、看库里那一行：越权字段没动，正常字段（对照）照常写进去了——
+// 没有对照的话，一个什么都不写的 PUT 也能让「没动」成立。
+describe('PUT 忽略白名单以外的字段', () => {
+  it('班级：teacherId / id / deleted / createdAt 改不动', async () => {
+    const { app, drizzleDb } = await setupApp('/api/classes', '../routes/classes.js');
+    const { classes } = await import('../db/schema.js');
+    const me = await makeUser(drizzleDb);
+    const other = await makeUser(drizzleDb, 'other');
+    const id = Number(drizzleDb.insert(classes).values({
+      teacherId: me.id, name: '数学班', grade: '高一', subject: '数学', studentCount: 1, unitPrice: 100,
+    }).run().lastInsertRowid);
+    const before = drizzleDb.select().from(classes).where(eq(classes.id, id)).get();
 
-describe('Field whitelisting (mass assignment protection)', () => {
-  const classAllowed = ['name', 'grade', 'subject', 'studentCount', 'unitPrice',
-    'discountAmount', 'discountReason', 'isCompetition', 'defaultLocationName',
-    'defaultLocationLat', 'defaultLocationLng'];
+    const res = await request(app).put(`/api/classes/${id}`).set(auth(me.token))
+      .send({ name: '改名班', teacherId: other.id, id: 9999, deleted: true, createdAt: '2000-01-01 00:00:00' });
 
-  it('filters out teacherId from class update', () => {
-    const result = whitelist({
-      name: 'Math',
-      teacherId: 999,
-    }, classAllowed);
-    expect(result).toEqual({ name: 'Math' });
-    expect(result.teacherId).toBeUndefined();
+    expect(res.status).toBe(200);
+    expect(drizzleDb.select().from(classes).where(eq(classes.id, id)).get())
+      .toMatchObject({ name: '改名班', teacherId: me.id, deleted: false, createdAt: before.createdAt });
+    expect(drizzleDb.select().from(classes).where(eq(classes.id, 9999)).get()).toBeUndefined();
   });
 
-  it('filters out deleted flag', () => {
-    const result = whitelist({
-      name: 'Math',
-      deleted: true,
-    }, classAllowed);
-    expect(result).toEqual({ name: 'Math' });
-    expect(result.deleted).toBeUndefined();
+  it('排课：id / createdAt 改不动', async () => {
+    const { app, drizzleDb } = await setupApp('/api/schedules', '../routes/schedules.js');
+    const { classes, schedules } = await import('../db/schema.js');
+    const me = await makeUser(drizzleDb);
+    const classId = Number(drizzleDb.insert(classes).values({
+      teacherId: me.id, name: '数学班', grade: '高一', subject: '数学', studentCount: 1, unitPrice: 100,
+    }).run().lastInsertRowid);
+    const id = Number(drizzleDb.insert(schedules).values({
+      classId, date: '2026-05-04', startTime: '09:00', endTime: '10:00', durationBilling: 60,
+    }).run().lastInsertRowid);
+    const before = drizzleDb.select().from(schedules).where(eq(schedules.id, id)).get();
+
+    const res = await request(app).put(`/api/schedules/${id}`).set(auth(me.token))
+      .send({ locationName: '新教室', id: 9999, createdAt: '2000-01-01 00:00:00' });
+
+    expect(res.status).toBe(200);
+    expect(drizzleDb.select().from(schedules).where(eq(schedules.id, id)).get())
+      .toMatchObject({ locationName: '新教室', createdAt: before.createdAt });
+    expect(drizzleDb.select().from(schedules).where(eq(schedules.id, 9999)).get()).toBeUndefined();
   });
 
-  it('allows all valid fields', () => {
-    const body = {
-      name: 'A', grade: '高一', subject: '数学', studentCount: 5,
-      unitPrice: 200, discountAmount: 10, discountReason: 'test',
-      isCompetition: false, defaultLocationName: 'Room 1',
-    };
-    const result = whitelist(body, classAllowed);
-    expect(Object.keys(result).length).toBe(9);
-  });
+  it('学期：teacherId / id 改不动', async () => {
+    const { app, drizzleDb } = await setupApp('/api/semesters', '../routes/semesters.js');
+    const { semesters } = await import('../db/schema.js');
+    const me = await makeUser(drizzleDb);
+    const other = await makeUser(drizzleDb, 'other');
+    const id = Number(drizzleDb.insert(semesters).values({
+      teacherId: me.id, name: '2026春季', type: 'spring', startDate: '2026-02-20', endDate: '2026-07-01',
+    }).run().lastInsertRowid);
 
-  it('returns empty when all fields are invalid', () => {
-    const result = whitelist({
-      teacherId: 1, deleted: false, id: 5, createdAt: '2025-01-01',
-    }, classAllowed);
-    expect(result).toEqual({});
-  });
+    const res = await request(app).put(`/api/semesters/${id}`).set(auth(me.token))
+      .send({ name: '改名学期', teacherId: other.id, id: 9999 });
 
-  const scheduleAllowed = ['classId', 'date', 'startTime', 'endTime',
-    'durationBilling', 'locationName', 'locationLat', 'locationLng'];
-
-  it('schedule whitelist filters malicious fields', () => {
-    const result = whitelist({
-      startTime: '09:00', endTime: '10:00',
-      teacherId: 999, id: 1, __proto__: {},
-    }, scheduleAllowed);
-    expect(result).toEqual({ startTime: '09:00', endTime: '10:00' });
-  });
-
-  const semesterAllowed = ['name', 'type', 'startDate', 'endDate'];
-  it('semester whitelist works', () => {
-    const result = whitelist({
-      name: 'Fall 2025', type: 'fall', startDate: '2025-09-01', endDate: '2026-01-15',
-      teacherId: 42,
-    }, semesterAllowed);
-    expect(result.teacherId).toBeUndefined();
-    expect(Object.keys(result).length).toBe(4);
+    expect(res.status).toBe(200);
+    expect(drizzleDb.select().from(semesters).where(eq(semesters.id, id)).get())
+      .toMatchObject({ name: '改名学期', teacherId: me.id });
+    expect(drizzleDb.select().from(semesters).where(eq(semesters.id, 9999)).get()).toBeUndefined();
   });
 });

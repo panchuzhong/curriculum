@@ -19,7 +19,7 @@ export default function WeeklySchedule() {
 
   const {
     gridRef, weekStart, allDates, allSchedules, isMobile, visibleDays, loading, loadError,
-    navigateTo, navigateByDays, goToThisWeek, reload,
+    navigateTo, navigateByDays, goToThisWeek, reload, isStale,
   } = useWeekNavigation({ searchParams, setSearchParams });
 
   const [dialog, setDialog] = useState(null);
@@ -31,8 +31,11 @@ export default function WeeklySchedule() {
   } = useScheduleExport({ weekStart, visibleDays });
 
   const handleScheduleClick = useCallback((s) => {
+    // 刚保存/删除过、新数据还没回来：屏上这节课还是改动之前的样子，拿它回填弹窗再保存一次，
+    // 会把刚做的修改写回去（见 useWeekNavigation 的 isStale）。
+    if (isStale()) { toast('课表正在刷新，请稍后再点'); return; }
     setDialog({ schedule: s, date: s.date, startTime: s.startTime });
-  }, []);
+  }, [isStale, toast]);
 
   useEffect(() => { containerRef.current?.focus(); }, []);
 

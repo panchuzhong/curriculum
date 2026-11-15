@@ -129,6 +129,8 @@ test.describe('排课操作', () => {
     await locationInput.fill(newLocation);
     await page.getByRole('button', { name: '保存' }).click();
     await expect(page.getByRole('heading', { name: '编辑排课' })).not.toBeVisible();
+    // 等保存后的刷新落地：加载时网格照常显示，没回来之前点到的是改动前的课块（会被拦下、提示稍后再点）。
+    await expect(page.getByRole('status')).toHaveCount(0);
 
     // 重新打开同一条排课，地点应当是刚才填的那个
     await clickFirstScheduleCard(page);
