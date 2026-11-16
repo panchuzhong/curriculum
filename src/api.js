@@ -9,6 +9,24 @@ export function getToken() {
   return localStorage.getItem('token');
 }
 
+// 令牌的「账号身份」：PrivateRoute 用它决定要不要重挂整棵私有页面树。
+// 只比较 teacherId，不比较令牌字符串——改密码会换发新令牌（pwdVersion 递增），
+// 那还是同一个人，重挂会把设置页和「密码修改成功」的提示一起冲掉；
+// 跨标签页换成另一个账号时 teacherId 不同，才需要丢掉旧账号的全部界面状态。
+// 解析不了（本地手写的坏 token、旧格式的 token）就退回用整串当身份，
+// 宁可多挂一次，也不能让串号的状态留着。
+export function getTokenIdentity(token) {
+  if (!token) return null;
+  const payload = token.split('.')[1];
+  if (payload) {
+    try {
+      const claims = JSON.parse(atob(payload.replace(/-/g, '+').replace(/_/g, '/')));
+      if (claims.teacherId != null) return `teacher:${claims.teacherId}`;
+    } catch { /* fall through to the raw token */ }
+  }
+  return `raw:${token}`;
+}
+
 export function setToken(token) {
   clearScheduleCache();
   localStorage.setItem('token', token);

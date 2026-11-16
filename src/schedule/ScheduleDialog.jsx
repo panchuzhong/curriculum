@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { api } from '../api';
 import { GRADES, DATE_MIN, DATE_MAX } from '../utils/constants';
 import { isUsableDate, DATE_INVALID_HINT } from '../utils/date';
@@ -38,7 +38,15 @@ export default function ScheduleDialog({ date, startTime, schedule, onClose, onS
 
   const dialogRef = useRef(null);
   useDialogFocusTrap(dialogRef);
-  const backdrop = useBackdropClose(onClose);
+  // 保存中连遮罩和 ✕ 也不能关：请求还在路上时用户关掉 A 的弹窗、又打开 B 的，
+  // A 成功后的 onSaved 会执行 setDialog(null) 把 B 也一起收掉，未保存的输入直接没了。
+  // 「取消」按钮本来就被 saving 置灰，这里把另外两条退出路径对齐到同一条规则。
+  const savingRef = useRef(false);
+  savingRef.current = saving;
+  const requestClose = useCallback(() => {
+    if (!savingRef.current) onClose();
+  }, [onClose]);
+  const backdrop = useBackdropClose(requestClose);
 
   useEffect(() => {
     api.getClasses().then(setClasses).catch(e => toast(e.message || '加载班级失败'));
@@ -180,7 +188,7 @@ export default function ScheduleDialog({ date, startTime, schedule, onClose, onS
             </h3>
             <p className="text-sm text-gray-400 dark:text-gray-500 mt-0.5">{form.date}</p>
           </div>
-          <button onClick={onClose} aria-label="关闭" className="w-7 h-7 rounded-lg bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-600 flex items-center justify-center text-sm transition-colors leading-none shrink-0">✕</button>
+          <button onClick={requestClose} disabled={saving} aria-label="关闭" className="w-7 h-7 rounded-lg bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-600 flex items-center justify-center text-sm transition-colors leading-none shrink-0 disabled:opacity-50">✕</button>
         </div>
 
         {error && (
@@ -243,7 +251,7 @@ export default function ScheduleDialog({ date, startTime, schedule, onClose, onS
                 <button onClick={handleDelete} disabled={saving}
                   className="p-2 bg-red-600 text-white rounded hover:bg-red-700 disabled:opacity-50">删除</button>
               )}
-              <button onClick={onClose} disabled={saving}
+              <button onClick={requestClose} disabled={saving}
                 className="p-2 bg-gray-300 dark:bg-gray-600 rounded disabled:opacity-50">取消</button>
             </div>
           </div>

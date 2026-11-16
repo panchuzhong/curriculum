@@ -18,7 +18,7 @@ vi.stubGlobal('fetch', fetchMock);
 vi.stubGlobal('window', { location: { href: '' } });
 
 // Static import — globals are already stubbed via vi.hoisted
-import { getToken, setToken, clearToken, api, loginUrl } from '../../api';
+import { getToken, setToken, clearToken, api, loginUrl, getTokenIdentity } from '../../api';
 
 describe('loginUrl', () => {
   afterEach(() => vi.unstubAllEnvs());
@@ -227,5 +227,33 @@ describe('request function', () => {
     // 对照：同一个班再取一次才该命中缓存，否则上面那个 2 只是「缓存根本没生效」。
     await api.getSchedules('2026-01-01', '2026-01-31', 1);
     expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+});
+
+// PrivateRoute 靠它区分「跨标签页换了账号」（必须重挂整棵私有树，否则 A 的界面
+// 会用 B 的令牌写数据）和「本页改密码换发了新令牌」（同一个人，重挂会把设置页
+// 和成功提示一起冲掉）。两种情况的差别只在 teacherId，不在令牌字符串。
+describe('getTokenIdentity', () => {
+  const jwtFor = (claims) => `h.${Buffer.from(JSON.stringify(claims)).toString('base64url')}.s`;
+
+  it('空令牌没有身份', () => {
+    expect(getTokenIdentity(null)).toBeNull();
+    expect(getTokenIdentity('')).toBeNull();
+  });
+
+  it('同一账号的不同令牌（pwdVersion 不同）身份相同', () => {
+    expect(getTokenIdentity(jwtFor({ teacherId: 1, pwdVersion: 3 })))
+      .toBe(getTokenIdentity(jwtFor({ teacherId: 1, pwdVersion: 4 })));
+  });
+
+  it('不同账号身份不同', () => {
+    expect(getTokenIdentity(jwtFor({ teacherId: 1, pwdVersion: 3 })))
+      .not.toBe(getTokenIdentity(jwtFor({ teacherId: 2, pwdVersion: 3 })));
+  });
+
+  // 解析不了就退回整串当身份：宁可多挂一次，也不能让串号的状态留着。
+  it('解析不了的令牌退回用整串比较', () => {
+    expect(getTokenIdentity('not-a-jwt')).toBe('raw:not-a-jwt');
+    expect(getTokenIdentity('a.%%%.c')).toBe('raw:a.%%%.c');
   });
 });

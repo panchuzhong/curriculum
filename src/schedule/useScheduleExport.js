@@ -26,6 +26,9 @@ export default function useScheduleExport({ weekStart, visibleDays, view } = {})
     setShowExport(true);
   }
 
+  // 三个视图统一：成功才关弹窗，失败把错误抛给 ExportDialog 自己显示。
+  // 原来这里 catch 住只 toast，周视图还在调用方无条件 setShowExport(false)——
+  // 接口 500 时用户选的区间随弹窗一起没了，只剩一句三秒的 toast，月/年视图却能重试。
   async function exportPNG(start, end, extraParams) {
     setExporting(true);
     try {
@@ -40,9 +43,10 @@ export default function useScheduleExport({ weekStart, visibleDays, view } = {})
         blob = await api.exportScheduleImage(start, end);
       }
       downloadBlob(blob, `课表_${start}_${end}.png`);
-      if (view) setShowExport(false);
+      setShowExport(false);
     } catch (e) {
       toast(e.message || '导出PNG失败');
+      throw e;
     } finally {
       setExporting(false);
     }
@@ -53,9 +57,10 @@ export default function useScheduleExport({ weekStart, visibleDays, view } = {})
     try {
       const blob = await api.exportScheduleCSV(start, end);
       downloadBlob(blob, `课表_${start}_${end}.csv`);
-      if (view) setShowExport(false);
+      setShowExport(false);
     } catch (e) {
       toast(e.message || '导出CSV失败');
+      throw e;
     } finally {
       setExporting(false);
     }

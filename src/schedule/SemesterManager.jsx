@@ -136,8 +136,11 @@ export default function SemesterManager() {
   const toast = useToast();
   const [confirmAction, confirmDialog] = useConfirm();
   const [semesters, setSemesters] = useState([]);
-  const [showForm, setShowForm] = useState(false);
-  const [editing, setEditing] = useState(null);
+  // 单一编辑器状态：null=收起，'new'=新建，否则是被编辑的那一学期行。
+  // 原来是 showForm 和 editing 两个独立布尔/对象：先点「新建学期」再点某行「编辑」，
+  // 两个同时为真，而保存更新只清 editing、showForm 仍 true——表单留在屏上却悄悄
+  // 切回新建模式，下一次保存调 createSemester 建出一个重复学期。
+  const [editor, setEditor] = useState(null);
   const [form, setForm] = useState(null);
   const [saving, setSaving] = useState(false);
   // 「表单存在」不等于「用户动过」：列表还没回来就点「新建学期」的话，预填用的是
@@ -175,7 +178,7 @@ export default function SemesterManager() {
     setSaving(true);
     try {
       await api.createSemester(form);
-      setShowForm(false);
+      setEditor(null);
       // 这一发没 await，finally 里的 setSaving(false) 已经把每一行的「编辑」放开了：
       // 回调落地时用户可能已经点开了某一行的编辑表单。无条件 setForm 会把那张表单
       // 换成「下一个学期」的模板，而 editing 还指着原来那行——再点保存就把人家的
@@ -195,15 +198,15 @@ export default function SemesterManager() {
     if (rangeError) { toast(rangeError); return; }
     setSaving(true);
     try {
-      await api.updateSemester(editing.id, form);
-      setEditing(null);
+      await api.updateSemester(editor.id, form);
+      setEditor(null);
       reload();
     } catch (e) { toast(e.message || '更新失败'); }
     finally { setSaving(false); }
   }
 
   function startEdit(s) {
-    setEditing(s);
+    setEditor(s);
     // 这张表单装的是某一行真实的值，不是一份可以被覆盖的预填——
     // 标成「动过」，否则迟到的学期列表会把它换成模板值。
     formTouched.current = true;
@@ -225,11 +228,11 @@ export default function SemesterManager() {
     <div>
       <div className="flex justify-between items-center mb-4">
         <h2 className="text-xl">学期管理</h2>
-        <button onClick={() => { setShowForm(true); setEditing(null); formTouched.current = false; setForm(getDefaultsFromSemesters(semesters)); }}
+        <button onClick={() => { setEditor('new'); formTouched.current = false; setForm(getDefaultsFromSemesters(semesters)); }}
           className="px-4 py-2 bg-blue-600 text-white rounded">新建学期</button>
       </div>
 
-      {(showForm || editing) && (
+      {editor && (
         <div className="bg-gray-100 dark:bg-gray-800 p-4 rounded-lg mb-4">
           <div className="grid grid-cols-2 gap-4">
             <div>
@@ -257,9 +260,9 @@ export default function SemesterManager() {
             </div>
           </div>
           <div className="flex gap-2 mt-4">
-            <button onClick={editing ? handleUpdate : handleCreate} disabled={saving}
+            <button onClick={editor === 'new' ? handleCreate : handleUpdate} disabled={saving}
               className="px-4 py-2 bg-blue-600 text-white rounded disabled:opacity-50">{saving ? '保存中...' : '保存'}</button>
-            <button onClick={() => { setShowForm(false); setEditing(null); }} disabled={saving}
+            <button onClick={() => setEditor(null)} disabled={saving}
               className="px-4 py-2 bg-gray-300 dark:bg-gray-600 rounded disabled:opacity-50">取消</button>
           </div>
         </div>

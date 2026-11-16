@@ -63,7 +63,6 @@ export default function YearlySchedule() {
   const [searchParams, setSearchParams] = useSearchParams();
   const [year, setYear] = useState(() => intParam(searchParams.get('year'), new Date().getFullYear(), { min: YEAR_MIN, max: YEAR_MAX }));
   const [schedules, setSchedules] = useState([]);
-  const [classes, setClasses] = useState([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
   const [animKey, setAnimKey] = useState(0);
@@ -87,11 +86,13 @@ export default function YearlySchedule() {
     const { start, end } = getYearRange(year);
     setLoading(true);
     setLoadError('');
-    Promise.all([api.getSchedules(start, end), api.getClasses()])
-      .then(([nextSchedules, nextClasses]) => {
+    // 排课行本身就带 class（GET /api/schedules 在服务端拼好），不必再单独拉一次
+    // 班级列表：原来 Promise.all([getSchedules, getClasses]) 每翻一年多发一个请求，
+    // 而且这个冗余请求一旦失败，整页年度课表都进错误态——排课数据其实已经拿到了。
+    api.getSchedules(start, end)
+      .then(nextSchedules => {
         if (gen !== fetchGenRef.current) return;
         setSchedules(nextSchedules);
-        setClasses(nextClasses);
       })
       .catch(e => {
         if (gen === fetchGenRef.current) setLoadError(e.message || '加载课表失败');
@@ -140,10 +141,7 @@ export default function YearlySchedule() {
     setViewDate('year', String(year));
   }, [year]);
 
-  const { classMap, byMonth, yearDisplayEntries, yearCategoryEntries, yearMaxHours, yearCondensed, yearTotalHours, yearDates, monthData } = useMemo(() => {
-    const cm = {};
-    classes.forEach(c => cm[c.id] = c);
-
+  const { byMonth, yearDisplayEntries, yearCategoryEntries, yearMaxHours, yearCondensed, yearTotalHours, yearDates, monthData } = useMemo(() => {
     const bm = {};
     for (let m = 0; m < 12; m++) bm[m] = { dates: new Set(), schedules: [] };
     const yCat = {};
@@ -151,7 +149,8 @@ export default function YearlySchedule() {
     const yDates = new Set();
     schedules.forEach(s => {
       const m = parseInt(s.date.split('-')[1]) - 1;
-      const cls = cm[s.classId];
+      // 班级信息直接用行内的 class：上面 reload 已经不再单独请求班级列表。
+      const cls = s.class;
       bm[m].dates.add(s.date);
       bm[m].schedules.push({ ...s, class: cls });
       const cat = getCategory(cls);
@@ -183,8 +182,8 @@ export default function YearlySchedule() {
       monthData[m] = { totalHours, categoryEntries, catCondensed, catDisplay };
     }
 
-    return { classMap: cm, byMonth: bm, yearDisplayEntries: displayEntries, yearCategoryEntries: entries, yearMaxHours: maxH, yearCondensed: condensed, yearTotalHours: yTotal, yearDates: yDates, monthData };
-  }, [schedules, classes, collapseLimit]);
+    return { byMonth: bm, yearDisplayEntries: displayEntries, yearCategoryEntries: entries, yearMaxHours: maxH, yearCondensed: condensed, yearTotalHours: yTotal, yearDates: yDates, monthData };
+  }, [schedules, collapseLimit]);
 
   const cols = isMobile ? 2 : 3;
   const mobileRows = isMobile ? Array.from({ length: Math.ceil(12 / cols) }, (_, row) => {

@@ -113,7 +113,9 @@ export default function HolidayManager() {
       </div>
 
       {showAdd && (
-        <div className="flex gap-2 mb-4 p-3 bg-white dark:bg-gray-700 rounded">
+        // 窄屏纵向堆叠：一行摆下日期+类型+名称+两个按钮要 544px，320px 视口下
+        // 「添加」和「取消」整个落到屏幕右边外面，不横滑根本点不到。
+        <div className="flex flex-col sm:flex-row flex-wrap gap-2 mb-4 p-3 bg-white dark:bg-gray-700 rounded">
           <input type="date" lang="zh-CN" min={DATE_MIN} max={DATE_MAX} className="p-2 bg-gray-100 dark:bg-gray-600 border border-gray-300 dark:border-gray-500 rounded text-sm"
             value={form.date} onChange={e => setForm({...form, date: e.target.value})} />
           <select className="p-2 bg-gray-100 dark:bg-gray-600 border border-gray-300 dark:border-gray-500 rounded text-sm"
@@ -121,10 +123,12 @@ export default function HolidayManager() {
             <option value="holiday">节假日</option>
             <option value="workday">调休上班</option>
           </select>
-          <input className="flex-1 p-2 bg-gray-100 dark:bg-gray-600 border border-gray-300 dark:border-gray-500 rounded text-sm"
+          <input className="flex-1 min-w-0 p-2 bg-gray-100 dark:bg-gray-600 border border-gray-300 dark:border-gray-500 rounded text-sm"
             placeholder="名称（如：春节）" value={form.name} onChange={e => setForm({...form, name: e.target.value})} />
-          <button onClick={addHoliday} className="px-3 py-2 bg-blue-600 text-white rounded text-sm">添加</button>
-          <button onClick={() => setShowAdd(false)} className="px-3 py-2 bg-gray-300 dark:bg-gray-600 rounded text-sm">取消</button>
+          <div className="flex gap-2">
+            <button onClick={addHoliday} className="flex-1 sm:flex-none px-3 py-2 bg-blue-600 text-white rounded text-sm">添加</button>
+            <button onClick={() => setShowAdd(false)} className="flex-1 sm:flex-none px-3 py-2 bg-gray-300 dark:bg-gray-600 rounded text-sm">取消</button>
+          </div>
         </div>
       )}
 

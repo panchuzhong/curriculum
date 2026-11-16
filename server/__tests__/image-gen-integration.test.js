@@ -242,33 +242,44 @@ describe('generateYearlyImage (Puppeteer integration)', () => {
   });
 });
 
-// Chromium 超过约 1.3e8 设备像素就会画不出东西——4 倍缩放的月度导出排到第七个月
-// 左右开始整张空白（6017e91 修的就是这个）。修法是把缩放按半档降到装得下为止。
-// 此前只有 fitDeviceScaleFactor 那点纯算术有用例，"算出来的低缩放有没有真的被应用"
-// 和"量的是不是真实高度"两件事都没人管：把 setViewport 那一行删掉、或者把
-// cssHeight 写死成 800，整套测试照样全绿，而导出的图又变回空白。
-describe('超长导出不会画成空白图', () => {
+// 月度长区间不再整页截图：withStackedMonthPages 按月分块再拼接，单次截图只有
+// 一个月的大小，所以 4 倍缩放全程保留（旧实现 24 个月会降到 1.5 倍）。
+// 要守的性质是「有效 PNG、宽度不变、高度随月份数增长」，而不是设备像素上限——
+// 分块之后总像素不再受单次截图 1.3e8 的限制，也不该再被压回去。
+describe('超长导出按月分块截图', () => {
   const W = (b) => b.readUInt32BE(16);
   const H = (b) => b.readUInt32BE(20);
   const isPng = (b) => b.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]));
-  const MAX_DEVICE_PIXELS = 1.2e8;
 
-  it('24 个月的月度导出仍是有效 PNG，且设备像素不超过上限', async () => {
+  it('24 个月的月度导出仍是有效 PNG，且受 canvas 高度上限约束', async () => {
+    const one = await generateMonthlyImage([], 2026, 0);
+    const three = await generateMonthlyImage([], 2026, 0, { endYear: 2026, endMonth: 2 });
     const buf = await generateMonthlyImage([], 2026, 0, { endYear: 2027, endMonth: 11 });
     expect(isPng(buf)).toBe(true);
     expect(W(buf)).toBeGreaterThan(0);
-    expect(H(buf)).toBeGreaterThan(0);
-    expect(W(buf) * H(buf)).toBeLessThanOrEqual(MAX_DEVICE_PIXELS);
-  }, 60000);
+    // 24 个月的 4 倍合成图超过 10 万 px 高，超出浏览器 canvas 上限，
+    // withStackedMonthPages 会对整张图做一次等比降采样。
+    expect(H(buf)).toBeLessThanOrEqual(32000);
+    expect(H(buf)).toBeGreaterThan(H(one) * 6);
+    // 等比：输出高度被压到上限，宽度必须按同一倍数缩小。参照取 12 个月
+    // （同样可能触发降采样，所以改用未降采样的 3 个月区间推全尺寸比例）。
+    const gapPx = 24 * 4;
+    const fullH3 = H(three);                 // 未降采样：3 个月 + 2 个间距
+    const perMonth = (fullH3 - gapPx * 2) / 3;
+    const fullHeight = perMonth * 24 + gapPx * 23;
+    const scale = H(buf) / fullHeight;
+    expect(Math.abs(W(buf) - W(one) * scale)).toBeLessThanOrEqual(W(one) * 0.03);
+  }, 120000);
 
-  // 对照：短的导出不该被降缩放，否则上面那条也可能只是"所有图都被压小了"。
-  it('单月导出仍按 4 倍缩放出图', async () => {
+  it('单月与多月都按同一倍率出图（分块后不再逐块降缩放）', async () => {
     const one = await generateMonthlyImage([], 2026, 0);
-    const twelve = await generateMonthlyImage([], 2026, 0, { endYear: 2026, endMonth: 11 });
-
+    const three = await generateMonthlyImage([], 2026, 0, { endYear: 2026, endMonth: 2 });
     expect(isPng(one)).toBe(true);
-    expect(W(one) * H(one)).toBeLessThanOrEqual(MAX_DEVICE_PIXELS);
-    // 单月没被降，12 个月被降了：两者的"每月高度"不该相等
-    expect(H(twelve) / 12).toBeLessThan(H(one));
+    const gapPx = 24 * 4;
+    // 各月 CSS 高度不同（5 行或 6 行周），所以直接量单月高度再相加，
+    // 而不是拿一月的高度乘月份数。2026 年 1~3 月分别是 4、6、5 行周。
+    const feb = await generateMonthlyImage([], 2026, 1);
+    const mar = await generateMonthlyImage([], 2026, 2);
+    expect(H(three)).toBe(H(one) + H(feb) + H(mar) + gapPx * 2);
   }, 60000);
 });

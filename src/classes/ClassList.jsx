@@ -6,6 +6,7 @@ import { useConfirm } from '../components/ConfirmDialog';
 import ClassForm from './ClassForm';
 import PricingManager from './PricingManager';
 import ScheduleHistory from './ScheduleHistory';
+import ErrorState from '../components/ErrorState';
 
 export default function ClassList() {
   const dark = useContext(DarkContext);
@@ -13,13 +14,23 @@ export default function ClassList() {
   const [confirmAction, confirmDialog] = useConfirm();
   const [classes, setClasses] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
   const [expandedId, setExpandedId] = useState(null);
   const [activeTab, setActiveTab] = useState('info'); // 'info' | 'pricing' | 'schedules'
   const [showNew, setShowNew] = useState(false);
   const [saving, setSaving] = useState(false);
 
   const refreshClasses = useCallback(() => {
-    api.getClasses().then(setClasses).catch(e => toast(e.message || '加载班级失败')).finally(() => setLoading(false));
+    setLoading(true);
+    setLoadError('');
+    api.getClasses()
+      .then(setClasses)
+      .catch(e => {
+        // 失败要留下持久的错误态，而不是 toast 一闪之后显示「暂无班级」——
+        // 那句话和真的没有班级一模一样，还邀请用户去新建。
+        setLoadError(e.message || '加载班级失败');
+      })
+      .finally(() => setLoading(false));
   }, []);
 
   const cancelExpand = useCallback(() => setExpandedId(null), []);
@@ -87,10 +98,13 @@ export default function ClassList() {
         {loading && (
           <div className="text-center py-8 text-gray-400">加载中...</div>
         )}
-        {!loading && classes.length === 0 && (
+        {!loading && loadError && (
+          <ErrorState message={`班级加载失败：${loadError}`} onRetry={refreshClasses} />
+        )}
+        {!loading && !loadError && classes.length === 0 && (
           <p className="text-gray-400 text-center py-8">暂无班级，点击右上角新建</p>
         )}
-        {classes.map(cls => (
+        {!loadError && classes.map(cls => (
           <div key={cls.id} className="bg-gray-100 dark:bg-gray-800 rounded-lg overflow-hidden">
             {/* Collapsed header — no delete button, just chevron */}
             <div className="p-4 flex items-center justify-between cursor-pointer hover:bg-gray-200 dark:hover:bg-gray-700"

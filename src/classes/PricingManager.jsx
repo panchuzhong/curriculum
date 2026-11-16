@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { api } from '../api';
 import { DATE_MIN, DATE_MAX } from '../utils/constants';
 import { isUsableDate, DATE_INVALID_HINT } from '../utils/date';
@@ -61,6 +61,22 @@ export default function PricingManager({ classId, onChanged }) {
     setEditId(null);
   }
 
+  // 写入和随后的刷新分开报错：一个 try 包住两者的话，写入已经成功、刷新断网，
+  // 用户看到的却是「保存失败」+ 旧列表——再点一次保存就建出重复记录；
+  // 删除那边更糟：已删的行还在屏上，再删一次换回 404。
+  const [refreshError, setRefreshError] = useState('');
+
+  const refresh = useCallback(async () => {
+    setRefreshError('');
+    try {
+      const updated = await api.getClassPricing(classId);
+      setRecords(updated);
+      onChanged?.();
+    } catch (e) {
+      setRefreshError(e.message || '刷新定价列表失败');
+    }
+  }, [classId, onChanged]);
+
   async function handleSave() {
     if (saving) return;
     // 空值不能静默返回：点了保存什么都不发生，和页面卡死了没区别。
@@ -84,28 +100,30 @@ export default function PricingManager({ classId, onChanged }) {
       } else {
         await api.createClassPricing(classId, data);
       }
-      setShowForm(false);
-      setEditId(null);
-      const updated = await api.getClassPricing(classId);
-      setRecords(updated);
-      onChanged?.();
     } catch (e) {
+      // 只有写入本身失败才走这里：表单留着，用户改完可以直接重试。
       toast(e.message || '保存失败');
-    } finally {
       setSaving(false);
+      return;
     }
+    setShowForm(false);
+    setEditId(null);
+    setSaving(false);
+    // 写入已经成功。刷新失败要单独说，并且留一个重试入口（见 refreshError 的渲染）。
+    toast('定价已保存', 'success');
+    await refresh();
   }
 
   async function handleDelete(r) {
     if (!(await confirmAction(`确定删除 ${r.effectiveFrom} 起的定价记录？`))) return;
     try {
       await api.deleteClassPricing(classId, r.id);
-      const updated = await api.getClassPricing(classId);
-      setRecords(updated);
-      onChanged?.();
     } catch (e) {
       toast(e.message || '删除失败');
+      return;
     }
+    toast('定价已删除', 'success');
+    await refresh();
   }
 
   const inp = 'w-full p-2 text-sm bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded';
@@ -129,6 +147,15 @@ export default function PricingManager({ classId, onChanged }) {
             )}
           </div>
           <p className="text-sm text-gray-400 dark:text-gray-500 mt-1">自 {current.effectiveFrom} 起生效</p>
+        </div>
+      )}
+
+      {refreshError && (
+        <div className="mb-3 p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg text-sm">
+          {/* 写入已经成功、只是列表没刷出来的情况：明确说出来，别让「操作失败」的
+              措辞诱导用户再写一次。 */}
+          <p role="alert" className="text-red-600 dark:text-red-400">操作已完成，但列表刷新失败：{refreshError}</p>
+          <button onClick={refresh} className="mt-2 px-3 py-1 bg-gray-200 dark:bg-gray-600 rounded">重新加载列表</button>
         </div>
       )}
 

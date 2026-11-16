@@ -5,6 +5,7 @@ import { useToast } from '../components/ToastProvider';
 import { useConfirm } from '../components/ConfirmDialog';
 import { useDialogFocusTrap } from '../hooks/useDialogFocusTrap';
 import { useBackdropClose } from '../hooks/useBackdropClose';
+import ErrorState from '../components/ErrorState';
 
 function StudentDialog({ student, classes, onClose, onSaved }) {
   const toast = useToast();
@@ -151,12 +152,20 @@ export default function StudentList() {
   const [classes, setClasses] = useState([]);
   const [students, setStudents] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
   const [dialog, setDialog] = useState(null); // null | 'new' | student object
   const [filterClass, setFilterClass] = useState('all');
 
   const reload = useCallback(() => {
+    setLoading(true);
+    setLoadError('');
     api.getClasses().then(setClasses).catch(e => toast(e.message || '加载班级失败'));
-    api.getAllStudents().then(setStudents).catch(e => toast(e.message || '加载学生失败')).finally(() => setLoading(false));
+    // 学生列表失败要有持久错误态：否则 toast 消失后页面写着「暂无学生，点击右上角新建」，
+    // 和真的一个学生都没有完全一样，而筛班下拉框里还列着旧的人数。
+    api.getAllStudents()
+      .then(setStudents)
+      .catch(e => setLoadError(e.message || '加载学生失败'))
+      .finally(() => setLoading(false));
   }, []);
 
   const closeDialog = useCallback(() => setDialog(null), []);
@@ -193,6 +202,8 @@ export default function StudentList() {
 
       {loading ? (
         <p className="text-gray-400 text-center py-8">加载中...</p>
+      ) : loadError ? (
+        <ErrorState message={`学生加载失败：${loadError}`} onRetry={reload} />
       ) : filtered.length === 0 ? (
         <p className="text-gray-400 text-center py-8">
           {students.length === 0 ? '暂无学生，点击右上角新建' : '该班级暂无学生'}

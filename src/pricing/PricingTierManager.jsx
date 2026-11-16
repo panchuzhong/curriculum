@@ -46,23 +46,25 @@ export default function PricingTierManager() {
           </div>
         ))}
       </div>
-      <div className="flex gap-2 items-end">
+      {/* 窄屏纵向堆叠：三个定宽数字框加按钮横向要 ~430px，320px 视口下「添加」
+          会溢出到屏外。输入框占满整行，按钮只在 sm 起才接到同一行。 */}
+      <div className="flex flex-col sm:flex-row sm:flex-wrap gap-2 sm:items-end">
         <div>
           <label className="block text-sm text-gray-500 dark:text-gray-400 mb-1">最少人数</label>
-          <input type="number" min="1" className="w-24 p-2 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded"
+          <input type="number" min="1" className="w-full sm:w-24 p-2 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded"
             value={form.minStudents} onChange={e => setForm({...form, minStudents: e.target.value === '' ? '' : +e.target.value})} />
         </div>
         <div>
           <label className="block text-sm text-gray-500 dark:text-gray-400 mb-1">最多人数</label>
-          <input type="number" min="1" className="w-24 p-2 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded"
+          <input type="number" min="1" className="w-full sm:w-24 p-2 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded"
             value={form.maxStudents} onChange={e => setForm({...form, maxStudents: e.target.value === '' ? '' : +e.target.value})} />
         </div>
         <div>
           <label className="block text-sm text-gray-500 dark:text-gray-400 mb-1">单价 (元/人/时)</label>
-          <input type="number" step="0.01" className="w-32 p-2 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded"
+          <input type="number" step="0.01" className="w-full sm:w-32 p-2 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded"
             value={form.pricePerStudentPerHour} onChange={e => setForm({...form, pricePerStudentPerHour: e.target.value === '' ? '' : +e.target.value})} />
         </div>
-        <button onClick={addTier} disabled={saving} className="px-4 py-2 bg-green-600 rounded hover:bg-green-700 disabled:opacity-50">{saving ? '处理中...' : '添加'}</button>
+        <button onClick={addTier} disabled={saving} className="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700 disabled:opacity-50">{saving ? '处理中...' : '添加'}</button>
       </div>
     </div>
   );

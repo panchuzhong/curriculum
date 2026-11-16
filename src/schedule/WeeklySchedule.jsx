@@ -19,7 +19,7 @@ export default function WeeklySchedule() {
 
   const {
     gridRef, weekStart, allDates, allSchedules, isMobile, visibleDays, loading, loadError,
-    navigateTo, navigateByDays, goToThisWeek, reload, isStale,
+    navigateByDays, canStepDays, goToThisWeek, reload, isStale,
   } = useWeekNavigation({ searchParams, setSearchParams });
 
   const [dialog, setDialog] = useState(null);
@@ -57,7 +57,7 @@ export default function WeeklySchedule() {
     <div ref={containerRef} tabIndex={-1} className="outline-none h-full flex flex-col">
       <WeekNavBar
         weekStart={weekStart} visibleDays={visibleDays} isMobile={isMobile}
-        navigateTo={navigateTo} goToThisWeek={goToThisWeek}
+        navigateByDays={navigateByDays} canStepDays={canStepDays} goToThisWeek={goToThisWeek}
         showBatch={showBatch} setShowBatch={setShowBatch}
         exporting={exporting} openExport={openExport}
       />
@@ -76,6 +76,10 @@ export default function WeeklySchedule() {
             // 最后一屏的尾巴上排着 DATE_MAX 之后的空格子，那些日期存不下排课：
             // 开个弹窗让人填完再报「日期无效」，不如当场说清楚。
             if (!isUsableDate(date)) { toast(DATE_INVALID_HINT); return; }
+            // 和已有课程同一个 isStale 守卫：刚保存/删除过、新数据还没回来时，
+            // 这个空格可能已经被刚提交的那节课占上了。放人进去新建一节，提交时
+            // 就会在那个时段叠出第二节（不同班级或不同开始时间的重叠是能存下的）。
+            if (isStale()) { toast('课表正在刷新，请稍后再点'); return; }
             setDialog({ date, startTime });
           }}
         />
@@ -108,8 +112,8 @@ export default function WeeklySchedule() {
           defaultStart={exportStart}
           defaultEnd={exportEnd}
           onClose={() => setShowExport(false)}
-          onExportPNG={async (s, e) => { await exportPNG(s, e); setShowExport(false); }}
-          onExportCSV={(s, e) => { exportCSV(s, e); setShowExport(false); }}
+          onExportPNG={exportPNG}
+          onExportCSV={exportCSV}
         />
       )}
     </div>

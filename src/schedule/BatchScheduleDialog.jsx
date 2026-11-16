@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { todayStr, fmt, isUsableDate, dateRangeError, clampDate, DATE_INVALID_HINT } from '../utils/date';
 import { DATE_MIN, DATE_MAX } from '../utils/constants';
 import { api } from '../api';
@@ -46,7 +46,16 @@ export default function BatchScheduleDialog({ onClose, onSaved }) {
   const toast = useToast();
   const dialogRef = useRef(null);
   useDialogFocusTrap(dialogRef);
-  const backdrop = useBackdropClose(onClose);
+  // 结果页（提交成功后）的每一条退出路径都得走 onSaved 刷新课表：
+  // 只点「完成」才刷新的话，✕ 和遮罩关掉后屏上仍是提交前的课表——
+  // 删掉的颜色块还在、还能点开，新建的课则看不见，直到下一次翻页。
+  // 镜像赋值在下面的 state 声明之后（result/saving 尚未初始化时读它们是 TDZ 错误）。
+  const requestClose = useCallback(() => {
+    if (savingRef.current) return;
+    if (resultRef.current) onSaved();
+    else onClose();
+  }, [onClose, onSaved]);
+  const backdrop = useBackdropClose(requestClose);
 
   const [classes, setClasses] = useState([]);
   const [semesters, setSemesters] = useState([]);
@@ -98,6 +107,13 @@ export default function BatchScheduleDialog({ onClose, onSaved }) {
     durationBilling: '',
     dates: '',
   });
+
+  // 放在所有 state 之后：useBackdropClose 只要一个稳定的 onClose，
+  // 而 result/saving 的最新值通过 ref 读，不必进 useCallback 的依赖。
+  const resultRef = useRef(null);
+  resultRef.current = result;
+  const savingRef = useRef(false);
+  savingRef.current = saving;
 
   useEffect(() => {
     api.getClasses().then(setClasses).catch(e => toast(e.message || '加载班级失败'));
@@ -317,7 +333,7 @@ export default function BatchScheduleDialog({ onClose, onSaved }) {
       <div ref={dialogRef} tabIndex={-1} className="modal-enter bg-white dark:bg-gray-800 rounded-2xl p-4 sm:p-6 w-full max-w-[500px] max-h-[90vh] overflow-auto thin-scroll shadow-xl" onClick={e => e.stopPropagation()}>
         <div className="flex items-center justify-between mb-4">
           <h3 className="text-lg font-semibold">批量操作</h3>
-          <button onClick={onClose} aria-label="关闭" className="w-7 h-7 rounded-lg bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-600 flex items-center justify-center text-sm transition-colors leading-none">✕</button>
+          <button onClick={requestClose} disabled={saving} aria-label="关闭" className="w-7 h-7 rounded-lg bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-600 flex items-center justify-center text-sm transition-colors leading-none disabled:opacity-50">✕</button>
         </div>
 
         {!result ? (
@@ -538,7 +554,7 @@ export default function BatchScheduleDialog({ onClose, onSaved }) {
                       className="flex-1 p-2 text-white bg-red-600 hover:bg-red-700 rounded disabled:opacity-40">
                       预览删除
                     </button>
-                    <button onClick={onClose} className="p-2 bg-gray-300 dark:bg-gray-600 rounded">取消</button>
+                    <button onClick={requestClose} disabled={saving} className="p-2 bg-gray-300 dark:bg-gray-600 rounded disabled:opacity-50">取消</button>
                   </>
                 )
               ) : (
@@ -547,7 +563,7 @@ export default function BatchScheduleDialog({ onClose, onSaved }) {
                     className="flex-1 p-2 text-white bg-blue-600 hover:bg-blue-700 rounded disabled:opacity-50">
                     {saving ? '处理中...' : '批量排课'}
                   </button>
-                  <button onClick={onClose} className="p-2 bg-gray-300 dark:bg-gray-600 rounded">取消</button>
+                  <button onClick={requestClose} disabled={saving} className="p-2 bg-gray-300 dark:bg-gray-600 rounded disabled:opacity-50">取消</button>
                 </>
               )}
             </div>
@@ -563,7 +579,7 @@ export default function BatchScheduleDialog({ onClose, onSaved }) {
                 {result.holidayDataMissing.join('、')} 年没有节假日数据，本次排课未跳过节假日。
               </p>
             )}
-            <button onClick={onSaved}
+            <button onClick={requestClose}
               className="px-6 py-2 bg-blue-600 text-white rounded hover:bg-blue-700">完成</button>
           </div>
         )}

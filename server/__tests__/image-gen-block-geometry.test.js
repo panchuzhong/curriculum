@@ -14,6 +14,13 @@ vi.mock('../services/image-helpers.js', async () => {
       captured.viewport = viewport;
       return Buffer.from('89504e470d0a1a0a', 'hex');
     }),
+    // 月度导出已改成按月分块截图（withStackedMonthPages）：mock 掉浏览器这一层，
+    // 把每月的完整文档拼成一个整页 HTML 交回给几何断言——它们检查的是
+    // renderMonthHtml 产出的条形位置和尺寸，与截图如何分块无关。
+    withStackedMonthPages: vi.fn(async (months) => {
+      captured.html = months.map(m => m.html).join('\n');
+      return Buffer.from('89504e470d0a1a0a', 'hex');
+    }),
   };
 });
 

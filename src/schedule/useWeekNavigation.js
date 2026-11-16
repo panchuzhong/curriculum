@@ -64,6 +64,20 @@ export default function useWeekNavigation({ searchParams, setSearchParams }) {
   const isMobile = orient.mobile;
   const visibleDays = isMobile ? 2 : 7;
 
+  // 跨断点时把锚点重新对齐：窄屏的双日视图锚点就是当天（可以是一周里任意一天），
+  // 放宽到桌面后若只换 visibleDays 不换锚点，7 列会从周三一直排到下周二，
+  // 「上一周/下一周」也按这个错位走，再也回不到周一对齐（除非点「本周」）。
+  // 反向（桌面→窄屏）不需要动：周一是合法的双日锚点。
+  const prevMobileRef = useRef(isMobile);
+  useEffect(() => {
+    if (prevMobileRef.current && !isMobile) {
+      // 从 targetRef 而不是 weekStart 取当前位置：动画进行中 resize 时
+      // weekStart 还是上一屏的，targetRef 才是用户正在去的那一天。
+      navigateToWeek(getMonday(targetRef.current));
+    }
+    prevMobileRef.current = isMobile;
+  }, [isMobile]);
+
   const initialWeek = dateParam(searchParams.get('week')) || (() => {
     const selectedDate = dateParam(searchParams.get('date'));
     const { mobile } = getOrientation();
@@ -292,8 +306,15 @@ export default function useWeekNavigation({ searchParams, setSearchParams }) {
     setViewDate('week', weekStart);
   }, [weekStart]);
 
+  // 上一周/下一周相对「正在去的那一天」而不是屏上这一屏算：动画期间 weekStart
+  // 还是旧值，快速连点两次「下一周」会两次都请求同一个 +7 目标，最终只前进一周；
+  // 「下一周」紧跟「上一周」更糟——第二下拿旧锚点 -7，直接落回原日期的前一周。
+  // 键盘和 Ctrl+方向键早就是这套 targetRef 逻辑（见 navigateByDays），按钮对齐过来。
+  // 禁用判断也得看 targetRef：连点时 weekStart 尚未更新，按它算出的 canStep 是旧一屏的。
+  const canStepDays = (days) => isUsableDate(addDays(targetRef.current, days));
+
   return {
     gridRef, weekStart, allDates, allSchedules, isMobile, visibleDays, loading, loadError,
-    navigateTo, navigateByDays, goToThisWeek, reload, isStale,
+    navigateTo, navigateByDays, canStepDays, goToThisWeek, reload, isStale,
   };
 }

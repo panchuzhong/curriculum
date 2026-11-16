@@ -232,9 +232,14 @@ function PasswordSection() {
   const [form, setForm] = useState({ oldPassword: '', newPassword: '', confirmPassword: '' });
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
+  const [saving, setSaving] = useState(false);
 
   async function handleSubmit(e) {
     e.preventDefault();
+    // 双击/回车重入必须拦住：第一次改密成功后旧令牌版本即被服务端作废，
+    // 第二个并发请求会带着同一个旧令牌再去改一次，拿回 401——api 层会清掉
+    // 刚发下来的新令牌并跳登录，用户看到的却是「改完密码被踢出去了」。
+    if (saving) return;
     setError('');
     setSuccess('');
     if (form.newPassword !== form.confirmPassword) {
@@ -245,6 +250,7 @@ function PasswordSection() {
       setError('新密码至少8位');
       return;
     }
+    setSaving(true);
     try {
       const res = await api.changePassword({ oldPassword: form.oldPassword, newPassword: form.newPassword });
       // Password change revokes old tokens; keep the current session alive
@@ -253,6 +259,8 @@ function PasswordSection() {
       setForm({ oldPassword: '', newPassword: '', confirmPassword: '' });
     } catch (err) {
       setError(err.message || '修改失败');
+    } finally {
+      setSaving(false);
     }
   }
 
@@ -277,7 +285,9 @@ function PasswordSection() {
           <input type="password" className="w-full p-2 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded"
             value={form.confirmPassword} onChange={e => setForm({...form, confirmPassword: e.target.value})} />
         </div>
-        <button type="submit" className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700">修改密码</button>
+        <button type="submit" disabled={saving} className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50">
+          {saving ? '修改中…' : '修改密码'}
+        </button>
       </form>
     </div>
   );

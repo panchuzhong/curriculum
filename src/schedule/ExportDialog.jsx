@@ -44,6 +44,7 @@ export default function ExportDialog({ view = 'week', defaultStart, defaultEnd, 
   const [yEndYear, setYEndYear] = useState(defaultYear ?? curYear);
 
   const [exporting, setExporting] = useState(false);
+  const [exportError, setExportError] = useState('');
   const yearOptions = [...new Set([
     ...Array.from({ length: view === 'year' ? 8 : 5 }, (_, i) => curYear - (view === 'year' ? 3 : 2) + i),
     defaultYear ?? curYear,
@@ -65,8 +66,11 @@ export default function ExportDialog({ view = 'week', defaultStart, defaultEnd, 
   }
 
   // ── PNG handler ──
+  // 失败必须留在弹窗里：区间选择还在，用户改一改或直接重试都行。
+  // hook 那边只在成功时关闭弹窗，失败会把错误抛回来（并另发一句 toast）。
   async function handlePNG() {
     setExporting(true);
+    setExportError('');
     try {
       if (view === 'month') {
         const { start: s, end: e } = monthRangeToDates();
@@ -77,6 +81,8 @@ export default function ExportDialog({ view = 'week', defaultStart, defaultEnd, 
       } else {
         await onExportPNG(start, end, {});
       }
+    } catch (e) {
+      setExportError(e.message || '导出PNG失败');
     } finally {
       setExporting(false);
     }
@@ -85,6 +91,7 @@ export default function ExportDialog({ view = 'week', defaultStart, defaultEnd, 
   // ── CSV handler ──
   async function handleCSV() {
     setExporting(true);
+    setExportError('');
     try {
       if (view === 'month') {
         const { start: s, end: e } = monthRangeToDates();
@@ -95,6 +102,8 @@ export default function ExportDialog({ view = 'week', defaultStart, defaultEnd, 
       } else {
         await onExportCSV(start, end);
       }
+    } catch (e) {
+      setExportError(e.message || '导出CSV失败');
     } finally {
       setExporting(false);
     }
@@ -333,6 +342,9 @@ export default function ExportDialog({ view = 'week', defaultStart, defaultEnd, 
             <button onClick={onClose}
               className="p-3 bg-gray-300 dark:bg-gray-600 rounded-lg">取消</button>
           </div>
+          {exportError && (
+            <p role="alert" className="text-sm text-red-500 mt-2">{exportError}，请重试。</p>
+          )}
         </div>
       </div>
     </div>

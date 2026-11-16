@@ -6,6 +6,7 @@ import { todayStr, getMonday, addDays, getMonthRange, getYearRange, dateRangeErr
 import { useToast } from '../components/ToastProvider';
 import useBoundWarning from '../hooks/useBoundWarning';
 import { shortcutBlocked } from '../utils/keys';
+import ErrorState from '../components/ErrorState';
 
 function groupBy(arr, fn) {
   const map = Object.create(null);
@@ -80,6 +81,10 @@ export default function Reports() {
   const [customEnd, setCustomEnd] = useState(todayStr());
   // Generation guard: a stale summary response (rapid period switching) must not overwrite newer data
   const fetchGenRef = useRef(0);
+  // 失败后的重试入口：报表区间是状态驱动的，失败后点「本周/本月/今年」时那些状态
+  // 往往没变（本来就停在这一周），effect 不会重跑，整页就卡在错误上出不来。
+  const [retryTick, setRetryTick] = useState(0);
+  const retry = useCallback(() => setRetryTick(n => n + 1), []);
 
   useEffect(() => { api.getClasses().then(setClasses).catch(e => toast(e.message || '加载班级失败')); }, []);
 
@@ -122,7 +127,7 @@ export default function Reports() {
       .catch(e => { if (gen === fetchGenRef.current) setReportError(e.message || '加载报表失败'); })
       .finally(() => { if (gen === fetchGenRef.current) setLoading(false); });
     return () => { fetchGenRef.current++; };
-  }, [tab, weekStart, year, month, customStart, customEnd, filterClassId]);
+  }, [tab, weekStart, year, month, customStart, customEnd, filterClassId, retryTick]);
 
   const loadWeek = useCallback((monday) => {
     setWeekStart(monday);
@@ -329,7 +334,7 @@ export default function Reports() {
             <button onClick={() => stepWeek(-1)} disabled={!canStepWeek(-1)} className="px-2 py-1 bg-gray-200 dark:bg-gray-700 rounded hover:bg-gray-300 dark:hover:bg-gray-600 active:scale-95 transition-transform text-sm disabled:opacity-40">◀</button>
             <span className="text-xs sm:text-sm tabular-nums text-center min-w-[140px] sm:w-48">{period.start} ~ {period.end}</span>
             <button onClick={() => stepWeek(1)} disabled={!canStepWeek(1)} className="px-2 py-1 bg-gray-200 dark:bg-gray-700 rounded hover:bg-gray-300 dark:hover:bg-gray-600 active:scale-95 transition-transform text-sm disabled:opacity-40">▶</button>
-            <button onClick={() => loadWeek(getMonday(todayStr()))} className="px-2 sm:px-3 py-1 bg-gray-200 dark:bg-gray-700 rounded text-xs sm:text-sm hover:bg-gray-300 dark:hover:bg-gray-600 active:scale-95 transition-transform">本周</button>
+            <button onClick={() => { loadWeek(getMonday(todayStr())); retry(); }} className="px-2 sm:px-3 py-1 bg-gray-200 dark:bg-gray-700 rounded text-xs sm:text-sm hover:bg-gray-300 dark:hover:bg-gray-600 active:scale-95 transition-transform">本周</button>
           </div>
         )}
         {tab === 'month' && (
@@ -339,7 +344,7 @@ export default function Reports() {
             <span className="text-xs sm:text-sm text-center min-w-[80px] sm:w-32">{year}年{month + 1}月</span>
             <button onClick={() => stepMonth(1)} disabled={year >= YEAR_MAX && month === 11}
               className="px-2 py-1 bg-gray-200 dark:bg-gray-700 rounded hover:bg-gray-300 dark:hover:bg-gray-600 active:scale-95 transition-transform disabled:opacity-40">▶</button>
-            <button onClick={() => { const n = new Date(); setYear(n.getFullYear()); setMonth(n.getMonth()); }}
+            <button onClick={() => { const n = new Date(); setYear(n.getFullYear()); setMonth(n.getMonth()); retry(); }}
               className="px-2 sm:px-3 py-1 bg-gray-200 dark:bg-gray-700 rounded text-xs sm:text-sm hover:bg-gray-300 dark:hover:bg-gray-600 active:scale-95 transition-transform">本月</button>
           </div>
         )}
@@ -350,7 +355,7 @@ export default function Reports() {
             <span className="text-xs sm:text-sm text-center min-w-[60px] sm:w-20">{year}年</span>
             <button onClick={() => stepYear(1)} disabled={year >= YEAR_MAX}
               className="px-2 py-1 bg-gray-200 dark:bg-gray-700 rounded hover:bg-gray-300 dark:hover:bg-gray-600 active:scale-95 transition-transform disabled:opacity-40">▶</button>
-            <button onClick={() => setYear(new Date().getFullYear())}
+            <button onClick={() => { setYear(new Date().getFullYear()); retry(); }}
               className="px-2 sm:px-3 py-1 bg-gray-200 dark:bg-gray-700 rounded text-xs sm:text-sm hover:bg-gray-300 dark:hover:bg-gray-600 active:scale-95 transition-transform">今年</button>
           </div>
         )}
@@ -373,7 +378,7 @@ export default function Reports() {
       {loading ? (
         <p role="status" className="text-center py-16 text-gray-500">正在加载报表…</p>
       ) : reportError ? (
-        <p role="alert" className="text-center py-16 text-red-500">报表加载失败：{reportError}</p>
+        <ErrorState message={`报表加载失败：${reportError}`} onRetry={retry} />
       ) : <>
       {/* Summary cards */}
       <div className="grid grid-cols-3 gap-2 sm:gap-4 mb-3 sm:mb-6">

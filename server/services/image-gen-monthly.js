@@ -1,4 +1,4 @@
-import { isDarkTheme, withBrowserPage } from './image-helpers.js';
+import { isDarkTheme, withStackedMonthPages } from './image-helpers.js';
 import { buildHolidayCalendar } from './holiday-calendar.js';
 import { getColor, getTextColor } from './colors.js';
 import { monthDayWindow, monthBarPct, MONTH_BAR_MIN_HEIGHT, hasDrawableTimes, toLocalDateStr, escapeHtml, detectConflictGroups, findDatedConflictIds, assignColumns } from './schedule-helpers.js';
@@ -178,6 +178,8 @@ function renderMonthHtml(schedulesWithClasses, year, month, { theme, checkIsHoli
 }
 
 // ── Public API ────────────────────────────────────────────────────
+const PAD = 10;
+
 export async function generateMonthlyImage(schedulesWithClasses, year, month, { theme = 'auto', dbHolidays = [], endYear, endMonth } = {}) {
   const todayStr = toLocalDateStr(new Date());
 
@@ -190,40 +192,33 @@ export async function generateMonthlyImage(schedulesWithClasses, year, month, { 
 
   const shared = { theme, checkIsHoliday, checkIsWorkday, checkHolidayName, todayStr, conflictIds: findDatedConflictIds(schedulesWithClasses) };
 
-  // Build combined HTML
-  let combinedHtml = '';
+  // Each month is rendered and captured separately, then stitched by
+  // withStackedMonthPages: a single full-height screenshot of 24 months needs
+  // a ~300 MiB RGBA surface even after the scale factor is lowered, and the
+  // browser's own copies during encoding come on top of that.
+  const months = [];
   let bg = '#f9fafb';
   let maxW = 0;
-  for (let i = 0; i < monthList.length; i++) {
-    const m = monthList[i];
-    // Filter schedules for this month
+  for (const m of monthList) {
     const prefix = `${m.year}-${String(m.month + 1).padStart(2, '0')}`;
     const monthScheds = schedulesWithClasses.filter(s => s.date.startsWith(prefix));
     const result = renderMonthHtml(monthScheds, m.year, m.month, shared);
-    combinedHtml += i > 0
-      ? result.html.replace('<div>', '<div style="margin-top:24px">')
-      : result.html;
     bg = result.bg;
     maxW = Math.max(maxW, result.totalW);
-  }
-
-  const PAD = 10;
-  const totalW = maxW;
-
-  const html = `<!DOCTYPE html>
+    months.push({
+      html: `<!DOCTYPE html>
 <html><head><meta charset="UTF-8"><style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
   html, body { min-height: 0; height: auto; }
-  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: ${bg}; padding: ${PAD}px; -webkit-font-smoothing: antialiased; }
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: ${result.bg}; padding: ${PAD}px; -webkit-font-smoothing: antialiased; }
 </style></head><body>
-  ${combinedHtml}
-</body></html>`;
-
-  return withBrowserPage(html, { width: totalW + 4, height: 800, deviceScaleFactor: 4 }, async (page) => {
-    const r = await page.evaluate(() => {
-      const el = document.documentElement.getBoundingClientRect();
-      return { x: 0, y: 0, width: Math.ceil(el.width), height: Math.ceil(el.height) };
+  ${result.html}
+</body></html>`,
     });
-    return { x: 0, y: 0, width: totalW, height: Math.ceil(r.height) };
-  });
+  }
+
+  const totalW = maxW;
+  // 24px 的月间距和原来的整页版一致（原来是第二个月起 margin-top:24px），
+  // 现在由拼接时填背景色实现。截图按 maxW 取齐，每月 padding 相同所以背景无缝。
+  return withStackedMonthPages(months, { bg, totalWidth: totalW + 4, deviceScaleFactor: 4, monthGap: 24 });
 }

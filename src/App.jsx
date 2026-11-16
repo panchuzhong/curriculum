@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, Fragment } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import ErrorBoundary from './ErrorBoundary';
 import Layout from './components/Layout';
@@ -14,12 +14,19 @@ import SemesterManager from './schedule/SemesterManager';
 import Reports from './reports/Reports';
 import Settings from './settings/Settings';
 import DesignPreview from './DesignPreview';
-import { api, clearToken } from './api';
+import { api, clearToken, getTokenIdentity } from './api';
 
 function PrivateRoute({ children }) {
-  const [token, setToken] = useState(() => localStorage.getItem('token'));
+  const [identity, setIdentity] = useState(() => getTokenIdentity(localStorage.getItem('token')));
   useEffect(() => {
-    const update = () => setToken(localStorage.getItem('token'));
+    // 另一个标签页换账号登录时，光换 token 字符串不够：整棵私有页面树还拿着旧账号的
+    // 班级列表、课表数据和表单状态，而新请求已经带上 B 的令牌——在 A 的页面上点
+    // 「保存学科设置」就会写进 B 的账号。账号身份变化时把 key 一起换掉，强制整树重挂，
+    // 所有 state 和 effect 重新初始化（课表缓存由 api.setToken/clearToken 清）。
+    //
+    // 比较的是令牌里的账号身份，不是令牌字符串：本标签页改密码会换发新令牌，
+    // 那还是同一个人，重挂会把「密码修改成功」的提示和设置页一起冲掉。
+    const update = () => setIdentity(getTokenIdentity(localStorage.getItem('token')));
     window.addEventListener('storage', update);
     window.addEventListener('token-changed', update);
     return () => {
@@ -27,7 +34,9 @@ function PrivateRoute({ children }) {
       window.removeEventListener('token-changed', update);
     };
   }, []);
-  return token ? children : <Navigate to="/login" />;
+  if (!identity) return <Navigate to="/login" />;
+  // Fragment 而不是 div：key 换的只是身份，不想给布局多包一层真实 DOM。
+  return <Fragment key={identity}>{children}</Fragment>;
 }
 
 function AuthInit({ children }) {

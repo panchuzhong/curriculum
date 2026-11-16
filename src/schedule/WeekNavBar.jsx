@@ -1,8 +1,8 @@
-import { addDays, isUsableDate } from '../utils/date';
+import { addDays } from '../utils/date';
 
 export default function WeekNavBar({
   weekStart, visibleDays, isMobile,
-  navigateTo, goToThisWeek,
+  navigateByDays, canStepDays, goToThisWeek,
   showBatch, setShowBatch,
   exporting, openExport,
 }) {
@@ -16,10 +16,8 @@ export default function WeekNavBar({
     ? `px-2 py-1.5 ${color} text-white rounded text-sm select-none`
     : `px-3 py-2 ${color} text-white rounded text-sm select-none`;
 
-  // 越界的一步 navigateTo 会直接不走（见 useWeekNavigation）。按钮还亮着的话，
-  // 点下去没任何反应，和页面卡死了没区别——拦了就得让人看得出来。
-  // 判的是首列，和 navigateTo 一致（为什么只管首列见 useWeekNavigation）。
-  const canStep = (days) => isUsableDate(addDays(weekStart, days));
+  // 目标和禁用判断都由 useWeekNavigation 基于 targetRef（正在去的那一天）给出：
+  // 按屏上的 weekStart 算的话，动画还没走完就连点会丢步或跳错周（见 hook 里的注释）。
   // 这里故意不夹。站在 2999-12-31 时标题会写「2999-12-31 ~ 3000-01-06」，
   // 印出一个超过 DATE_MAX 的日期——看着确实别扭（审阅里被提过两次）。
   // 但夹了更坏：夹出来是「2999-12-31 ~ 2999-12-31」，一个 7 列的网格配一句
@@ -36,8 +34,8 @@ export default function WeekNavBar({
       <div className="flex items-center gap-1">
         {!isMobile && (
           <>
-            <button onClick={() => navigateTo(addDays(weekStart, -7))} disabled={!canStep(-7)} className={`${navBtn} disabled:opacity-40`}>上一周</button>
-            <button onClick={() => navigateTo(addDays(weekStart, -1))} disabled={!canStep(-1)} className={`${navBtn} disabled:opacity-40`}>前一天</button>
+            <button onClick={() => navigateByDays(-7)} disabled={!canStepDays(-7)} className={`${navBtn} disabled:opacity-40`}>上一周</button>
+            <button onClick={() => navigateByDays(-1)} disabled={!canStepDays(-1)} className={`${navBtn} disabled:opacity-40`}>前一天</button>
           </>
         )}
       </div>
@@ -49,8 +47,8 @@ export default function WeekNavBar({
       <div className="flex items-center gap-1">
         {!isMobile && (
           <>
-            <button onClick={() => navigateTo(addDays(weekStart, 1))} disabled={!canStep(1)} className={`${navBtn} disabled:opacity-40`}>后一天</button>
-            <button onClick={() => navigateTo(addDays(weekStart, 7))} disabled={!canStep(7)} className={`${navBtn} disabled:opacity-40`}>下一周</button>
+            <button onClick={() => navigateByDays(1)} disabled={!canStepDays(1)} className={`${navBtn} disabled:opacity-40`}>后一天</button>
+            <button onClick={() => navigateByDays(7)} disabled={!canStepDays(7)} className={`${navBtn} disabled:opacity-40`}>下一周</button>
           </>
         )}
         <button onClick={goToThisWeek} className={todayBtn}>{isMobile ? '今天' : '本周'}</button>
