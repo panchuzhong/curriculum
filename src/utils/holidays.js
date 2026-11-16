@@ -67,11 +67,18 @@ if (typeof window !== 'undefined') {
   // imported by server-side data-consistency tests where localStorage does not
   // exist.
   loadDbHolidays();
-  window.addEventListener('token-changed', () => {
+  const reset = () => {
     dbHolidays = null;
     dbLoaded = false;
     notifyListeners();
     loadDbHolidays();
+  };
+  window.addEventListener('token-changed', reset);
+  // storage 只在「别的文档」里触发：另一个标签页换账号时，本页的 token-changed
+  // 不会跑，而模块级的 dbHolidays 是跨账号共享的——不一起清的话，B 的月视图
+  // 会原样渲染 A 的自定义节假日名和调休标记，而且永远不会再去拉 B 的日历。
+  window.addEventListener('storage', (e) => {
+    if (e.key === 'token') reset();
   });
 }
 

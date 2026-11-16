@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { api } from '../api';
 import { DATE_MIN, DATE_MAX } from '../utils/constants';
 import { isUsableDate, DATE_INVALID_HINT } from '../utils/date';
@@ -65,14 +65,21 @@ export default function PricingManager({ classId, onChanged }) {
   // 用户看到的却是「保存失败」+ 旧列表——再点一次保存就建出重复记录；
   // 删除那边更糟：已删的行还在屏上，再删一次换回 404。
   const [refreshError, setRefreshError] = useState('');
+  // 刷新也要讲代次：保存 A 后的 GET_A 可能比保存 B 后的 GET_B 更晚回来，
+  // 而它拿的是 B 写入之前的快照。不设防的话迟到的 GET_A 会把 B 刚存进去的
+  // 那一行从屏上抹掉，看着就像「保存没生效」。只有最新一次刷新能写 records。
+  const refreshGenRef = useRef(0);
 
   const refresh = useCallback(async () => {
+    const gen = ++refreshGenRef.current;
     setRefreshError('');
     try {
       const updated = await api.getClassPricing(classId);
+      if (gen !== refreshGenRef.current) return;
       setRecords(updated);
       onChanged?.();
     } catch (e) {
+      if (gen !== refreshGenRef.current) return;
       setRefreshError(e.message || '刷新定价列表失败');
     }
   }, [classId, onChanged]);
@@ -108,22 +115,28 @@ export default function PricingManager({ classId, onChanged }) {
     }
     setShowForm(false);
     setEditId(null);
-    setSaving(false);
     // 写入已经成功。刷新失败要单独说，并且留一个重试入口（见 refreshError 的渲染）。
     toast('定价已保存', 'success');
+    // saving 一直保持到刷新结束：提前解锁的话，用户可以在 GET_A 还没回来时
+    // 又保存 B，两次写入与两次刷新交错，屏上的列表取决于哪一发最后落地。
     await refresh();
+    setSaving(false);
   }
 
   async function handleDelete(r) {
+    if (saving) return;
     if (!(await confirmAction(`确定删除 ${r.effectiveFrom} 起的定价记录？`))) return;
+    setSaving(true);
     try {
       await api.deleteClassPricing(classId, r.id);
     } catch (e) {
       toast(e.message || '删除失败');
+      setSaving(false);
       return;
     }
     toast('定价已删除', 'success');
     await refresh();
+    setSaving(false);
   }
 
   const inp = 'w-full p-2 text-sm bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded';
@@ -187,9 +200,9 @@ export default function PricingManager({ classId, onChanged }) {
                 <td className="text-right p-2">¥{r.discountAmount || 0}</td>
                 <td className="p-2 sm:pl-10 text-gray-500 dark:text-gray-400">{r.discountReason || <span className="text-gray-400">—</span>}</td>
                 <td className="text-right p-2">
-                  <button onClick={() => openEdit(r)} className="text-blue-600 dark:text-blue-400 hover:underline mr-3">编辑</button>
+                  <button onClick={() => openEdit(r)} disabled={saving} className="text-blue-600 dark:text-blue-400 hover:underline mr-3 disabled:opacity-50">编辑</button>
                   {records.length > 1 && (
-                    <button onClick={() => handleDelete(r)} className="text-red-500 hover:underline">删除</button>
+                    <button onClick={() => handleDelete(r)} disabled={saving} className="text-red-500 hover:underline disabled:opacity-50">删除</button>
                   )}
                 </td>
               </tr>

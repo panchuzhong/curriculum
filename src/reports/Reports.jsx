@@ -186,6 +186,9 @@ export default function Reports() {
         else if (tab === 'month') { const n = new Date(); setYear(n.getFullYear()); setMonth(n.getMonth()); }
         else if (tab === 'year') { setYear(new Date().getFullYear()); }
         else { setCustomStart(todayStr()); setCustomEnd(todayStr()); }
+        // 和「本周/本月/今年」按钮一样补一次 retry：本来就在这个周期时，
+        // 上面的 setState 全是同值，effect 不会重跑，失败态就永远留在屏上。
+        retry();
         return;
       }
       if (tab === 'week' && period) {
@@ -201,7 +204,7 @@ export default function Reports() {
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [tab, period, loadWeek, stepWeek, stepMonth, stepYear]);
+  }, [tab, period, loadWeek, stepWeek, stepMonth, stepYear, retry]);
 
   const classMap = useMemo(() => {
     const m = {};

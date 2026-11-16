@@ -1,4 +1,4 @@
-import { useState, useEffect, useContext, useCallback } from 'react';
+import { useState, useEffect, useContext, useCallback, useRef } from 'react';
 import { api } from '../api';
 import { getClassColor, DarkContext } from '../utils/colors';
 import { useToast } from '../components/ToastProvider';
@@ -19,18 +19,27 @@ export default function ClassList() {
   const [activeTab, setActiveTab] = useState('info'); // 'info' | 'pricing' | 'schedules'
   const [showNew, setShowNew] = useState(false);
   const [saving, setSaving] = useState(false);
+  const fetchGenRef = useRef(0);
 
   const refreshClasses = useCallback(() => {
+    // 并发刷新要讲先后：挂载时的 A 请求可能晚于「新建班级」后的 B 请求回来，
+    // 而 A 拿的是建班之前的快照。没有代次守卫的话，迟到的 A 会把 B 刚列出来的
+    // 新班级抹掉；A 失败时更隐蔽——loadError 会把 B 已经成功的列表整个换成错误页。
+    const gen = ++fetchGenRef.current;
     setLoading(true);
     setLoadError('');
     api.getClasses()
-      .then(setClasses)
+      .then(list => {
+        if (gen !== fetchGenRef.current) return;
+        setClasses(list);
+      })
       .catch(e => {
+        if (gen !== fetchGenRef.current) return;
         // 失败要留下持久的错误态，而不是 toast 一闪之后显示「暂无班级」——
         // 那句话和真的没有班级一模一样，还邀请用户去新建。
         setLoadError(e.message || '加载班级失败');
       })
-      .finally(() => setLoading(false));
+      .finally(() => { if (gen === fetchGenRef.current) setLoading(false); });
   }, []);
 
   const cancelExpand = useCallback(() => setExpandedId(null), []);

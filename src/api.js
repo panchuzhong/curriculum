@@ -56,6 +56,15 @@ function clearScheduleCache() {
   scheduleCache.clear();
 }
 
+// storage 事件只在「别的文档」里触发：另一个标签页换账号登录时，本标签页的
+// setToken/clearToken 不会跑，课表缓存却必须一起作废——键里只有 start/end/classId，
+// 不清的话 B 的页面会在 TTL 内直接拿到 A 的课，连请求都不发。
+if (typeof window !== 'undefined') {
+  window.addEventListener('storage', (e) => {
+    if (e.key === 'token') clearScheduleCache();
+  });
+}
+
 function scheduleCacheKey(start, end, classId) {
   return `${start}|${end}|${classId || ''}`;
 }

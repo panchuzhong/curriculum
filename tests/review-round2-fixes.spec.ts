@@ -242,6 +242,9 @@ test('另一标签页换账号登录后，本页私有树重挂并重新拉取�
   await page.route('**/api/auth/profile', route => route.fulfill({ json: profile }));
   await page.route('**/api/classes', route => { classCalls++; return route.fulfill({ json: [cls] }); });
   await page.route('**/api/schedules?**', route => route.fulfill({ json: [] }));
+  // 换账号后节假日模块也会重新拉取（storage 监听清缓存）。不 mock 的话，
+  // 这个假账号在真实后端是 401，页面会被 api 层踢去登录——那就不是本条要测的行为。
+  await page.route('**/api/holidays', route => route.fulfill({ json: [] }));
   await page.goto('/classes');
   await expect(page.getByText('回归班')).toBeVisible();
   const before = classCalls;

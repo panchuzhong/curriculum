@@ -13,8 +13,16 @@ function StudentDialog({ student, classes, onClose, onSaved }) {
   const [confirmAction, confirmDialog] = useConfirm();
   const dialogRef = useRef(null);
   useDialogFocusTrap(dialogRef);
-  const backdrop = useBackdropClose(onClose);
   const [saving, setSaving] = useState(false);
+  // 和 ScheduleDialog 同一条规矩：保存请求还在路上时，遮罩和 ✕ 也不能关。
+  // 关掉 A 再打开 B 之后，A 成功回调里的 onSaved 会执行 setDialog(null)，
+  // 把 B 连同未保存的输入一起收掉。学生弹窗此前漏了这道守卫。
+  const savingRef = useRef(false);
+  savingRef.current = saving;
+  const requestClose = useCallback(() => {
+    if (!savingRef.current) onClose();
+  }, [onClose]);
+  const backdrop = useBackdropClose(requestClose);
   const [form, setForm] = useState({
     name: '', birthDate: '', phone: '', parentName: '', parentPhone: '', note: '', classIds: [],
   });
@@ -136,7 +144,7 @@ function StudentDialog({ student, classes, onClose, onSaved }) {
               <button type="button" onClick={handleDelete} disabled={saving}
                 className="p-2 bg-red-600 text-white rounded hover:bg-red-700 disabled:opacity-50">删除</button>
             )}
-            <button type="button" onClick={onClose} disabled={saving}
+            <button type="button" onClick={requestClose} disabled={saving}
               className="p-2 bg-gray-300 dark:bg-gray-600 rounded disabled:opacity-50">取消</button>
           </div>
         </form>
@@ -155,17 +163,21 @@ export default function StudentList() {
   const [loadError, setLoadError] = useState('');
   const [dialog, setDialog] = useState(null); // null | 'new' | student object
   const [filterClass, setFilterClass] = useState('all');
+  const fetchGenRef = useRef(0);
 
   const reload = useCallback(() => {
+    // 和学生保存后的那次 reload 可能并发：挂载时的 A 比 B 晚回来时，
+    // A 的旧快照会把新建的学生从表里抹掉，A 失败则会把 B 的表格换成错误页。
+    const gen = ++fetchGenRef.current;
     setLoading(true);
     setLoadError('');
     api.getClasses().then(setClasses).catch(e => toast(e.message || '加载班级失败'));
     // 学生列表失败要有持久错误态：否则 toast 消失后页面写着「暂无学生，点击右上角新建」，
     // 和真的一个学生都没有完全一样，而筛班下拉框里还列着旧的人数。
     api.getAllStudents()
-      .then(setStudents)
-      .catch(e => setLoadError(e.message || '加载学生失败'))
-      .finally(() => setLoading(false));
+      .then(list => { if (gen === fetchGenRef.current) setStudents(list); })
+      .catch(e => { if (gen === fetchGenRef.current) setLoadError(e.message || '加载学生失败'); })
+      .finally(() => { if (gen === fetchGenRef.current) setLoading(false); });
   }, []);
 
   const closeDialog = useCallback(() => setDialog(null), []);

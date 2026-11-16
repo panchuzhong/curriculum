@@ -15,65 +15,94 @@ export function fitDeviceScaleFactor(requested, cssWidth, cssHeight) {
   return Math.min(requested, Math.max(1, fit));
 }
 
-// A single screenshot of a long export is not just a paint-size problem: the
-// full-height RGBA surface (and its copies during PNG encoding) has to fit in
-// memory at once. 24 months at the old floor of 1.5x was ~78M device pixels —
-// roughly 300 MiB before the browser's own copies — on a small VPS that is an
-// OOM kill. Screenshots are therefore taken one month at a time and stitched
-// on a canvas inside the page, so no single capture exceeds a few megapixels
-// and the requested scale factor never has to be lowered.
+// canvas.toDataURL returns "data:," once the bitmap exceeds the browser's
+// maximum canvas height (Chromium starts failing around 50–65k px here).
+// 24 months at 4x is ~118k px, so the stitched image is capped; the capture
+// scale is derived from that same ratio (see below).
+const MAX_CANVAS_HEIGHT = 32000;
+
+// 纯计算，导出给单测：先量出各月 CSS 高度，再决定每月按多大倍率截图。
+// 24 个月若一律按 4 倍截再整体降到 0.27 倍，浏览器要渲染、编码、传输、
+// 解码大约 14 倍于交付图像的像素，然后扔掉其中 93%——既慢又费内存。
+// 这里把「最终一定会降采样」提前到截图那一步，交付尺寸完全一样。
+export function planMonthlyCapture(cssHeights, { deviceScaleFactor = 4, monthGap = 24, maxCanvasHeight = MAX_CANVAS_HEIGHT } = {}) {
+  const gapPx = monthGap * deviceScaleFactor;
+  const fullHeight = cssHeights.reduce((h, x) => h + Math.ceil(x * deviceScaleFactor), 0)
+    + gapPx * Math.max(0, cssHeights.length - 1);
+  const outScale = fullHeight > maxCanvasHeight ? maxCanvasHeight / fullHeight : 1;
+  return {
+    fullHeight,
+    outScale,
+    captureScale: deviceScaleFactor * outScale,
+    gapPx,
+  };
+}
+
+// 按月分块截图再拼接，而不是整页截一张：
+//   · 整页截图的高度有 Chromium 上限，超过就整张空白（6017e91）；
+//   · 24 个月的整页 RGBA 表面加上浏览器副本是数百 MiB，小内存机器会被 OOM。
+// 每月一块，任何时刻只有一块原始截图和解码后的位图活着。
 //
-// monthGap is the CSS margin between consecutive month blocks (see
-// image-gen-monthly.js); it is painted as background between the chunks.
+// 间距：每月文档自带上下各 10px 的 body padding，所以相邻两月的内容间距
+// 本来就是 20px；monthGap 是「目标总间距」，拼接时只补差额（24-20=4px），
+// 否则两个月的图会隔出 44px 而不是原来的 24px。
 export async function withStackedMonthPages(months, { bg, totalWidth, deviceScaleFactor = 4, monthGap = 24 }) {
   const { getBrowser } = await import('./browser.js');
   const browser = await getBrowser();
   const page = await browser.newPage();
   try {
-    const chunks = [];
-    // Viewport is set once: all months share the same width and scale factor.
-    await page.setViewport({ width: totalWidth, height: 800, deviceScaleFactor });
+    // 第一遍：只量高度，不截图。setContent 很便宜，贵的是截图与编码。
+    await page.setViewport({ width: totalWidth, height: 800, deviceScaleFactor: 1 });
+    const cssHeights = [];
     for (const m of months) {
-      // 'load' rather than 'networkidle0': the page is a static, self-contained
-      // document with no sub-resources, so waiting for network idle only adds
-      // latency — and repeating setContent 24 times makes that add up.
       await page.setContent(m.html, { waitUntil: 'load', timeout: 30000 });
-      const height = await page.evaluate(() => Math.ceil(document.documentElement.getBoundingClientRect().height));
-      const buf = await page.screenshot({ type: 'png', timeout: 30000, clip: { x: 0, y: 0, width: totalWidth, height } });
-      // Each chunk is handed to the page immediately, so only one raw capture
-      // is alive at a time on the Node side.
+      cssHeights.push(await page.evaluate(() => Math.ceil(document.documentElement.getBoundingClientRect().height)));
+    }
+    const plan = planMonthlyCapture(cssHeights, { deviceScaleFactor, monthGap });
+    const { captureScale, outScale, gapPx } = plan;
+    // 每块图里已经带着上下各 10 CSS px 的 body padding，相邻两块之间本来就有
+    // 20 CSS px；要凑到 monthGap，只补差额，不能整段再加一遍。
+    const padGapPx = Math.max(0, gapPx - 20 * captureScale);
+
+    // 第二遍：逐月截图，base64 留在 Node 侧。此时浏览器里没有拼接用的 canvas，
+    // 渲染进程只要扛得住「一个月」的表面。
+    const chunks = [];
+    for (let i = 0; i < months.length; i++) {
+      await page.setContent(months[i].html, { waitUntil: 'load', timeout: 30000 });
+      await page.setViewport({ width: totalWidth, height: 800, deviceScaleFactor: captureScale });
+      const buf = await page.screenshot({
+        type: 'png', timeout: 30000,
+        clip: { x: 0, y: 0, width: totalWidth, height: cssHeights[i] },
+      });
       chunks.push(`data:image/png;base64,${Buffer.from(buf).toString('base64')}`);
     }
-    const stitched = await page.evaluate(async ({ urls, width, dsf, bg, gap }) => {
-      const images = [];
-      for (const src of urls) {
-        const img = new Image();
-        img.src = src;
-        await img.decode();
-        images.push(img);
-      }
-      const gapPx = gap * dsf;
-      // canvas.toDataURL returns "data:," once the bitmap exceeds the browser's
-      // maximum canvas height (Chromium: 65535px) — 24 months at 4x is ~118k px.
-      // Downscale the stitched image only in that case; the per-month captures
-      // stay at full scale either way, which is the point of chunking.
-      const MAX_CANVAS_HEIGHT = 32000;
-      const fullHeight = images.reduce((h, img) => h + img.height, 0) + gapPx * (images.length - 1);
-      const outScale = fullHeight > MAX_CANVAS_HEIGHT ? MAX_CANVAS_HEIGHT / fullHeight : 1;
+
+    // 第三遍才在同一个页面里拼。不能另开一个页面边截边拼：那样截图页的表面和
+    // 拼接页的 canvas 同时活着，内存翻倍——三个月就在渲染进程里 OOM 了
+    // （Page.captureScreenshot: Target closed）。这里任何时刻只有一份大表面，
+    // 逐块 decode 再画，块本身随每次 evaluate 结束释放。
+    await page.setContent('<!DOCTYPE html><html><body></body></html>', { waitUntil: 'load' });
+    const canvasWidth = Math.max(1, Math.round(totalWidth * captureScale));
+    const canvasHeight = Math.max(1, Math.round(plan.fullHeight * outScale));
+    const stitched = await page.evaluate(async ({ urls, width, height, bg, padGapPx }) => {
       const canvas = document.createElement('canvas');
-      canvas.width = Math.max(1, Math.round(width * dsf * outScale));
-      canvas.height = Math.max(1, Math.round(fullHeight * outScale));
+      canvas.width = width;
+      canvas.height = height;
       const ctx = canvas.getContext('2d');
       ctx.fillStyle = bg;
-      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.fillRect(0, 0, width, height);
       let y = 0;
-      for (let i = 0; i < images.length; i++) {
-        if (i > 0) y += gapPx;
-        ctx.drawImage(images[i], 0, Math.round(y * outScale), Math.round(images[i].width * outScale), Math.round(images[i].height * outScale));
-        y += images[i].height;
+      for (let i = 0; i < urls.length; i++) {
+        const img = new Image();
+        img.src = urls[i];
+        await img.decode();
+        if (i > 0) y += padGapPx;
+        ctx.drawImage(img, 0, Math.round(y));
+        y += img.height;
+        urls[i] = null; // 释放这一块，下一块再解码
       }
       return canvas.toDataURL('image/png').split(',')[1];
-    }, { urls: chunks, width: totalWidth, dsf: deviceScaleFactor, bg, gap: monthGap });
+    }, { urls: chunks, width: canvasWidth, height: canvasHeight, bg, padGapPx });
     if (!stitched) throw new Error('月度课表导出失败：浏览器未能合成图片');
     return Buffer.from(stitched, 'base64');
   } finally {

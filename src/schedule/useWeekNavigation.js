@@ -180,6 +180,13 @@ export default function useWeekNavigation({ searchParams, setSearchParams }) {
   // Instant buffer swap: update dates centered on newCenter, snap offset to 0
   function navigateToWeek(newCenter) {
     if (!mountedRef.current) return;
+    // targetRef 必须一起写：翻页按钮和方向键都从「正在去的那一天」算下一步。
+    // 跨断点重对齐（mobile→desktop）走的就是这条路，只写 centerRef 的话，
+    // 屏上已经是周一了，下一次「下一周」却还会从旧的周三算，又歪回去。
+    targetRef.current = newCenter;
+    // 动画途中被重对齐/滑动手势接管时，动画恢复后不能再把它捕获的旧目标
+    // 重新排队放回去——那会把刚对齐的周一又顶掉（见 navigateTo 的代次判断）。
+    queuedTargetRef.current = null;
     setViewDate('week', newCenter);
     setSearchParams({ week: newCenter }, { replace: true });
     centerRef.current = newCenter;
@@ -220,6 +227,15 @@ export default function useWeekNavigation({ searchParams, setSearchParams }) {
       // settle callback navigates from wherever the swipe ends, and committing
       // our pre-computed target on top of it would yank the grid back.
       if (isInteractingRef.current) return;
+      // 动画期间有人另走了一次提交（跨断点重对齐、滑动手势落定、goToThisWeek），
+      // 这次动画的目标已经过期：不提交它，但队列重放必须照常走——
+      // 快速连点时第二次点击就排在队列里，直接 return 会把那一跳整个吞掉。
+      if (targetRef.current !== newWeekStart) {
+        const queued = queuedTargetRef.current;
+        queuedTargetRef.current = null;
+        if (queued && mountedRef.current) await navigateTo(queued);
+        return;
+      }
     }
 
     navigateToWeek(newWeekStart);
@@ -235,7 +251,15 @@ export default function useWeekNavigation({ searchParams, setSearchParams }) {
   const onSettleRef = useRef(null);
   onSettleRef.current = (dayOffset) => {
     applyPendingSchedules();
-    if (dayOffset === 0) return;
+    // 滑动位移为 0（原地松手、或被边界弹回）时不会走 navigateToWeek，
+    // 但动画期间被这次触摸打断的那次导航已经把 targetRef 写成了它没去成的目标。
+    // 屏上还是 centerRef 那一屏，targetRef 必须拉回来，否则下一次「下一周」
+    // 会从这个悬空的目标再往前算，直接跳过一周。
+    if (dayOffset === 0) {
+      targetRef.current = centerRef.current;
+      queuedTargetRef.current = null;
+      return;
+    }
     // 滑动是按天拖的，越过边界就停在范围内最后一天，而不是整个手势弹回原处：
     // 移动端隐藏了上一周/后一天按钮，滑动是唯一的走法，弹回就等于走不到最后一天。
     // （整周翻页不夹：那会把一个周步变成半个周步，见 navigateTo。）

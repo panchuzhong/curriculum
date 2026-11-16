@@ -15,7 +15,9 @@ const { store, localStorageMock, fetchMock } = vi.hoisted(() => {
 
 vi.stubGlobal('localStorage', localStorageMock);
 vi.stubGlobal('fetch', fetchMock);
-vi.stubGlobal('window', { location: { href: '' } });
+// api.js 在模块加载时挂 storage 监听（跨标签页换账号要清课表缓存），
+// 这里用真的 EventTarget，测试才能派发 storage 事件验证它。
+vi.stubGlobal('window', Object.assign(new EventTarget(), { location: { href: '' } }));
 
 // Static import — globals are already stubbed via vi.hoisted
 import { getToken, setToken, clearToken, api, loginUrl, getTokenIdentity } from '../../api';
@@ -257,3 +259,7 @@ describe('getTokenIdentity', () => {
     expect(getTokenIdentity('a.%%%.c')).toBe('raw:a.%%%.c');
   });
 });
+
+// 跨标签页换账号时课表缓存作废的用例放在 api-cache-invalidation.test.js：
+// 本文件顶部的静态 import 会在 stubGlobal 之前求值 api.js，storage 监听挂不到
+// 这个 window 上；那边全程动态 import，事件派发与监听才是同一个对象。

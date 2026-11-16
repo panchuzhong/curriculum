@@ -218,7 +218,11 @@ export async function generateMonthlyImage(schedulesWithClasses, year, month, { 
   }
 
   const totalW = maxW;
-  // 24px 的月间距和原来的整页版一致（原来是第二个月起 margin-top:24px），
-  // 现在由拼接时填背景色实现。截图按 maxW 取齐，每月 padding 相同所以背景无缝。
-  return withStackedMonthPages(months, { bg, totalWidth: totalW + 4, deviceScaleFactor: 4, monthGap: 24 });
+  // 月间距：原来整页版是「第二个月起 margin-top:24px」，body padding 只在整页上下各一次。
+  // 分块后每块自带上下 10px padding，相邻两块之间已有 20px，拼接时只补 4px 差额
+  // （见 withStackedMonthPages），总间距仍是 24px，总高度与整页版一致。
+  //
+  // 宽度直接用内容宽 totalW，不再 +4：那 4px 是当年整页 viewport 的余量，
+  // clip 一直按 totalW 取。把它也传进裁剪宽度会平白多出一条右侧空白。
+  return withStackedMonthPages(months, { bg, totalWidth: totalW, deviceScaleFactor: 4, monthGap: 24 });
 }

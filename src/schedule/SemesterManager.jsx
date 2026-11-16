@@ -228,8 +228,12 @@ export default function SemesterManager() {
     <div>
       <div className="flex justify-between items-center mb-4">
         <h2 className="text-xl">学期管理</h2>
+        {/* 保存期间不许切换编辑器：更新请求还在路上时点开「新建学期」，
+            旧请求成功后 setEditor(null) 会把刚填了一半的新表单一起关掉。
+            各行「编辑」按钮本来就被 saving 置灰，这里把入口对齐。 */}
         <button onClick={() => { setEditor('new'); formTouched.current = false; setForm(getDefaultsFromSemesters(semesters)); }}
-          className="px-4 py-2 bg-blue-600 text-white rounded">新建学期</button>
+          disabled={saving}
+          className="px-4 py-2 bg-blue-600 text-white rounded disabled:opacity-50">新建学期</button>
       </div>
 
       {editor && (
