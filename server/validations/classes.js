@@ -1,17 +1,10 @@
 import { body } from 'express-validator';
-import { isValidDate, isValidBirthDate, DATE_RANGE_SUFFIX } from './dates.js';
-import { numToStr } from './students.js';
+import { isValidDate, DATE_RANGE_SUFFIX } from './dates.js';
+import { studentDetails } from './students.js';
 import { isFiniteNumber } from './numbers.js';
 import { singleValues } from './single-values.js';
 
 export const VALID_GRADES = ['初一', '初二', '初三', '高一', '高二', '高三', '大学'];
-const PHONE_RE = /^1[3-9]\d{9}$/;
-// numToStr 和 students.js 用的是同一个：这条路由（POST /api/classes/:id/students）
-// 建的也是学生，字段规则是照抄的，所以那边的"数字绑进 TEXT 列会存成 1990.0 /
-// 13800000000.0，下一次修改就 400"同样适用。两边的行为由
-// routes-classes 里的一条用例钉在一起。
-const optionalPhone = (field, msg) =>
-  body(field).optional({ checkFalsy: true }).customSanitizer(numToStr).matches(PHONE_RE).withMessage(msg);
 
 export const validateCreateClass = [
   // isIn/isInt/isBoolean/isFloat 对数组逐元素校验，[] 和 ['高一'] 都能混过（规则见
@@ -28,8 +21,8 @@ export const validateCreateClass = [
   body('isCompetition').optional().isBoolean().toBoolean().withMessage('isCompetition 须为布尔值'),
   body('discountReason').optional({ values: 'null' }).isString().withMessage('优惠原因最多500个字符').bail().isLength({ max: 500 }).withMessage('优惠原因最多500个字符'),
   body('defaultLocationName').optional({ values: 'null' }).isString().withMessage('默认地点最多200个字符').bail().isLength({ max: 200 }).withMessage('默认地点最多200个字符'),
-  body('defaultLocationLat').optional({ checkFalsy: true }).isFloat({ min: -90, max: 90 }).withMessage('纬度须为 -90 到 90'),
-  body('defaultLocationLng').optional({ checkFalsy: true }).isFloat({ min: -180, max: 180 }).withMessage('经度须为 -180 到 180'),
+  body('defaultLocationLat').optional({ values: 'null' }).if(v => v !== '').isFloat({ min: -90, max: 90 }).withMessage('纬度须为 -90 到 90'),
+  body('defaultLocationLng').optional({ values: 'null' }).if(v => v !== '').isFloat({ min: -180, max: 180 }).withMessage('经度须为 -180 到 180'),
   body('defaultLocationLatFor').optional({ values: 'null' }).isString().withMessage('坐标来源地点最多200个字符').bail().isLength({ max: 200 }).withMessage('坐标来源地点最多200个字符'),
   body('defaultLocationLngFor').optional({ values: 'null' }).isString().withMessage('坐标来源地点最多200个字符').bail().isLength({ max: 200 }).withMessage('坐标来源地点最多200个字符'),
 ];
@@ -45,8 +38,8 @@ export const validateUpdateClass = [
   body('isCompetition').optional().isBoolean().toBoolean().withMessage('isCompetition 须为布尔值'),
   body('discountReason').optional({ values: 'null' }).isString().withMessage('优惠原因最多500个字符').bail().isLength({ max: 500 }).withMessage('优惠原因最多500个字符'),
   body('defaultLocationName').optional({ values: 'null' }).isString().withMessage('默认地点最多200个字符').bail().isLength({ max: 200 }).withMessage('默认地点最多200个字符'),
-  body('defaultLocationLat').optional({ checkFalsy: true }).isFloat({ min: -90, max: 90 }).withMessage('纬度须为 -90 到 90'),
-  body('defaultLocationLng').optional({ checkFalsy: true }).isFloat({ min: -180, max: 180 }).withMessage('经度须为 -180 到 180'),
+  body('defaultLocationLat').optional({ values: 'null' }).if(v => v !== '').isFloat({ min: -90, max: 90 }).withMessage('纬度须为 -90 到 90'),
+  body('defaultLocationLng').optional({ values: 'null' }).if(v => v !== '').isFloat({ min: -180, max: 180 }).withMessage('经度须为 -180 到 180'),
   body('defaultLocationLatFor').optional({ values: 'null' }).isString().withMessage('坐标来源地点最多200个字符').bail().isLength({ max: 200 }).withMessage('坐标来源地点最多200个字符'),
   body('defaultLocationLngFor').optional({ values: 'null' }).isString().withMessage('坐标来源地点最多200个字符').bail().isLength({ max: 200 }).withMessage('坐标来源地点最多200个字符'),
 ];
@@ -70,15 +63,6 @@ export const validateUpdatePricing = [
 ];
 
 export const validateClassStudent = [
-  // matches 对数组逐元素校验：phone: [] 会漏到路由变成绑定错误（single-values.js）。
-  singleValues(['phone', 'parentPhone']),
-  body('name').isString().withMessage('学生姓名不能为空').bail().trim().notEmpty().withMessage('学生姓名不能为空').isLength({ max: 100 }).withMessage('学生姓名不能为空'),
-  body('birthDate').optional({ checkFalsy: true }).customSanitizer(numToStr).custom(value => {
-    if (!isValidBirthDate(value)) throw new Error('出生日期格式须为有效的 YYYY 或 YYYY-MM-DD');
-    return true;
-  }),
-  optionalPhone('phone', '手机号格式不正确'),
-  optionalPhone('parentPhone', '家长手机号格式不正确'),
-  body('parentName').optional({ checkFalsy: true }).isString().withMessage('家长姓名最多100个字符').bail().isLength({ max: 100 }).withMessage('家长姓名最多100个字符'),
-  body('note').optional({ checkFalsy: true }).isString().withMessage('备注最多2000个字符').bail().isLength({ max: 2000 }).withMessage('备注最多2000个字符'),
+  body('name').isString().withMessage('学生姓名不能为空').bail().trim().notEmpty().withMessage('学生姓名不能为空').isLength({ max: 100 }).withMessage('学生姓名最多100个字符'),
+  ...studentDetails,
 ];

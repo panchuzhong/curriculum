@@ -203,6 +203,22 @@ describe('Audit log', () => {
       .send({ classIds: 'not-array' });
     expect(res.status).toBe(400);
   });
+
+  it('rejects malformed membership and optional fields before writing any changes', async () => {
+    const { classes } = await import('../db/schema.js');
+    const { lastInsertRowid } = drizzleDb.insert(classes).values({
+      teacherId, name: '数学班', grade: '高一', subject: '数学', studentCount: 1, unitPrice: 100,
+    }).run();
+    const classId = Number(lastInsertRowid);
+    const { body: student } = await request(app).post('/api/students').set(auth(token))
+      .send({ name: '张三', classIds: [classId], phone: '13800000000' }).expect(200);
+    for (const patch of [{ classIds: [[classId]] }, { phone: false }, { note: false }, { birthDate: 0 }]) {
+      await request(app).put(`/api/students/${student.id}`).set(auth(token)).send({ name: '李四', ...patch }).expect(400);
+    }
+    const { body: rows } = await request(app).get('/api/students').set(auth(token)).expect(200);
+    expect(rows[0]).toMatchObject({ name: '张三', classIds: [classId], phone: '13800000000' });
+    await request(app).put(`/api/students/${student.id}`).set(auth(token)).send({ phone: '', birthDate: null }).expect(200);
+  });
 });
 
 describe('Data isolation', () => {

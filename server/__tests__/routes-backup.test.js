@@ -793,6 +793,19 @@ describe('还原时的日期校验', () => {
     expect(res.body.skipped).toEqual({ schedules: 1 });
   });
 
+  it.each([
+    ['schedules', { date: '2026-05-01', startTime: '09:00', endTime: '10:00', durationBilling: 60 }],
+    ['classPricing', { effectiveFrom: '2026-05-01', studentCount: 1, unitPrice: 100 }],
+    ['classStudents', { classId: 10 }],
+  ])('%s 缺少关联列时还原回滚', async (table, row) => {
+    const { students } = await import('../db/schema.js');
+    drizzleDb.insert(students).values({ teacherId, name: '保留的学生' }).run();
+    const res = await request(app).post('/api/backup/restore').set(auth(token))
+      .send(baseBackup({ [table]: [row] }));
+    expect(res.status).toBe(500);
+    expect(drizzleDb.select().from(students).all().map(s => s.name)).toEqual(['保留的学生']);
+  });
+
   it.each(['schedules', 'holidays'])('%s 缺少 date 列时整单报错，原数据不动', async (table) => {
     const { classes } = await import('../db/schema.js');
     drizzleDb.insert(classes).values({

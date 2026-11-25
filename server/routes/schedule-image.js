@@ -9,18 +9,12 @@ import { generateMonthlyImage } from '../services/image-gen-monthly.js';
 import { generateYearlyImage } from '../services/image-gen-yearly.js';
 import { resolveRange, conflictContextRange } from '../services/schedule-helpers.js';
 import { isValidDate, YEAR_MIN, YEAR_MAX, DATE_RANGE_SUFFIX } from '../validations/dates.js';
+import { parseExactInt } from '../validations/numbers.js';
 
 const router = Router();
 router.use(authMiddleware);
 if (process.env.NODE_ENV !== 'test') {
   router.use(rateLimit({ windowMs: 60 * 1000, max: 30, standardHeaders: true, legacyHeaders: false }));
-}
-
-function parseExactInt(value, { min, max } = {}) {
-  if (typeof value !== 'string' || !/^-?\d+$/.test(value)) return null;
-  const parsed = Number(value);
-  if (!Number.isSafeInteger(parsed) || (min != null && parsed < min) || (max != null && parsed > max)) return null;
-  return parsed;
 }
 
 function imageRangeError(start, end) {

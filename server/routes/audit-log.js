@@ -4,6 +4,7 @@ import { auditLog } from '../db/schema.js';
 import { eq, desc, and } from 'drizzle-orm';
 import { authMiddleware } from '../middleware/auth.js';
 import { MAX_AUDIT_ROWS, trimAuditLog } from '../services/audit.js';
+import { parseExactInt } from '../validations/numbers.js';
 
 const router = Router();
 router.use(authMiddleware);
@@ -43,8 +44,8 @@ router.get('/', (req, res) => {
 
 // DELETE /api/audit-log/cleanup?keep=5000
 router.delete('/cleanup', (req, res) => {
-  const keep = req.query.keep == null ? MAX_AUDIT_ROWS : parseInt(req.query.keep);
-  if (Number.isNaN(keep) || keep < 0) {
+  const keep = req.query.keep === undefined ? MAX_AUDIT_ROWS : parseExactInt(req.query.keep, { min: 0 });
+  if (keep === null) {
     return res.status(400).json({ error: 'keep 须为非负整数' });
   }
   res.json(trimAuditLog({ teacherId: req.teacherId, keep }));

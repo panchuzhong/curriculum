@@ -12,6 +12,19 @@ beforeEach(async () => {
 });
 
 describe('POST /api/auth/register', () => {
+  it('leaves the first registration available when default prices cannot be saved', async () => {
+    const { db } = await import('../db/index.js');
+    db.exec("CREATE TRIGGER fail_seed BEFORE INSERT ON pricing_tiers BEGIN SELECT RAISE(ABORT, 'test seed failure'); END");
+    const account = { username: 'firstuser', password: 'test1234', name: 'Test' };
+    const failed = await request(app).post('/api/auth/register').send(account);
+    expect(failed.status).toBe(500);
+    expect(db.prepare('SELECT COUNT(*) AS n FROM teachers').get().n).toBe(0);
+    expect(process.env.ALLOW_REGISTRATION).toBe('true');
+    db.exec('DROP TRIGGER fail_seed');
+    expect((await request(app).post('/api/auth/register').send(account)).status).toBe(200);
+    expect(db.prepare('SELECT COUNT(*) AS n FROM pricing_tiers').get().n).toBe(5);
+  });
+
   it.each(['x'.repeat(73), '密'.repeat(25)])('rejects passwords exceeding bcrypt’s byte limit', async password => {
     const res = await request(app).post('/api/auth/register')
       .send({ username: 'testuser', password, name: 'Test' });

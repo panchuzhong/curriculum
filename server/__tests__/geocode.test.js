@@ -59,6 +59,9 @@ describe('geocodeAddress', () => {
     ['纬度超下限', '121.4,-999'],
     ['经度超上限', '999,31.2'],
     ['经度超下限', '-999,31.2'],
+    ['缺少纬度', '121.4, '],
+    ['多余分量', '121.4,31.2,19'],
+    ['没有坐标字符串', null],
   ])('%s 时不返回坐标', async (_label, location) => {
     process.env.AMAP_KEY = 'test-key';
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue({

@@ -4,7 +4,7 @@ import { randomUUID } from 'node:crypto';
 import { readFileSync, writeFileSync } from 'fs';
 import { resolve } from 'path';
 import rateLimit from 'express-rate-limit';
-import { drizzleDb } from '../db/index.js';
+import { db, drizzleDb } from '../db/index.js';
 import { teachers } from '../db/schema.js';
 import { eq, and } from 'drizzle-orm';
 import { signToken, authMiddleware } from '../middleware/auth.js';
@@ -43,32 +43,20 @@ router.post('/register', authLimiter, validateRegister, handle, async (req, res)
   if (existing) return res.status(409).json({ error: 'Username taken' });
 
   const passwordHash = await bcrypt.hash(password, 12);
-  // Registration closes after the first account. Every request that passed the
-  // check above while this one was hashing would also register, so the slot is
-  // claimed here with no await between the re-check and the insert.
-  // The env flag alone is not durable: deployments that set ALLOW_REGISTRATION
-  // in the process environment (systemd Environment=, docker -e) restore it on
-  // every restart, and dotenv does not override an already-set variable. An
-  // occupied teachers table is the real single-user invariant.
-  if (process.env.ALLOW_REGISTRATION !== 'true'
-    || drizzleDb.select({ id: teachers.id }).from(teachers).limit(1).get()) {
-    return res.status(403).json({ error: 'Registration is closed' });
-  }
-  process.env.ALLOW_REGISTRATION = 'false';
+  // Hashing yields. Claim the first account and seed its pricing under one write lock.
   const apiKey = randomUUID();
   const subjects = JSON.stringify(DEFAULT_SUBJECTS);
-  let result;
-  try {
-    result = drizzleDb.insert(teachers).values({ username, passwordHash, name,
+  const teacherId = db.transaction(() => {
+    if (process.env.ALLOW_REGISTRATION !== 'true'
+      || drizzleDb.select({ id: teachers.id }).from(teachers).limit(1).get()) return null;
+    const result = drizzleDb.insert(teachers).values({ username, passwordHash, name,
       apiKeyHash: hashApiKey(apiKey), apiKeyHint: maskApiKey(apiKey), subjects }).run();
-  } catch (e) {
-    process.env.ALLOW_REGISTRATION = 'true';
-    if (e.message?.includes('UNIQUE constraint')) {
-      return res.status(409).json({ error: 'Username taken' });
-    }
-    throw e;
-  }
-  seedPricingTiers(result.lastInsertRowid);
+    const id = Number(result.lastInsertRowid);
+    seedPricingTiers(id);
+    return id;
+  }).immediate();
+  if (teacherId === null) return res.status(403).json({ error: 'Registration is closed' });
+  process.env.ALLOW_REGISTRATION = 'false';
 
   // Persist the closure to .env so it survives restart. dotenv reads .env from
   // the working directory, so write the same file; tests must not touch it.
@@ -83,7 +71,7 @@ router.post('/register', authLimiter, validateRegister, handle, async (req, res)
     writeFileSync(envPath, envContent);
   } catch { /* non-fatal: .env may not exist or be writable */ }
 
-  res.json({ token: signToken(Number(result.lastInsertRowid), 0), apiKey });
+  res.json({ token: signToken(teacherId, 0), apiKey });
 });
 
 router.post('/login', loginLimiter, validateLogin, handle, async (req, res) => {

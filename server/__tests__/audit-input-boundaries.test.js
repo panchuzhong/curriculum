@@ -22,6 +22,19 @@ beforeEach(async () => {
 });
 
 describe('numeric write boundaries', () => {
+  it.each([
+    { ids: [], start: lesson.date, end: lesson.date },
+    { ids: [[2]] },
+    { ids: [2], classId: 1 },
+    { classId: 2, fromDate: lesson.date, start: lesson.date, end: lesson.date },
+  ])('rejects ambiguous or malformed deletion filters without changing the timetable', async scope => {
+    for (const dryRun of [true, false]) {
+      const res = await request(app).delete('/api/schedules/batch').set(auth(token)).send({ ...scope, dryRun });
+      expect(res.status).toBe(400);
+      expect(drizzleDb.select().from(schedules).all()).toHaveLength(2);
+    }
+  });
+
   it.each([true, false])('overflow class filter cannot broaden batch deletion (dryRun=%s)', async dryRun => {
     const res = await request(app).delete('/api/schedules/batch').set(auth(token))
       .send({ classId: overflow, start: lesson.date, end: lesson.date, dryRun });

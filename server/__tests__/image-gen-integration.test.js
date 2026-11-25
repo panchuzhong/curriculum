@@ -38,24 +38,23 @@ function makeSchedule(overrides = {}) {
 describe('generateScheduleImage (Puppeteer integration)', () => {
   it.each(['weekly', 'monthly'])('escapes restored time values in %s images', async view => {
     const browser = await getBrowser();
-    const newPage = browser.newPage.bind(browser);
+    const page = await browser.newPage();
     const messages = [];
-    const spy = vi.spyOn(browser, 'newPage').mockImplementation(async () => {
-      const page = await newPage();
-      page.on('console', message => messages.push(message.text()));
-      return page;
-    });
+    page.on('console', message => messages.push(message.text()));
+    const spy = vi.spyOn(browser, 'newPage').mockResolvedValueOnce(page);
     try {
       const schedules = [{ ...makeSchedule({
         endTime: '11:00"><script>console.log("audit-render-executed")</script>',
       }), class: makeClass() }];
       if (view === 'weekly') await generateScheduleImage(schedules, '2026-05-11', '2026-05-17');
       else await generateMonthlyImage(schedules, 2026, 4);
+      expect(spy).toHaveBeenCalled();
       expect(messages).not.toContain('audit-render-executed');
     } finally {
       spy.mockRestore();
+      if (!page.isClosed()) await page.close();
     }
-  });
+  }, 30_000);
 
   it('renders a half-scale PNG at half the full-scale dimensions', async () => {
     const full = await generateScheduleImage([], '2026-05-11', '2026-05-17', { scale: 1 });

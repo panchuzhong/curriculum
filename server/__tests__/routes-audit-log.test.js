@@ -171,12 +171,14 @@ describe('GET /api/audit-log', () => {
     expect(left.body.map(r => r.recordId).sort((a, b) => a - b)).toEqual([3, 4]);
   });
 
-  it.each([['-1'], ['abc'], ['']])('cleanup 拒绝 keep=%j 并说明要求', async (keep) => {
+  it.each([['-1'], ['abc'], [''], ['1.5'], ['1day'], ['0&keep=5'], ['9007199254740992']])('cleanup 拒绝 keep=%j 并说明要求', async (keep) => {
+    await seedLogs(3);
     const res = await request(app).delete(`/api/audit-log/cleanup?keep=${keep}`).set(auth(token));
     expect(res.status).toBe(400);
     // 光看 400 分不出是被这条守卫拦的还是别的地方出错；而 keep 直接决定删多少条，
     // 报错必须说清要求，调用方才改得动。
     expect(res.body.error).toBe('keep 须为非负整数');
+    expect((await request(app).get('/api/audit-log').set(auth(token))).body).toHaveLength(3);
   });
 
   // 对照：keep=0 是合法的（全清），不能被上面的判据误伤。

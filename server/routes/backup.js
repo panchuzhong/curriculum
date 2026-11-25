@@ -154,7 +154,7 @@ router.post('/restore', express.json({ limit: '50mb' }), (req, res) => {
   // SQLite IDs during restore.
   for (const table of ['classes', 'students']) {
     const ids = data[table].map(row => row?.id);
-    if (ids.some(id => !Number.isInteger(id) || id < 1) || new Set(ids).size !== ids.length) {
+    if (ids.some(id => !Number.isSafeInteger(id) || id < 1) || new Set(ids).size !== ids.length) {
       return res.status(400).json({ error: `${table} 中的 id 须为唯一正整数` });
     }
   }
@@ -332,6 +332,13 @@ router.post('/restore', express.json({ limit: '50mb' }), (req, res) => {
 
   try {
     db.transaction(() => {
+      // A missing column means the dump is damaged. Check the original rows
+      // before replacing data, even if orphan or date filtering omitted one.
+      if (data.schedules.some(s => s.classId === undefined)
+        || data.classPricing?.some(p => p.classId === undefined)
+        || data.classStudents?.some(l => l.classId === undefined || l.studentId === undefined)) {
+        throw new Error('备份缺少班级或学生关联列');
+      }
       const existingClassIds = drizzleDb.select({ id: classes.id })
         .from(classes).where(eq(classes.teacherId, tid)).all().map(c => c.id);
 

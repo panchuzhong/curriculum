@@ -13,7 +13,12 @@ export async function geocodeAddress(address) {
     const amapErrors = { INVALID_USER_IP: '地理编码服务配置错误，请联系管理员', INVALID_USER_KEY: '地理编码服务配置错误，请联系管理员', '10003': '地理编码服务配置错误，请联系管理员' };
     return { lat: null, lng: null, error: amapErrors[data.infocode] || '未找到该地点的经纬度' };
   }
-  const [lng, lat] = data.geocodes[0].location.split(',').map(Number);
+  const location = data.geocodes[0]?.location;
+  const parts = typeof location === 'string' ? location.split(',') : [];
+  if (parts.length !== 2 || parts.some(s => !s.trim())) {
+    return { lat: null, lng: null, error: '地理编码服务返回了无效坐标' };
+  }
+  const [lng, lat] = parts.map(Number);
   if (!Number.isFinite(lat) || !Number.isFinite(lng) || lat < -90 || lat > 90 || lng < -180 || lng > 180) {
     return { lat: null, lng: null, error: '地理编码服务返回了无效坐标' };
   }

@@ -1,7 +1,7 @@
 import jwt from 'jsonwebtoken';
 import { drizzleDb } from '../db/index.js';
 import { teachers } from '../db/schema.js';
-import { eq, or } from 'drizzle-orm';
+import { and, eq, or } from 'drizzle-orm';
 import { hashApiKey, maskApiKey } from '../services/api-keys.js';
 
 const JWT_SECRET = process.env.JWT_SECRET;
@@ -30,9 +30,10 @@ export function authMiddleware(req, res, next) {
       .where(or(eq(teachers.apiKeyHash, digest), eq(teachers.apiKey, apiKey))).get();
     if (!teacher) return res.status(401).json({ error: 'Invalid API key' });
     // Compatibility with keys created by an older management script after upgrade.
-    if (teacher.apiKey) {
+    if (teacher.apiKey === apiKey) {
+      // A rotation between lookup and upgrade must win.
       drizzleDb.update(teachers).set({ apiKey: null, apiKeyHash: digest, apiKeyHint: maskApiKey(apiKey) })
-        .where(eq(teachers.id, teacher.id)).run();
+        .where(and(eq(teachers.id, teacher.id), eq(teachers.apiKey, apiKey))).run();
     }
     req.teacherId = teacher.id;
     return next();

@@ -269,7 +269,7 @@ router.post('/batch', validateBatchCreate, handle, (req, res) => {
   // Years the semester spans that have no holiday data at all (see below).
   let uncoveredYears = [];
 
-  if (manualDates && manualDates.length > 0) {
+  if (manualDates) {
     targetDates = manualDates;
     // Check that dates mode doesn't cross semester boundaries
     const membership = semesterMembership(drizzleDb, req.teacherId);
@@ -665,6 +665,12 @@ router.delete('/batch', validateBatchDelete, handle, (req, res) => {
   // 预览要在每个出口都自报身份（同 PUT /batch，包括「一条都没匹配上」）：忘了去掉
   // dryRun 的调用方会拿着 count:N 报告「已删」——改期还能再改回来，删除不能。
   const send = (resp) => res.json(dryRun ? { dryRun: true, ...resp } : resp);
+
+  // Never ignore a supplied restriction on a destructive operation.
+  if ((ids && (classId || fromDate || start || end)) || (fromDate && (start || end))) {
+    return res.status(400).json({ error: '请选择一种删除方式：按 ID、班级和起始日期、或日期范围' });
+  }
+  if (start && end && start > end) return res.status(400).json({ error: 'start 须不晚于 end' });
 
   if (ids && Array.isArray(ids) && ids.length > 0) {
     const teacherClasses = drizzleDb.select({ id: classes.id }).from(classes)

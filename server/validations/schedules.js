@@ -64,7 +64,7 @@ export const validateBatchUpdate = [
 export const validateBatchDelete = [
   // 同上：ids 本身就是数组，其余字段只收单个值——classId: [] 会混过逐元素校验，
   // 到路由里 eq(classes.id, []) 绑定时抛成 500；start: [] 同理（[] 是真值，进得了分支）。
-  singleValues(['classId', 'start', 'end', 'fromDate', 'semesterOnly', 'dryRun']),
+  singleValues(['ids.*', 'classId', 'start', 'end', 'fromDate', 'semesterOnly', 'dryRun']),
   body('ids').optional().isArray({ max: 500 }).withMessage('ids 最多 500 项'),
   body('ids.*').optional().isInt({ min: 1, max: Number.MAX_SAFE_INTEGER }).withMessage('ids 元素须为正整数'),
   body('classId').optional().isInt({ min: 1, max: Number.MAX_SAFE_INTEGER }).withMessage('classId 须为正整数'),
