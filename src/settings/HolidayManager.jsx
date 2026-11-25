@@ -1,4 +1,6 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
+import ErrorState from '../components/ErrorState';
+import useRemoteData from '../hooks/useRemoteData';
 import { api } from '../api';
 import { BUILT_IN_HOLIDAYS as HOLIDAY_DATES, BUILT_IN_WORKDAYS as WORKDAY_DATES, HOLIDAY_NAMES, refreshHolidays } from '../utils/holidays';
 import { DATE_MIN, DATE_MAX } from '../utils/constants';
@@ -20,25 +22,20 @@ export const BUILT_IN_HOLIDAYS = Object.fromEntries(
 
 export default function HolidayManager() {
   const toast = useToast();
-  const [holidays, setHolidays] = useState([]);
+  const { data: holidays, loading, error, reload } = useRemoteData(api.getHolidays);
   const [year, setYear] = useState(new Date().getFullYear());
   const [showAdd, setShowAdd] = useState(false);
   const [form, setForm] = useState({ date: '', type: 'holiday', name: '' });
   const [importing, setImporting] = useState(false);
   const [saving, setSaving] = useState(false);
 
-  function reload() {
-    api.getHolidays().then(setHolidays).catch(e => toast(e.message || '加载节假日失败'));
-  }
-
-  useEffect(() => { reload(); }, []);
-
-  const yearHolidays = holidays.filter(h => h.date.startsWith(String(year)));
+  const busy = importing || saving;
+  const yearHolidays = (holidays ?? []).filter(h => h.date.startsWith(String(year)));
   const holidayDays = yearHolidays.filter(h => h.type === 'holiday');
   const workdays = yearHolidays.filter(h => h.type === 'workday');
 
   async function addHoliday() {
-    if (saving) return;
+    if (busy) return;
     // 空值不能静默返回：点了添加什么都不发生，和页面卡死了没区别。
     if (!form.date) { toast('请先选择日期'); return; }
     if (!form.name.trim()) { toast('请先填写名称'); return; }
@@ -50,32 +47,33 @@ export default function HolidayManager() {
       await api.createHoliday(form);
       setShowAdd(false);
       setForm({ date: '', type: 'holiday', name: '' });
-      reload();
       refreshHolidays();
+      await reload();
     } catch (e) { toast(e.message || '添加失败'); }
     finally { setSaving(false); }
   }
 
   async function removeHoliday(id) {
-    if (saving) return;
+    if (busy) return;
     setSaving(true);
     try {
       await api.deleteHoliday(id);
-      reload();
       refreshHolidays();
+      await reload();
     } catch (e) { toast(e.message || '删除失败'); }
     finally { setSaving(false); }
   }
 
   async function importYear() {
+    if (busy) return;
     setImporting(true);
     try {
       const items = BUILT_IN_HOLIDAYS[String(year)];
       if (!items) { toast(`${year}年暂无内置数据`); return; }
       const res = await api.batchImportHolidays(items);
       toast(`导入完成：新增 ${res.count} 条记录`, 'success');
-      reload();
       refreshHolidays();
+      await reload();
     } catch (e) {
       toast(e.message || '导入失败');
     } finally {
@@ -104,18 +102,18 @@ export default function HolidayManager() {
           <button onClick={() => setYear(y => Math.min(y + 1, YEAR_MAX))} disabled={year >= YEAR_MAX}
             className="px-2 py-1 bg-gray-200 dark:bg-gray-700 rounded disabled:opacity-50">▶</button>
         </div>
-        <button onClick={importYear} disabled={importing}
+        <button onClick={importYear} disabled={busy}
           className="px-3 py-1 bg-blue-600 text-white rounded text-sm disabled:opacity-50">
           {importing ? '导入中...' : `导入${year}年默认数据`}
         </button>
-        <button onClick={() => { setShowAdd(true); setForm({ date: '', type: 'holiday', name: '' }); }}
+        <button disabled={busy} onClick={() => { setShowAdd(true); setForm({ date: '', type: 'holiday', name: '' }); }}
           className="px-3 py-1 bg-green-600 text-white rounded text-sm">手动添加</button>
       </div>
 
       {showAdd && (
         // 窄屏纵向堆叠：一行摆下日期+类型+名称+两个按钮要 544px，320px 视口下
         // 「添加」和「取消」整个落到屏幕右边外面，不横滑根本点不到。
-        <div className="flex flex-col sm:flex-row flex-wrap gap-2 mb-4 p-3 bg-white dark:bg-gray-700 rounded">
+        <fieldset disabled={busy} className="min-w-0 flex flex-col sm:flex-row flex-wrap gap-2 mb-4 p-3 bg-white dark:bg-gray-700 rounded">
           <input type="date" lang="zh-CN" min={DATE_MIN} max={DATE_MAX} className="p-2 bg-gray-100 dark:bg-gray-600 border border-gray-300 dark:border-gray-500 rounded text-sm"
             value={form.date} onChange={e => setForm({...form, date: e.target.value})} />
           <select className="p-2 bg-gray-100 dark:bg-gray-600 border border-gray-300 dark:border-gray-500 rounded text-sm"
@@ -129,10 +127,12 @@ export default function HolidayManager() {
             <button onClick={addHoliday} className="flex-1 sm:flex-none px-3 py-2 bg-blue-600 text-white rounded text-sm">添加</button>
             <button onClick={() => setShowAdd(false)} className="flex-1 sm:flex-none px-3 py-2 bg-gray-300 dark:bg-gray-600 rounded text-sm">取消</button>
           </div>
-        </div>
+        </fieldset>
       )}
 
-      <div className="grid grid-cols-2 gap-4">
+      {error && <ErrorState message={`节假日加载失败：${error}`} onRetry={reload} />}
+      {loading && <p role="status">正在加载节假日…</p>}
+      {!loading && !error && <div className="grid grid-cols-2 gap-4">
         <div>
           <h4 className="text-sm font-medium mb-2 text-red-600 dark:text-red-400">节假日 ({holidayDays.length}天)</h4>
           {holidayDays.length === 0 ? (
@@ -146,7 +146,7 @@ export default function HolidayManager() {
                     <span>{h.date}</span>
                     {h.name && <span className="text-gray-500 dark:text-gray-400">{h.name}</span>}
                   </div>
-                  <button onClick={() => removeHoliday(h.id)} className="text-red-400 hover:text-red-300 text-xs">删除</button>
+                  <button disabled={busy} onClick={() => removeHoliday(h.id)} className="text-red-400 hover:text-red-300 text-xs">删除</button>
                 </div>
               ))}
             </div>
@@ -165,13 +165,13 @@ export default function HolidayManager() {
                     <span>{h.date}</span>
                     {h.name && <span className="text-gray-500 dark:text-gray-400">{h.name}</span>}
                   </div>
-                  <button onClick={() => removeHoliday(h.id)} className="text-red-400 hover:text-red-300 text-xs">删除</button>
+                  <button disabled={busy} onClick={() => removeHoliday(h.id)} className="text-red-400 hover:text-red-300 text-xs">删除</button>
                 </div>
               ))}
             </div>
           )}
         </div>
-      </div>
+      </div>}
     </div>
   );
 }

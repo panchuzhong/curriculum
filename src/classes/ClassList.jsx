@@ -82,6 +82,7 @@ export default function ClassList() {
   }
 
   function toggleExpand(id) {
+    if (saving) return;
     if (expandedId === id) {
       setExpandedId(null);
     } else {
@@ -92,7 +93,7 @@ export default function ClassList() {
   }
 
   return (
-    <div>
+    <fieldset disabled={saving} className="min-w-0">
       <div className="flex justify-between items-center mb-4">
         <h2 className="text-xl">班级管理</h2>
         <button onClick={() => { setShowNew(true); setExpandedId(null); }}
@@ -117,7 +118,7 @@ export default function ClassList() {
           <div key={cls.id} className="bg-gray-100 dark:bg-gray-800 rounded-lg overflow-hidden">
             {/* Collapsed header — no delete button, just chevron */}
             <div className="p-4 flex items-center justify-between cursor-pointer hover:bg-gray-200 dark:hover:bg-gray-700"
-              role="button" tabIndex={0} aria-expanded={expandedId === cls.id}
+              role="button" tabIndex={saving ? -1 : 0} aria-disabled={saving} aria-expanded={expandedId === cls.id}
               onKeyDown={e => {
                 if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleExpand(cls.id); }
               }}
@@ -189,6 +190,6 @@ export default function ClassList() {
         ))}
       </div>
       {confirmDialog}
-    </div>
+    </fieldset>
   );
 }

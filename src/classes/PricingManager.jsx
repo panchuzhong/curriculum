@@ -1,4 +1,5 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useCallback } from 'react';
+import useRemoteData from '../hooks/useRemoteData';
 import { api } from '../api';
 import { DATE_MIN, DATE_MAX } from '../utils/constants';
 import { isUsableDate, DATE_INVALID_HINT } from '../utils/date';
@@ -8,36 +9,24 @@ import { useConfirm } from '../components/ConfirmDialog';
 export default function PricingManager({ classId, onChanged }) {
   const toast = useToast();
   const [confirmAction, confirmDialog] = useConfirm();
-  const [records, setRecords] = useState([]);
+  const loadPricing = useCallback(() => api.getClassPricing(classId), [classId]);
+  const { data, loading, error, reload } = useRemoteData(loadPricing);
+  const records = data ?? [];
+  const [changed, setChanged] = useState(false);
   const [showForm, setShowForm] = useState(false);
   const [editId, setEditId] = useState(null);
   const [form, setForm] = useState({ studentCount: '', unitPrice: '', discountAmount: '', discountReason: '', effectiveFrom: '' });
   const [saving, setSaving] = useState(false);
-  // openAdd 是拿 records[0]（当前定价）预填的。列表还没回来就点「新增定价」的话，
-  // records 是空数组，预填就全空——而之后到达的列表只写 records，不会回头补这一次。
-  // 用户看到的就是一张空表单，得把人数单价一项项重新敲一遍。
-  // 没加载完就不让开：失败也算加载完（真的取不到旧值，该空就空），否则按钮会永远置灰。
-  const [loaded, setLoaded] = useState(false);
-
-  useEffect(() => {
-    setLoaded(false);
-    api.getClassPricing(classId)
-      .then(setRecords)
-      .catch(e => toast(e.message || '加载定价历史失败'))
-      .finally(() => setLoaded(true));
-  }, [classId]);
-
-  const current = records[0];
+  const latest = records[0];
 
   function openAdd() {
-    const latest = records[0] || {};
     const today = new Date();
     const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
     setForm({
-      studentCount: latest.studentCount ?? '',
-      unitPrice: latest.unitPrice ?? '',
-      discountAmount: latest.discountAmount ?? '',
-      discountReason: latest.discountReason || '',
+      studentCount: latest?.studentCount ?? '',
+      unitPrice: latest?.unitPrice ?? '',
+      discountAmount: latest?.discountAmount ?? '',
+      discountReason: latest?.discountReason || '',
       effectiveFrom: todayStr,
     });
     setEditId(null);
@@ -61,28 +50,11 @@ export default function PricingManager({ classId, onChanged }) {
     setEditId(null);
   }
 
-  // 写入和随后的刷新分开报错：一个 try 包住两者的话，写入已经成功、刷新断网，
-  // 用户看到的却是「保存失败」+ 旧列表——再点一次保存就建出重复记录；
-  // 删除那边更糟：已删的行还在屏上，再删一次换回 404。
-  const [refreshError, setRefreshError] = useState('');
-  // 刷新也要讲代次：保存 A 后的 GET_A 可能比保存 B 后的 GET_B 更晚回来，
-  // 而它拿的是 B 写入之前的快照。不设防的话迟到的 GET_A 会把 B 刚存进去的
-  // 那一行从屏上抹掉，看着就像「保存没生效」。只有最新一次刷新能写 records。
-  const refreshGenRef = useRef(0);
-
-  const refresh = useCallback(async () => {
-    const gen = ++refreshGenRef.current;
-    setRefreshError('');
-    try {
-      const updated = await api.getClassPricing(classId);
-      if (gen !== refreshGenRef.current) return;
-      setRecords(updated);
-      onChanged?.();
-    } catch (e) {
-      if (gen !== refreshGenRef.current) return;
-      setRefreshError(e.message || '刷新定价列表失败');
-    }
-  }, [classId, onChanged]);
+  function refreshAfterWrite() {
+    setChanged(true);
+    onChanged?.();
+    return reload();
+  }
 
   async function handleSave() {
     if (saving) return;
@@ -115,11 +87,11 @@ export default function PricingManager({ classId, onChanged }) {
     }
     setShowForm(false);
     setEditId(null);
-    // 写入已经成功。刷新失败要单独说，并且留一个重试入口（见 refreshError 的渲染）。
+    // 写入已经成功。刷新失败要单独说，并且留一个重试入口。
     toast('定价已保存', 'success');
     // saving 一直保持到刷新结束：提前解锁的话，用户可以在 GET_A 还没回来时
     // 又保存 B，两次写入与两次刷新交错，屏上的列表取决于哪一发最后落地。
-    await refresh();
+    await refreshAfterWrite();
     setSaving(false);
   }
 
@@ -135,7 +107,7 @@ export default function PricingManager({ classId, onChanged }) {
       return;
     }
     toast('定价已删除', 'success');
-    await refresh();
+    await refreshAfterWrite();
     setSaving(false);
   }
 
@@ -145,34 +117,34 @@ export default function PricingManager({ classId, onChanged }) {
     <div className="mt-3">
       <div className="flex items-center justify-between mb-3">
         <h4 className="font-medium text-sm">定价管理</h4>
-        <button onClick={openAdd} disabled={!loaded}
+        <button onClick={openAdd} disabled={loading || saving || (changed && !!error)}
           className="px-3 py-1 text-sm bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50">+ 新增定价</button>
       </div>
 
-      {/* Current pricing summary card */}
-      {current && (
+      {!loading && !error && latest && (
         <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-100 dark:border-blue-800 rounded-lg p-3 mb-4">
           <div className="text-sm">
-            <span className="text-gray-500 dark:text-gray-400">当前定价：</span>
-            <span className="font-semibold text-gray-900 dark:text-gray-100">{current.studentCount}人 × ¥{current.unitPrice}/人/时</span>
-            {current.discountAmount > 0 && (
-              <span className="text-gray-500 dark:text-gray-400 ml-2">| 优惠 ¥{current.discountAmount}{current.discountReason ? `（${current.discountReason}）` : ''}</span>
+            <span className="text-gray-500 dark:text-gray-400">最新定价：</span>
+            <span className="font-semibold text-gray-900 dark:text-gray-100">{latest.studentCount}人 × ¥{latest.unitPrice}/人/时</span>
+            {latest.discountAmount > 0 && (
+              <span className="text-gray-500 dark:text-gray-400 ml-2">| 优惠 ¥{latest.discountAmount}{latest.discountReason ? `（${latest.discountReason}）` : ''}</span>
             )}
           </div>
-          <p className="text-sm text-gray-400 dark:text-gray-500 mt-1">自 {current.effectiveFrom} 起生效</p>
+          <p className="text-sm text-gray-400 dark:text-gray-500 mt-1">自 {latest.effectiveFrom} 起生效</p>
         </div>
       )}
 
-      {refreshError && (
+      {loading && <p role="status">正在加载定价历史…</p>}
+      {error && (
         <div className="mb-3 p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg text-sm">
           {/* 写入已经成功、只是列表没刷出来的情况：明确说出来，别让「操作失败」的
               措辞诱导用户再写一次。 */}
-          <p role="alert" className="text-red-600 dark:text-red-400">操作已完成，但列表刷新失败：{refreshError}</p>
-          <button onClick={refresh} className="mt-2 px-3 py-1 bg-gray-200 dark:bg-gray-600 rounded">重新加载列表</button>
+          <p role="alert" className="text-red-600 dark:text-red-400">{changed ? '操作已完成，但列表刷新失败' : '定价历史加载失败'}：{error}</p>
+          <button onClick={reload} className="mt-2 px-3 py-1 bg-gray-200 dark:bg-gray-600 rounded">重新加载列表</button>
         </div>
       )}
 
-      {records.length === 0 ? (
+      {!loading && !error && (records.length === 0 ? (
         <p className="text-sm text-gray-400 dark:text-gray-500">暂无定价记录</p>
       ) : (
       <div className="overflow-x-auto">
@@ -194,7 +166,7 @@ export default function PricingManager({ classId, onChanged }) {
           <tbody>
             {records.map((r, i) => (
               <tr key={r.id} className="border-b border-gray-100 dark:border-gray-700">
-                <td className="p-2">{r.effectiveFrom}{i === 0 ? <span className="text-blue-600 dark:text-blue-400 font-medium ml-1">当前</span> : ''}</td>
+                <td className="p-2">{r.effectiveFrom}{i === 0 ? <span className="text-blue-600 dark:text-blue-400 font-medium ml-1">最新</span> : ''}</td>
                 <td className="text-right p-2">{r.studentCount}</td>
                 <td className="text-right p-2">¥{r.unitPrice}</td>
                 <td className="text-right p-2">¥{r.discountAmount || 0}</td>
@@ -210,10 +182,10 @@ export default function PricingManager({ classId, onChanged }) {
           </tbody>
         </table>
       </div>
-      )}
+      ))}
 
       {showForm && (
-        <div className="mt-3 p-3 bg-gray-50 dark:bg-gray-700/50 rounded-lg">
+        <fieldset disabled={saving} className="min-w-0 mt-3 p-3 bg-gray-50 dark:bg-gray-700/50 rounded-lg">
           <div className="grid grid-cols-2 gap-2 mb-2">
             <div>
               <label className="block text-sm text-gray-500 dark:text-gray-400 mb-1">生效日期</label>
@@ -248,7 +220,7 @@ export default function PricingManager({ classId, onChanged }) {
             </button>
             <button onClick={cancelForm} className="px-3 py-1.5 text-sm bg-gray-300 dark:bg-gray-600 rounded">取消</button>
           </div>
-        </div>
+        </fieldset>
       )}
       {confirmDialog}
     </div>

@@ -1,4 +1,6 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState } from 'react';
+import ErrorState from '../components/ErrorState';
+import useRemoteData from '../hooks/useRemoteData';
 import { api } from '../api';
 import { DATE_MIN, DATE_MAX } from '../utils/constants';
 import { dateRangeError, isUsableDate, addDays, parseDateStr, YEAR_MIN, YEAR_MAX } from '../utils/date';
@@ -135,36 +137,18 @@ export function getDefaultsFromSemesters(semesters) {
 export default function SemesterManager() {
   const toast = useToast();
   const [confirmAction, confirmDialog] = useConfirm();
-  const [semesters, setSemesters] = useState([]);
+  const { data, loading, error, reload } = useRemoteData(api.getSemesters);
+  const semesters = data ?? [];
   // 单一编辑器状态：null=收起，'new'=新建，否则是被编辑的那一学期行。
   // 原来是 showForm 和 editing 两个独立布尔/对象：先点「新建学期」再点某行「编辑」，
   // 两个同时为真，而保存更新只清 editing、showForm 仍 true——表单留在屏上却悄悄
   // 切回新建模式，下一次保存调 createSemester 建出一个重复学期。
   const [editor, setEditor] = useState(null);
-  const [form, setForm] = useState(null);
+  const [draft, setDraft] = useState(null);
   const [saving, setSaving] = useState(false);
-  // 「表单存在」不等于「用户动过」：列表还没回来就点「新建学期」的话，预填用的是
-  // getDefaultsFromSemesters([])——按今天猜的模板，而不是「接在你最后一个学期之后」。
-  // 只看 form 是不是 null 会把这份猜出来的值当成用户的输入护住，迟到的列表就再也纠正不了。
-  const formTouched = useRef(false);
-  const updateForm = useCallback((patch) => {
-    formTouched.current = true;
-    setForm(f => ({ ...f, ...patch }));
-  }, []);
-
-  useEffect(() => {
-    api.getSemesters().then(s => {
-      setSemesters(s);
-      // 用户真动过才不覆盖：他在列表回来前就开始敲名称的话，这一次迟到的
-      // 赋值会把他敲的字整个冲掉。没动过的（包括刚点开、还摆着猜出来的预填值）
-      // 则必须纠正成按真实列表算的默认值。
-      setForm(f => (formTouched.current ? f : getDefaultsFromSemesters(s)));
-    }).catch(e => toast(e.message || '加载学期失败'));
-  }, []);
-
-  const reload = useCallback(() => {
-    api.getSemesters().then(setSemesters).catch(e => toast(e.message || '加载学期失败'));
-  }, []);
+  // Until the first edit, a new form follows the latest semester list.
+  const form = draft ?? (editor && getDefaultsFromSemesters(semesters));
+  const updateForm = patch => setDraft(previous => ({ ...(previous ?? form), ...patch }));
 
   async function handleCreate() {
     if (saving) return;
@@ -179,14 +163,7 @@ export default function SemesterManager() {
     try {
       await api.createSemester(form);
       setEditor(null);
-      // 这一发没 await，finally 里的 setSaving(false) 已经把每一行的「编辑」放开了：
-      // 回调落地时用户可能已经点开了某一行的编辑表单。无条件 setForm 会把那张表单
-      // 换成「下一个学期」的模板，而 editing 还指着原来那行——再点保存就把人家的
-      // 学期悄悄改成了模板值。跟挂载时那一发同一条规矩：动过的表单不碰。
-      api.getSemesters().then(s => {
-        setSemesters(s);
-        setForm(f => (formTouched.current ? f : getDefaultsFromSemesters(s)));
-      }).catch(e => toast(e.message || '加载学期失败'));
+      reload();
     } catch (e) { toast(e.message || '创建失败'); }
     finally { setSaving(false); }
   }
@@ -207,10 +184,7 @@ export default function SemesterManager() {
 
   function startEdit(s) {
     setEditor(s);
-    // 这张表单装的是某一行真实的值，不是一份可以被覆盖的预填——
-    // 标成「动过」，否则迟到的学期列表会把它换成模板值。
-    formTouched.current = true;
-    setForm({ name: s.name, type: s.type, startDate: s.startDate, endDate: s.endDate });
+    setDraft({ name: s.name, type: s.type, startDate: s.startDate, endDate: s.endDate });
   }
 
   async function handleDelete(id) {
@@ -231,7 +205,7 @@ export default function SemesterManager() {
         {/* 保存期间不许切换编辑器：更新请求还在路上时点开「新建学期」，
             旧请求成功后 setEditor(null) 会把刚填了一半的新表单一起关掉。
             各行「编辑」按钮本来就被 saving 置灰，这里把入口对齐。 */}
-        <button onClick={() => { setEditor('new'); formTouched.current = false; setForm(getDefaultsFromSemesters(semesters)); }}
+        <button onClick={() => { setEditor('new'); setDraft(null); }}
           disabled={saving}
           className="px-4 py-2 bg-blue-600 text-white rounded disabled:opacity-50">新建学期</button>
       </div>
@@ -273,7 +247,9 @@ export default function SemesterManager() {
       )}
 
       <div className="grid gap-2">
-        {semesters.map(s => (
+        {loading && <p role="status">正在加载学期…</p>}
+        {error && <ErrorState message={`学期加载失败：${error}`} onRetry={reload} />}
+        {!error && semesters.map(s => (
           <div key={s.id} className="flex items-center justify-between p-3 bg-gray-100 dark:bg-gray-800 rounded">
             <div>
               <span className="font-bold">{s.name}</span>
@@ -289,7 +265,7 @@ export default function SemesterManager() {
             </div>
           </div>
         ))}
-        {semesters.length === 0 && (
+        {!loading && !error && semesters.length === 0 && (
           <p className="text-gray-500 dark:text-gray-400">暂无学期，请先创建学期再使用批量排课</p>
         )}
       </div>

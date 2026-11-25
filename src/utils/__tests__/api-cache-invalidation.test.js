@@ -18,9 +18,7 @@ vi.stubGlobal('localStorage', localStorageMock);
 vi.stubGlobal('fetch', fetchMock);
 vi.stubGlobal('window', Object.assign(new EventTarget(), { location: { href: '' } }));
 
-// 另一个标签页换账号登录时，本标签页的 setToken/clearToken 都不会跑（storage
-// 事件只在别的文档里触发）。课表缓存的键只有 start/end/classId，不随 storage
-// 清掉的话，B 的页面会在 TTL 内直接渲染 A 的课，连请求都不发。
+// storage events arrive after localStorage already contains the other tab's token.
 describe('跨标签页换账号时课表缓存作废', () => {
   beforeEach(() => {
     fetchMock.mockReset();
@@ -87,4 +85,38 @@ describe('late authentication failures', () => {
     expect(getToken()).toBe('new-token');
     expect(window.location.href).toBe('');
   });
+});
+
+it.each(['logout', 'switch', 'unchanged'])('installs a password response only in the originating session (%s)', async action => {
+  const { api, setToken, getToken, clearToken } = await import('../../api.js');
+  setToken('first');
+  let finish;
+  fetchMock.mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
+  const pending = api.changePassword({ oldPassword: 'old', newPassword: 'new-password' });
+  if (action === 'logout') clearToken();
+  if (action === 'switch') setToken('second');
+  finish({ ok: true, status: 200, text: async () => '{"token":"renewed"}' });
+  await pending;
+  expect(getToken()).toBe({ logout: null, switch: 'second', unchanged: 'renewed' }[action]);
+});
+
+it.each([true, false])('an expired request cannot replace or evict a newer result (success=%s)', async success => {
+  const { api, setToken } = await import('../../api.js');
+  setToken('first');
+  fetchMock.mockReset();
+  const clock = vi.spyOn(Date, 'now').mockReturnValue(1000);
+  try {
+    let finish;
+    fetchMock.mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
+    const read = () => api.getSchedules('2026-02-01', '2026-02-28');
+    const pending = read();
+    clock.mockReturnValue(62_000);
+    fetchMock.mockResolvedValueOnce({ ok: true, status: 200, text: async () => '[2]' });
+    expect(await read()).toEqual([2]);
+    finish({ ok: success, status: success ? 200 : 500, text: async () => '[1]' });
+    if (success) expect(await pending).toEqual([1]);
+    else await expect(pending).rejects.toThrow();
+    expect(await read()).toEqual([2]);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  } finally { clock.mockRestore(); }
 });

@@ -1,17 +1,40 @@
-import { useRef } from 'react';
+import { useEffect, useRef } from 'react';
 import { addDays } from '../utils/date';
 
 export default function useGridTouch({ gridStateRef, onCellClick }) {
   const dayBodyEls = useRef({});
   const lpRef = useRef(null);
 
-  function handleDayTouchStart(e, date) {
+  function cancelPress() {
+    if (lpRef.current) clearTimeout(lpRef.current.timer);
+    lpRef.current = null;
+  }
+
+  useEffect(() => {
+    const cancelMultiTouch = e => { if (e.touches.length > 1) cancelPress(); };
+    window.addEventListener('touchstart', cancelMultiTouch, { passive: true, capture: true });
+    return () => {
+      window.removeEventListener('touchstart', cancelMultiTouch, true);
+      cancelPress();
+    };
+  }, []);
+
+  function startPress(e, delay, onPress) {
+    cancelPress();
     if (e.touches.length !== 1) return;
-    const t = e.touches[0];
-    if (lpRef.current?.timer) clearTimeout(lpRef.current.timer);
-    const startX = t.clientX;
-    const startY = t.clientY;
-    const timer = setTimeout(() => {
+    const { clientX: startX, clientY: startY } = e.touches[0];
+    const target = e.currentTarget;
+    const press = { startX, startY, fired: false, timer: null };
+    press.timer = setTimeout(() => {
+      if (!target.isConnected) return;
+      press.fired = true;
+      onPress(startY);
+    }, delay);
+    lpRef.current = press;
+  }
+
+  function handleDayTouchStart(e, date) {
+    startPress(e, 450, startY => {
       const el = dayBodyEls.current[date];
       if (!el) return;
       const rect = el.getBoundingClientRect();
@@ -25,23 +48,23 @@ export default function useGridTouch({ gridStateRef, onCellClick }) {
       const timeStr = `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
       navigator.vibrate?.(30);
       onCellClick?.(addDays(date, Math.floor(snapped / (24 * 60))), timeStr);
-      lpRef.current = null;
-    }, 450);
-    lpRef.current = { timer, date, startX, startY };
+    });
   }
 
   function handleDayTouchMove(e) {
     if (!lpRef.current) return;
-    if (e.touches.length !== 1) { clearTimeout(lpRef.current.timer); lpRef.current = null; return; }
+    if (e.touches.length !== 1) { cancelPress(); return; }
     const t = e.touches[0];
     const dx = Math.abs(t.clientX - lpRef.current.startX);
     const dy = Math.abs(t.clientY - lpRef.current.startY);
-    if (dx > 8 || dy > 8) { clearTimeout(lpRef.current.timer); lpRef.current = null; }
+    if (dx > 8 || dy > 8) cancelPress();
   }
 
-  function handleDayTouchEnd() {
-    if (lpRef.current?.timer) { clearTimeout(lpRef.current.timer); lpRef.current = null; }
+  function handleDayTouchEnd(e) {
+    // A completed long press already opened the editor. Suppress its compatibility click.
+    if (lpRef.current?.fired && e.cancelable) e.preventDefault();
+    cancelPress();
   }
 
-  return { handleDayTouchStart, handleDayTouchMove, handleDayTouchEnd, dayBodyEls };
+  return { startPress, cancelPress, handleDayTouchStart, handleDayTouchMove, handleDayTouchEnd, dayBodyEls };
 }

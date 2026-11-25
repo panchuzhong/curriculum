@@ -36,9 +36,6 @@ export function setToken(token) {
 const SCHEDULE_CACHE_TTL_MS = 60_000;
 const MAX_CACHE_SIZE = 50;
 const scheduleCache = new Map();
-// Bumped on every invalidation; an in-flight read started before a bump must
-// not repopulate the cache with its now-stale result.
-let scheduleCacheEpoch = 0;
 
 function evictExpiredEntries() {
   const now = Date.now();
@@ -52,13 +49,10 @@ function evictExpiredEntries() {
 }
 
 function clearScheduleCache() {
-  scheduleCacheEpoch++;
   scheduleCache.clear();
 }
 
-// storage 事件只在「别的文档」里触发：另一个标签页换账号登录时，本标签页的
-// setToken/clearToken 不会跑，课表缓存却必须一起作废——键里只有 start/end/classId，
-// 不清的话 B 的页面会在 TTL 内直接拿到 A 的课，连请求都不发。
+// Another tab changing accounts also discards this tab's cached rows.
 if (typeof window !== 'undefined') {
   window.addEventListener('storage', (e) => {
     if (e.key === 'token' || e.key === null) clearScheduleCache();
@@ -144,7 +138,12 @@ export const api = {
   register: (data) => request('POST', '/auth/register', data, { noAuth: true }),
   getProfile: () => request('GET', '/auth/profile'),
   regenerateApiKey: () => request('PUT', '/auth/api-key'),
-  changePassword: (data) => request('PUT', '/auth/password', data),
+  changePassword: async (data) => {
+    const token = getToken();
+    const result = await request('PUT', '/auth/password', data);
+    if (result?.token && token && getToken() === token) setToken(result.token);
+    return result;
+  },
   updateSubjects: (subjects) => request('PUT', '/auth/subjects', { subjects }),
 
   // Classes
@@ -182,25 +181,24 @@ export const api = {
     let url = `/schedules?start=${start}&end=${end}`;
     if (classId) url += `&classId=${classId}`;
     const key = scheduleCacheKey(start, end, classId);
-    evictExpiredEntries();
     const cached = scheduleCache.get(key);
     const now = Date.now();
     if (cached && now - cached.time <= SCHEDULE_CACHE_TTL_MS) {
       return cached.promise || Promise.resolve(cached.data);
     }
 
-    const epoch = scheduleCacheEpoch;
     const promise = request('GET', url)
       .then(data => {
-        // Skip repopulation if the cache was invalidated while this read was in flight.
-        if (scheduleCacheEpoch === epoch) scheduleCache.set(key, { data, time: Date.now() });
+        // The entry may have expired, been evicted, or been replaced after a write.
+        if (scheduleCache.get(key)?.promise === promise) scheduleCache.set(key, { data, time: Date.now() });
         return data;
       })
       .catch(err => {
-        if (scheduleCacheEpoch === epoch) scheduleCache.delete(key);
+        if (scheduleCache.get(key)?.promise === promise) scheduleCache.delete(key);
         throw err;
       });
     scheduleCache.set(key, { promise, time: now });
+    evictExpiredEntries();
     return promise;
   },
   getScheduleSummary: (start, end, classId) => {

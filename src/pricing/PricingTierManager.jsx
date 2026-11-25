@@ -1,14 +1,14 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { api } from '../api';
 import { useToast } from '../components/ToastProvider';
+import ErrorState from '../components/ErrorState';
+import useRemoteData from '../hooks/useRemoteData';
 
 export default function PricingTierManager() {
   const toast = useToast();
-  const [tiers, setTiers] = useState([]);
+  const { data: tiers, loading, error, reload } = useRemoteData(api.getPricingTiers);
   const [form, setForm] = useState({ minStudents: 1, maxStudents: 1, pricePerStudentPerHour: 800 });
   const [saving, setSaving] = useState(false);
-
-  useEffect(() => { api.getPricingTiers().then(setTiers).catch(e => toast(e.message || '加载定价阶梯失败')); }, []);
 
   async function addTier() {
     if (saving) return;
@@ -20,7 +20,7 @@ export default function PricingTierManager() {
         pricePerStudentPerHour: form.pricePerStudentPerHour === '' ? 0 : +form.pricePerStudentPerHour,
       });
       setForm({ minStudents: 1, maxStudents: 1, pricePerStudentPerHour: 800 });
-      api.getPricingTiers().then(setTiers).catch(e => toast(e.message || '加载定价阶梯失败'));
+      await reload();
     } catch (e) { toast(e.message || '添加失败'); }
     finally { setSaving(false); }
   }
@@ -30,7 +30,7 @@ export default function PricingTierManager() {
     setSaving(true);
     try {
       await api.deletePricingTier(id);
-      setTiers(t => t.filter(x => x.id !== id));
+      await reload();
     } catch (e) { toast(e.message || '删除失败'); }
     finally { setSaving(false); }
   }
@@ -39,7 +39,9 @@ export default function PricingTierManager() {
     <div>
       <h2 className="text-xl mb-4">定价阶梯</h2>
       <div className="grid gap-2 mb-4">
-        {tiers.map(t => (
+        {error && <ErrorState message={`定价阶梯加载失败：${error}`} onRetry={reload} />}
+        {loading && <p role="status">正在加载定价阶梯…</p>}
+        {!loading && !error && tiers?.map(t => (
           <div key={t.id} className="flex items-center justify-between p-3 bg-gray-100 dark:bg-gray-800 rounded">
             <span>{t.minStudents === t.maxStudents ? `${t.minStudents}人` : `${t.minStudents}-${t.maxStudents}人`}: ¥{t.pricePerStudentPerHour}/人/时</span>
             <button onClick={() => removeTier(t.id)} disabled={saving} className="text-red-400 hover:text-red-300 disabled:opacity-50">删除</button>

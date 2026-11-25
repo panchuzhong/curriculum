@@ -37,7 +37,8 @@ test('学科加载前不能保存；加载后保存保留已有学科，保存�
   });
   try {
     await page.goto('/settings');
-    await expect(page.getByRole('status')).toHaveText('正在加载学科…');
+    const subjectSection = page.getByRole('heading', { name: '学科管理' }).locator('..');
+    await expect(subjectSection.getByRole('status')).toHaveText('正在加载学科…');
     await expect(page.getByRole('button', { name: '保存学科设置' })).toBeDisabled();
     await expect(page.getByRole('button', { name: '+ 数学', exact: true })).toBeDisabled();
     loading.release();
@@ -84,12 +85,12 @@ test('学科加载失败时保持禁用，重试成功后才允许保存', async
   await page.route('**/api/auth/profile', route => route.fulfill(failing
     ? { status: 503, json: { error: '资料暂不可用' } } : { json: profile }));
   await page.goto('/settings');
-  await expect(page.getByRole('alert')).toContainText('资料暂不可用');
+  const section = page.getByRole('heading', { name: '学科管理' }).locator('..');
+  await expect(section.getByRole('alert')).toContainText('资料暂不可用');
   await expect(page.getByRole('button', { name: '保存学科设置' })).toBeDisabled();
   failing = false;
   await page.getByRole('button', { name: '重试', exact: true }).click();
   await expect(page.getByRole('button', { name: '保存学科设置' })).toBeEnabled();
-  const section = page.getByRole('heading', { name: '学科管理' }).locator('..');
   await expect(section.getByText('英语', { exact: true })).toBeVisible();
   await expect(section.getByText('物理', { exact: true })).toBeVisible();
 });
@@ -461,3 +462,92 @@ for (const view of ['week', 'month'] as const) {
     } finally { old.release(); }
   });
 }
+
+test('迟到的定价阶梯列表不能覆盖添加后的结果', async ({ authenticatedPage: page }) => {
+  const initial = gate();
+  let added = false;
+  let pending = 0;
+  const rows = [{ id: 1, minStudents: 8, maxStudents: 8, pricePerStudentPerHour: 123 }];
+  await page.route('**/api/pricing-tiers', async route => {
+    if (route.request().method() === 'POST') {
+      added = true;
+      return route.fulfill({ json: rows[0] });
+    }
+    if (added) return route.fulfill({ json: rows });
+    pending++;
+    await initial.promise;
+    await route.fulfill({ json: [] });
+    pending--;
+  });
+  try {
+    await page.goto('/settings');
+    const section = page.getByRole('heading', { name: '定价阶梯' }).locator('..');
+    await expect.poll(() => pending).toBeGreaterThan(0);
+    await section.getByRole('button', { name: '添加', exact: true }).click();
+    await expect(section.getByText('8人: ¥123/人/时')).toBeVisible();
+    initial.release();
+    await expect.poll(() => pending).toBe(0);
+    await page.evaluate(() => new Promise<void>(r => requestAnimationFrame(() => requestAnimationFrame(() => r()))));
+    await expect(section.getByText('8人: ¥123/人/时')).toBeVisible();
+  } finally { initial.release(); }
+});
+
+test('节假日加载失败后显示重试，成功后显示实际天数', async ({ authenticatedPage: page }) => {
+  let fail = true;
+  const year = new Date().getFullYear();
+  await page.route('**/api/holidays', route => route.fulfill(fail
+    ? { status: 503, json: { error: '测试中断' } }
+    : { json: [{ id: 1, date: `${year}-01-01`, name: '测试元旦', type: 'holiday' }] }));
+  await page.goto('/settings');
+  const section = page.getByRole('heading', { name: '法定节假日管理' }).locator('..');
+  await expect(section.getByRole('alert')).toContainText('测试中断');
+  await expect(section.getByText('节假日 (0天)')).toHaveCount(0);
+  fail = false;
+  await section.getByRole('button', { name: '重试' }).click();
+  await expect(section.getByText('节假日 (1天)')).toBeVisible();
+  await expect(section.getByText('测试元旦')).toBeVisible();
+});
+
+test('班级基本信息保存只提交本页负责的字段', async ({ authenticatedPage: page }) => {
+  await page.route('**/api/classes', route => route.fulfill({ json: [cls] }));
+  let saved: Record<string, unknown> | undefined;
+  await page.route(`**/api/classes/${cls.id}`, async route => {
+    saved = route.request().postDataJSON();
+    await route.fulfill({ json: { ...cls, ...saved } });
+  });
+  await page.goto('/classes');
+  await page.getByText(cls.name, { exact: true }).click();
+  await classField(page, '班级名称').fill('改名班级');
+  await page.getByRole('button', { name: '保存', exact: true }).click();
+  await expect.poll(() => saved?.name).toBe('改名班级');
+  for (const field of ['studentCount', 'unitPrice', 'discountAmount', 'discountReason']) {
+    expect(saved).not.toHaveProperty(field);
+  }
+});
+
+test('系统取消触摸后，空白格和已有课程都不会打开长按编辑器', async ({ authenticatedPage: page }) => {
+  const day = '2026-05-13';
+  await mockSchedules(page, [lesson(903, day, '09:00', '10:00')]);
+  await page.goto('/?week=2026-05-11');
+  const column = page.locator(`[data-date="${day}"]`);
+  const cell = column.locator('.border-t.cursor-pointer').first();
+  const block = column.getByText(cls.name, { exact: true });
+  await expect(block).toBeVisible();
+  await page.clock.install();
+  for (const target of [cell, block]) {
+    await target.evaluate(el => {
+      const { left, top } = el.getBoundingClientRect();
+      const t = new Touch({ identifier: 1, target: el, clientX: left + 1, clientY: top + 1 });
+      el.dispatchEvent(new TouchEvent('touchstart', { bubbles: true, touches: [t] }));
+      el.dispatchEvent(new TouchEvent('touchcancel', { bubbles: true, changedTouches: [t] }));
+    });
+    await page.clock.runFor(510);
+    await expect(page.getByRole('dialog', { name: '排课编辑' })).toHaveCount(0);
+  }
+  await block.evaluate(el => {
+    const t = new Touch({ identifier: 2, target: el, clientX: 10, clientY: 10 });
+    el.dispatchEvent(new TouchEvent('touchstart', { bubbles: true, touches: [t] }));
+  });
+  await page.clock.runFor(350);
+  await expect(page.getByRole('dialog', { name: '排课编辑' })).toBeVisible();
+});

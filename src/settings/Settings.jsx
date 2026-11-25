@@ -1,11 +1,12 @@
 import { useState, useEffect } from 'react';
-import { api, setToken } from '../api';
+import { api } from '../api';
 import PricingTierManager from '../pricing/PricingTierManager';
 import HolidayManager from './HolidayManager';
 import { getSubjectColor } from '../utils/colors';
 import { useToast } from '../components/ToastProvider';
 import { useConfirm } from '../components/ConfirmDialog';
 import { copyText } from '../utils/clipboard';
+import useRemoteData from '../hooks/useRemoteData';
 
 const ALL_SUBJECTS = ['数学', '物理', '化学', '英语', '语文', '生物', '历史', '地理', '政治', '信息技术', '美术', '音乐', '体育'];
 
@@ -162,7 +163,8 @@ function SubjectSection() {
 function ApiKeySection() {
   const toast = useToast();
   const [confirmAction, confirmDialog] = useConfirm();
-  const [profile, setProfile] = useState(null);
+  const { data: profile, error, reload } = useRemoteData(api.getProfile);
+  const [regenerating, setRegenerating] = useState(false);
   const [copied, setCopied] = useState(false);
   const [fullKey, setFullKey] = useState(null);
   // 「已复制」两秒后自动收起，和上面「已保存」同一个做法：计时器挂在 [copied] 上，每次复制
@@ -173,18 +175,17 @@ function ApiKeySection() {
     return () => clearTimeout(t);
   }, [copied]);
 
-  useEffect(() => {
-    api.getProfile().then(p => { setProfile(p); setFullKey(null); }).catch(e => toast(e.message || '加载个人信息失败'));
-  }, []);
-
   async function regenerate() {
+    if (regenerating) return;
     const ok = await confirmAction('重新生成 API Key 后，旧的 Key 将立即失效。确定继续？');
     if (!ok) return;
+    setRegenerating(true);
     try {
       const res = await api.regenerateApiKey();
-      setProfile(p => ({ ...p, apiKey: res.apiKey }));
+      setCopied(false);
       setFullKey(res.apiKey);
     } catch (e) { toast(e.message || '重新生成失败'); }
+    finally { setRegenerating(false); }
   }
 
   const displayKey = fullKey || profile?.apiKey;
@@ -200,7 +201,13 @@ function ApiKeySection() {
     }
   }
 
-  if (!profile) return <div className="text-gray-500">加载中...</div>;
+  if (error) return (
+    <div>
+      <p role="alert">API Key 加载失败：{error}</p>
+      <button onClick={reload} className="underline">重新加载 API Key</button>
+    </div>
+  );
+  if (!profile) return <div role="status" className="text-gray-500">正在加载 API Key…</div>;
 
   return (
     <div className="bg-gray-100 dark:bg-gray-800 p-4 rounded-lg">
@@ -209,7 +216,7 @@ function ApiKeySection() {
         <code className="flex-1 p-2 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded text-sm font-mono break-all">
           {displayKey}
         </code>
-        <button onClick={copyKey} disabled={!fullKey}
+        <button onClick={copyKey} disabled={!fullKey || regenerating}
           className="px-3 py-2 bg-gray-300 dark:bg-gray-600 rounded hover:bg-gray-400 dark:hover:bg-gray-500 text-sm whitespace-nowrap disabled:opacity-50 disabled:cursor-not-allowed">
           {copied ? '已复制' : '复制'}
         </button>
@@ -219,7 +226,7 @@ function ApiKeySection() {
         Agent 通过请求头 <code className="bg-gray-200 dark:bg-gray-700 px-1 rounded">X-API-Key</code> 访问 API，
         详见 <code className="bg-gray-200 dark:bg-gray-700 px-1 rounded">GET /api/agent/help</code>
       </p>
-      <button onClick={regenerate}
+      <button onClick={regenerate} disabled={regenerating}
         className="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700 text-sm">
         重新生成 API Key
       </button>
@@ -252,9 +259,7 @@ function PasswordSection() {
     }
     setSaving(true);
     try {
-      const res = await api.changePassword({ oldPassword: form.oldPassword, newPassword: form.newPassword });
-      // Password change revokes old tokens; keep the current session alive
-      if (res?.token) setToken(res.token);
+      await api.changePassword({ oldPassword: form.oldPassword, newPassword: form.newPassword });
       setSuccess('密码修改成功');
       setForm({ oldPassword: '', newPassword: '', confirmPassword: '' });
     } catch (err) {

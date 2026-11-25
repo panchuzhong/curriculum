@@ -57,11 +57,14 @@ export default function ClassForm({ initial, onSubmit, onCancel, compact, action
   return (
     <form onSubmit={e => {
       e.preventDefault();
-      onSubmit({
-        ...dropOrphanedCoords(form),
-        studentCount: form.studentCount === '' ? 1 : +form.studentCount,
-        unitPrice: form.unitPrice === '' ? 0 : +form.unitPrice,
-        discountAmount: form.discountAmount === '' ? 0 : +form.discountAmount,
+      const { studentCount, unitPrice, discountAmount, discountReason, ...details } = dropOrphanedCoords(form);
+      // Pricing is edited in its own tab. A basic-info save must preserve changes made there.
+      onSubmit(compact ? details : {
+        ...details,
+        studentCount: studentCount === '' ? 1 : +studentCount,
+        unitPrice: unitPrice === '' ? 0 : +unitPrice,
+        discountAmount: discountAmount === '' ? 0 : +discountAmount,
+        discountReason,
       });
     }} className="bg-gray-100 dark:bg-gray-800 p-4 sm:p-6 rounded-lg">
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">

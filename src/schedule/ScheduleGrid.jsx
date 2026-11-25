@@ -69,9 +69,8 @@ export default function ScheduleGrid({ dates, schedules, visibleDays = 7, weekSt
   const [rowHeight, setRowHeight] = useState(MIN_ROW_HEIGHT);
   const [, setHolidayRevision] = useState(0);
   const gridStateRef = useRef({});
-  const schedLpRef = useRef(null);
 
-  const { handleDayTouchStart, handleDayTouchMove, handleDayTouchEnd, dayBodyEls } =
+  const { startPress, cancelPress, handleDayTouchStart, handleDayTouchMove, handleDayTouchEnd, dayBodyEls } =
     useGridTouch({ gridStateRef, onCellClick });
   const wasRecentTouch = useTouchTime();
 
@@ -185,6 +184,7 @@ export default function ScheduleGrid({ dates, schedules, visibleDays = 7, weekSt
                   onTouchStart={e => handleDayTouchStart(e, date)}
                   onTouchMove={handleDayTouchMove}
                   onTouchEnd={handleDayTouchEnd}
+                  onTouchCancel={cancelPress}
                   className={`flex-1 relative border-r border-gray-200 dark:border-gray-700 ${
                     isToday ? 'bg-blue-100/60 dark:bg-blue-800/25' : ''
                   } ${holiday ? 'bg-red-50/30 dark:bg-red-900/5' : ''} ${workday ? 'bg-orange-50/30 dark:bg-orange-900/5' : ''}`}>
@@ -215,7 +215,7 @@ export default function ScheduleGrid({ dates, schedules, visibleDays = 7, weekSt
                         firstLabelMin={firstLabelMin}
                         totalHeight={totalHeight}
                         onScheduleClick={onScheduleClick}
-                        schedLpRef={schedLpRef}
+                        startPress={startPress}
                         wasRecentTouch={wasRecentTouch}
                       />
                     ))

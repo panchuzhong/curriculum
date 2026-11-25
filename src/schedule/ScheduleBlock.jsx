@@ -2,7 +2,7 @@ import { useContext, memo } from 'react';
 import { getClassColor, getTextColor, DarkContext } from '../utils/colors';
 import { blockGeometry, clipBlock } from '../utils/schedule';
 
-export default memo(function ScheduleBlock({ item, hasConflict, totalCols, rowHeight, topGapHeight, firstLabelMin, totalHeight, onScheduleClick, schedLpRef, wasRecentTouch }) {
+export default memo(function ScheduleBlock({ item, hasConflict, totalCols, rowHeight, topGapHeight, firstLabelMin, totalHeight, onScheduleClick, startPress, wasRecentTouch }) {
   const dark = useContext(DarkContext);
   if (!item?.startTime || !item?.endTime) return null;
   const { top: topPx, height: h } = blockGeometry(item.startTime, item.endTime, { rowHeight, topGapHeight, firstLabelMin });
@@ -28,30 +28,10 @@ export default memo(function ScheduleBlock({ item, hasConflict, totalCols, rowHe
       onContextMenu={e => e.preventDefault()}
       onTouchStart={e => {
         e.stopPropagation();
-        if (e.touches.length !== 1) return;
-        const t = e.touches[0];
-        if (schedLpRef.current?.timer) clearTimeout(schedLpRef.current.timer);
-        const timer = setTimeout(() => {
+        startPress(e, 300, () => {
           navigator.vibrate?.(30);
           onScheduleClick?.(item);
-          schedLpRef.current = null;
-        }, 300);
-        schedLpRef.current = { timer, startX: t.clientX, startY: t.clientY };
-      }}
-      onTouchMove={e => {
-        if (!schedLpRef.current) return;
-        const t = e.touches[0];
-        if (Math.abs(t.clientX - schedLpRef.current.startX) > 8 ||
-            Math.abs(t.clientY - schedLpRef.current.startY) > 8) {
-          clearTimeout(schedLpRef.current.timer);
-          schedLpRef.current = null;
-        }
-      }}
-      onTouchEnd={() => {
-        if (schedLpRef.current?.timer) {
-          clearTimeout(schedLpRef.current.timer);
-          schedLpRef.current = null;
-        }
+        });
       }}
       className={`absolute rounded-md cursor-pointer overflow-hidden z-10 transition-shadow hover:shadow-md select-none ${
         hasConflict ? 'ring-2 ring-inset ring-red-500' : ''
