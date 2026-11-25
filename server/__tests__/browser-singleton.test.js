@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 let launches;
 
@@ -22,7 +22,18 @@ async function loadBrowser() {
 }
 
 describe('puppeteer browser singleton', () => {
+  afterEach(() => vi.unstubAllEnvs());
   beforeEach(() => { launches = { count: 0, all: [] }; });
+
+  it.each(['', 'false', 'true'])('only disables the sandbox with explicit opt-out (%s)', async value => {
+    vi.stubEnv('PUPPETEER_NO_SANDBOX', value);
+    const m = await loadBrowser();
+    await m.getBrowser();
+    const puppeteer = (await import('puppeteer')).default;
+    const args = puppeteer.launch.mock.lastCall[0].args;
+    expect(args.includes('--no-sandbox')).toBe(value === 'true');
+    expect(args.includes('--disable-setuid-sandbox')).toBe(value === 'true');
+  });
 
   it('reuses one browser across calls', async () => {
     const m = await loadBrowser();

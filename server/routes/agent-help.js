@@ -277,6 +277,10 @@ router.get('/help', authMiddleware, (req, res) => {
       },
     },
     notes: [
+      'ID、人数和计费分钟数写入时不得超过 Number.MAX_SAFE_INTEGER（9007199254740991），支持十进制整数字符串；溢出返回 400，不会扩大批量删除范围',
+      '报表中计费/定价数据无效或汇总溢出时返回 422 {error}，JSON 和 CSV 一致，不以 null 或 0 代替错误数值',
+      '修改排课 locationName 时，未显式提供的新坐标会被清空；同名更新保留坐标，批量操作逐条判断。显式提供的坐标（包括 null）优先',
+      'API Key 在数据库中保存 SHA-256 摘要和显示掩码；完整值仅注册或轮换时返回。旧 key 经迁移后仍可使用',
       '【写接口返回体约定】单资源 POST/PUT 统一返回完整资源对象（含 id 与所有派生字段，如 classes 的 isDeleted、students 的 classIds、schedules 的 class 与 warnings）；DELETE 单资源返回 {ok:true}；批量端点（POST/PUT/DELETE /api/*/batch、POST /api/holidays/batch）返回 {count, ids?, ...}；前端不依赖 ok 字段，只看 HTTP 状态码',
       '所有 JSON 响应的 Content-Type 均为 application/json; charset=utf-8（CSV 导出时为 text/csv; charset=utf-8）',
       `日期一律为 YYYY-MM-DD，且须落在 ${DATE_MIN} ~ ${DATE_MAX} 之间（含两端），越界返回 400。前端所有视图都按区间查询，范围之外的行写进去也看不到、删不掉。唯一的例外是学生的 birthDate：它只用于展示、不参与区间查询，所以只校验日历（或 4 位年份）而不卡上下限，否则旧库里已有的值会让整条学生记录再也存不下来`,

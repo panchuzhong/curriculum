@@ -51,6 +51,6 @@
   },
   "allowScripts": {
     "better-sqlite3@12.11.1": true,
-    "puppeteer@25.8.0": true
+    "puppeteer@25.18.1": true
   }
 }

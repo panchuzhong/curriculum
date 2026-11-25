@@ -6,8 +6,8 @@ function launchBrowser() {
   return puppeteer.launch({
     headless: true,
     args: [
-      '--no-sandbox',
-      '--disable-setuid-sandbox',
+      // Keep Chromium's sandbox unless an isolated deployment explicitly opts out.
+      ...(process.env.PUPPETEER_NO_SANDBOX === 'true' ? ['--no-sandbox', '--disable-setuid-sandbox'] : []),
       '--disable-dev-shm-usage',
       '--disable-gpu',
       '--disable-software-rasterizer',

@@ -22,7 +22,7 @@ export const validateCreateClass = [
   body('name').isString().withMessage('班级名称不能为空').bail().trim().notEmpty().withMessage('班级名称不能为空').isLength({ max: 100 }).withMessage('班级名称最多100个字符'),
   body('grade').isIn(VALID_GRADES).withMessage(`年级须为: ${VALID_GRADES.join('/')}`),
   body('subject').isString().withMessage('学科不能为空').bail().trim().notEmpty().withMessage('学科不能为空').isLength({ max: 50 }).withMessage('学科最多50个字符'),
-  body('studentCount').isInt({ min: 1 }).withMessage('学生人数须为正整数'),
+  body('studentCount').isInt({ min: 1, max: Number.MAX_SAFE_INTEGER }).withMessage('学生人数须为正整数'),
   body('unitPrice').optional().isFloat({ min: 0 }).withMessage('单价不能为负').bail().custom(isFiniteNumber).withMessage('单价须为有限数字'),
   body('discountAmount').optional().isFloat({ min: 0 }).withMessage('优惠金额不能为负').bail().custom(isFiniteNumber).withMessage('优惠金额须为有限数字'),
   body('isCompetition').optional().isBoolean().toBoolean().withMessage('isCompetition 须为布尔值'),
@@ -41,7 +41,7 @@ export const validateUpdateClass = [
   body('subject').optional().isString().withMessage('学科不能为空').bail().trim().notEmpty().withMessage('学科不能为空').isLength({ max: 50 }).withMessage('学科最多50个字符'),
   body('unitPrice').optional().isFloat({ min: 0 }).withMessage('单价不能为负').bail().custom(isFiniteNumber).withMessage('单价须为有限数字'),
   body('discountAmount').optional().isFloat({ min: 0 }).withMessage('优惠金额不能为负').bail().custom(isFiniteNumber).withMessage('优惠金额须为有限数字'),
-  body('studentCount').optional().isInt({ min: 1 }).withMessage('学生人数须为正整数'),
+  body('studentCount').optional().isInt({ min: 1, max: Number.MAX_SAFE_INTEGER }).withMessage('学生人数须为正整数'),
   body('isCompetition').optional().isBoolean().toBoolean().withMessage('isCompetition 须为布尔值'),
   body('discountReason').optional({ values: 'null' }).isString().withMessage('优惠原因最多500个字符').bail().isLength({ max: 500 }).withMessage('优惠原因最多500个字符'),
   body('defaultLocationName').optional({ values: 'null' }).isString().withMessage('默认地点最多200个字符').bail().isLength({ max: 200 }).withMessage('默认地点最多200个字符'),
@@ -53,7 +53,7 @@ export const validateUpdateClass = [
 
 export const validateCreatePricing = [
   singleValues(['studentCount']),
-  body('studentCount').isInt({ min: 1 }).withMessage('学生人数须为正整数'),
+  body('studentCount').isInt({ min: 1, max: Number.MAX_SAFE_INTEGER }).withMessage('学生人数须为正整数'),
   body('unitPrice').isFloat({ min: 0 }).withMessage('单价不能为负').bail().custom(isFiniteNumber).withMessage('单价须为有限数字'),
   body('discountAmount').optional().isFloat({ min: 0 }).withMessage('优惠金额不能为负').bail().custom(isFiniteNumber).withMessage('优惠金额须为有限数字'),
   body('discountReason').optional({ values: 'null' }).isString().withMessage('优惠原因最多500个字符').bail().isLength({ max: 500 }).withMessage('优惠原因最多500个字符'),
@@ -62,7 +62,7 @@ export const validateCreatePricing = [
 
 export const validateUpdatePricing = [
   singleValues(['studentCount']),
-  body('studentCount').optional().isInt({ min: 1 }).withMessage('学生人数须为正整数'),
+  body('studentCount').optional().isInt({ min: 1, max: Number.MAX_SAFE_INTEGER }).withMessage('学生人数须为正整数'),
   body('unitPrice').optional().isFloat({ min: 0 }).withMessage('单价不能为负').bail().custom(isFiniteNumber).withMessage('单价须为有限数字'),
   body('discountAmount').optional().isFloat({ min: 0 }).withMessage('优惠金额不能为负').bail().custom(isFiniteNumber).withMessage('优惠金额须为有限数字'),
   body('discountReason').optional({ values: 'null' }).isString().withMessage('优惠原因最多500个字符').bail().isLength({ max: 500 }).withMessage('优惠原因最多500个字符'),

@@ -127,7 +127,17 @@ function normalizeMultiParam(value) {
 
 function parseClassIdsParam(value) {
   return normalizeMultiParam(value).split(',').map(Number)
-    .filter(id => Number.isInteger(id) && id > 0);
+    .filter(id => Number.isSafeInteger(id) && id > 0);
+}
+
+function locationUpdatesFor(updates, existing) {
+  const result = { ...updates };
+  if ('locationName' in updates && (!updates.locationName || updates.locationName !== existing.locationName)) {
+    // Coordinates omitted by a caller still describe the old place.
+    if (!('locationLat' in updates)) result.locationLat = null;
+    if (!('locationLng' in updates)) result.locationLng = null;
+  }
+  return result;
 }
 
 function dateSpanDays(start, end) {
@@ -396,11 +406,6 @@ router.put('/batch', validateBatchUpdate, handle, (req, res) => {
   }
   if (safeUpdates.locationLat != null) safeUpdates.locationLat = Number(safeUpdates.locationLat);
   if (safeUpdates.locationLng != null) safeUpdates.locationLng = Number(safeUpdates.locationLng);
-  // Same rule as the single-item update: clearing the name clears its coordinates.
-  if ('locationName' in safeUpdates && safeUpdates.locationName == null) {
-    if (!('locationLat' in safeUpdates)) safeUpdates.locationLat = null;
-    if (!('locationLng' in safeUpdates)) safeUpdates.locationLng = null;
-  }
 
   if (safeUpdates.startTime !== undefined && !isValidTime(safeUpdates.startTime)) {
     return res.status(400).json({ error: '开始时间须为有效的 HH:MM (00:00-23:59)' });
@@ -615,17 +620,17 @@ router.put('/batch', validateBatchUpdate, handle, (req, res) => {
   }
 
   try {
-    if (dayShift === undefined) {
+    if (dayShift === undefined && !('locationName' in safeUpdates)) {
       drizzleDb.update(schedules).set(safeUpdates).where(inArray(schedules.id, updatedIds)).run();
     } else {
       // 逐行挪，顺序取决于方向。一条 `UPDATE ... SET date = date(date,'+N days')`
       // 在整周序列上会撞 idx_schedules_unique：第一行挪到第二行此刻占着的日期就报错，
       // 整条语句回滚（实测）。往后挪先动最晚的一节、往前挪先动最早的一节，途中不重叠。
-      const ordered = dayShift >= 0 ? [...targets].reverse() : targets;
+      const ordered = targets ? (dayShift >= 0 ? [...targets].reverse() : targets) : candidates;
       db.transaction(() => {
         for (const t of ordered) {
           drizzleDb.update(schedules)
-            .set({ ...safeUpdates, date: t.target })
+            .set({ ...locationUpdatesFor(safeUpdates, t), ...(targets && { date: t.target }) })
             .where(eq(schedules.id, t.id)).run();
         }
       })();
@@ -734,7 +739,7 @@ router.delete('/batch', validateBatchDelete, handle, (req, res) => {
     let classIds = teacherClasses.map(c => c.id);
     if (classId) {
       const queryClassIds = parseClassIdsParam(classId);
-      if (queryClassIds.length) classIds = classIds.filter(id => queryClassIds.includes(id));
+      classIds = classIds.filter(id => queryClassIds.includes(id));
     }
     if (classIds.length === 0) {
       return send({ count: 0, ids: [] });
@@ -777,16 +782,10 @@ router.put('/:id', validateUpdateSchedule, handle, (req, res) => {
   if (!cls) return res.status(403).json({ error: 'Forbidden' });
 
   const allowed = ['classId', 'date', 'startTime', 'endTime', 'durationBilling', 'locationName', 'locationLat', 'locationLng'];
-  const updates = Object.fromEntries(Object.entries(req.body).filter(([k]) => allowed.includes(k)));
+  const updates = locationUpdatesFor(Object.fromEntries(Object.entries(req.body).filter(([k]) => allowed.includes(k))), existing);
   if (Object.keys(updates).length === 0) return res.status(400).json({ error: 'No valid fields' });
   if (updates.locationLat != null) updates.locationLat = Number(updates.locationLat);
   if (updates.locationLng != null) updates.locationLng = Number(updates.locationLng);
-  // Coordinates without a name point at a place the caller just removed, so
-  // clear them alongside it unless the caller supplied new ones explicitly.
-  if ('locationName' in updates && updates.locationName == null) {
-    if (!('locationLat' in updates)) updates.locationLat = null;
-    if (!('locationLng' in updates)) updates.locationLng = null;
-  }
 
   // Validate new classId belongs to this teacher and is not deleted
   if (updates.classId !== undefined) {
@@ -896,6 +895,7 @@ router.get('/summary', (req, res) => {
   const matchPricing = buildPricingLookup(allPricing);
 
   const byClassMap = {};
+  let totalMinutes = 0;
   for (const s of scheds) {
     if (!byClassMap[s.classId]) byClassMap[s.classId] = { count: 0, minutes: 0, revenue: 0 };
     byClassMap[s.classId].count++;
@@ -905,9 +905,18 @@ router.get('/summary', (req, res) => {
     const unit = p?.unitPrice ?? cls?.unitPrice ?? 0;
     const cnt = p?.studentCount ?? cls?.studentCount ?? 0;
     const disc = p?.discountAmount ?? cls?.discountAmount ?? 0;
+    if (!Number.isSafeInteger(s.durationBilling) || s.durationBilling < 0
+      || !Number.isSafeInteger(cnt) || cnt < 1
+      || !Number.isFinite(unit) || unit < 0 || !Number.isFinite(disc) || disc < 0) {
+      return res.status(422).json({ error: `第 ${s.id} 条排课的计费或定价数值无效，请修正后重试` });
+    }
     // A discount larger than the session gross is a data-entry artifact, not
     // money owed by the teacher — never let a session contribute negative revenue.
     byClassMap[s.classId].revenue += Math.max(0, unit * cnt - disc) * (s.durationBilling / 60);
+    totalMinutes += s.durationBilling;
+    if (!Number.isFinite(byClassMap[s.classId].revenue) || !Number.isSafeInteger(totalMinutes)) {
+      return res.status(422).json({ error: '报表计费数值超出可计算范围，请检查计费时长和定价' });
+    }
   }
 
   const byClass = Object.entries(byClassMap).map(([cid, agg]) => {
@@ -916,10 +925,14 @@ router.get('/summary', (req, res) => {
     return { classId: +cid, name: cls.name, subject: cls.subject, grade: cls.grade, isCompetition: !!cls.isCompetition, count: agg.count, hours, revenue: agg.revenue };
   }).sort((a, b) => b.revenue - a.revenue || a.classId - b.classId);
 
+  const total = { count: scheds.length, hours: totalMinutes / 60, revenue: byClass.reduce((sum, b) => sum + b.revenue, 0) };
+  if (!Number.isFinite(total.revenue)) {
+    return res.status(422).json({ error: '报表收入数值超出可计算范围，请检查定价' });
+  }
+
   if (format === 'csv') {
     const rows = [['班级', '年级', '学科', '课次', '课时数(小时)', '收入(元)']];
     byClass.forEach(b => rows.push([b.name, b.grade, b.subject, b.count, b.hours.toFixed(2), b.revenue.toFixed(2)]));
-    const total = byClass.reduce((acc, b) => ({ count: acc.count + b.count, hours: acc.hours + b.hours, revenue: acc.revenue + b.revenue }), { count: 0, hours: 0, revenue: 0 });
     rows.push(['合计', '', '', total.count, total.hours.toFixed(2), total.revenue.toFixed(2)]);
     res.setHeader('Content-Type', 'text/csv; charset=utf-8');
     res.setHeader('Content-Disposition', `attachment; filename="summary_${start}_${end}.csv"`);
@@ -954,9 +967,7 @@ router.get('/summary', (req, res) => {
   }
 
   const response = {
-    count: scheds.length,
-    hours: scheds.reduce((s, r) => s + r.durationBilling, 0) / 60,
-    revenue: byClass.reduce((s, b) => s + b.revenue, 0),
+    ...total,
     byClass,
     bySubject: Object.values(bySubjectMap).sort((a, b) => b.count - a.count),
     byGrade: Object.values(byGradeMap).sort((a, b) => b.count - a.count),

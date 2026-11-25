@@ -263,7 +263,7 @@ describe('超长导出按月分块截图', () => {
     expect(H(buf)).toBeGreaterThan(H(one) * 6);
     // 等比：输出高度被压到上限，宽度必须按同一倍数缩小。参照取 12 个月
     // （同样可能触发降采样，所以改用未降采样的 3 个月区间推全尺寸比例）。
-    const gapPx = 24 * 4;
+    const gapPx = (24 - 20) * 4; // the individual images already contain 20px padding
     const fullH3 = H(three);                 // 未降采样：3 个月 + 2 个间距
     const perMonth = (fullH3 - gapPx * 2) / 3;
     const fullHeight = perMonth * 24 + gapPx * 23;
@@ -275,7 +275,7 @@ describe('超长导出按月分块截图', () => {
     const one = await generateMonthlyImage([], 2026, 0);
     const three = await generateMonthlyImage([], 2026, 0, { endYear: 2026, endMonth: 2 });
     expect(isPng(one)).toBe(true);
-    const gapPx = 24 * 4;
+    const gapPx = (24 - 20) * 4;
     // 各月 CSS 高度不同（5 行或 6 行周），所以直接量单月高度再相加，
     // 而不是拿一月的高度乘月份数。2026 年 1~3 月分别是 4、6、5 行周。
     const feb = await generateMonthlyImage([], 2026, 1);

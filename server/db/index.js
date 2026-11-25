@@ -1,15 +1,23 @@
 import Database from 'better-sqlite3';
 import { drizzle } from 'drizzle-orm/better-sqlite3';
 import * as schema from './schema.js';
-import { existsSync, mkdirSync } from 'fs';
+import { existsSync, mkdirSync, openSync, closeSync } from 'fs';
 import { dirname } from 'path';
+import { hashApiKey, maskApiKey } from '../services/api-keys.js';
 
 const dbPath = process.env.DB_PATH || './data/data.db';
 
 // Derive the directory from DB_PATH: hardcoding ./data left a stray directory
 // in the cwd and still failed with SQLITE_CANTOPEN for any other location.
 export const dbDir = dirname(dbPath);
-if (dbDir && !existsSync(dbDir)) mkdirSync(dbDir, { recursive: true });
+if (dbDir && !existsSync(dbDir)) mkdirSync(dbDir, { recursive: true, mode: 0o700 });
+
+// Protect newly created databases even when started directly with a permissive umask.
+// Existing files retain their permissions; operators handle those during deployment.
+if (dbPath !== ':memory:') {
+  try { closeSync(openSync(dbPath, 'wx', 0o600)); }
+  catch (e) { if (e.code !== 'EEXIST') throw e; }
+}
 
 const db = new Database(dbPath);
 db.pragma('journal_mode = WAL');
@@ -122,6 +130,19 @@ const migrations = [
     up(db) {
       addColumn(db, 'classes', 'default_location_lat_for TEXT');
       addColumn(db, 'classes', 'default_location_lng_for TEXT');
+    },
+  },
+  {
+    version: 6,
+    name: 'hash_teacher_api_keys',
+    up(db) {
+      addColumn(db, 'teachers', 'api_key_hash TEXT');
+      addColumn(db, 'teachers', 'api_key_hint TEXT');
+      db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_teachers_api_key_hash ON teachers(api_key_hash)');
+      const update = db.prepare('UPDATE teachers SET api_key = NULL, api_key_hash = ?, api_key_hint = ? WHERE id = ?');
+      for (const row of db.prepare('SELECT id, api_key FROM teachers WHERE api_key IS NOT NULL').all()) {
+        update.run(row.api_key ? hashApiKey(row.api_key) : null, maskApiKey(row.api_key), row.id);
+      }
     },
   },
 ];

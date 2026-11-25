@@ -14,7 +14,7 @@ import SemesterManager from './schedule/SemesterManager';
 import Reports from './reports/Reports';
 import Settings from './settings/Settings';
 import DesignPreview from './DesignPreview';
-import { api, clearToken, getTokenIdentity } from './api';
+import { api, getTokenIdentity } from './api';
 
 function PrivateRoute({ children }) {
   const [identity, setIdentity] = useState(() => getTokenIdentity(localStorage.getItem('token')));
@@ -48,13 +48,8 @@ function AuthInit({ children }) {
       return;
     }
     setReady(true);
-    api.getProfile()
-      .catch((err) => {
-        // Only clear token on explicit auth failure, not network errors
-        if (err.message === '登录已过期,请重新登录') {
-          clearToken();
-        }
-      });
+    // api.js handles authentication failures against the request's own token.
+    api.getProfile().catch(() => {});
   }, []);
   if (!ready) {
     return (

@@ -25,6 +25,10 @@ it('manages users from outside the project with a relative DB_PATH', async () =>
     });
     expect(run(['register', 'audituser', 'Audit', 'testpassword']).status).toBe(0);
     const user = db.prepare('SELECT * FROM teachers').get();
+    expect(user.api_key).toBeNull();
+    expect(user.api_key_hash).toMatch(/^[a-f0-9]{64}$/);
+    expect(run(['info', String(user.id)]).stdout).toContain(user.api_key_hint);
+    expect(run(['info', String(user.id)]).stdout).not.toContain(user.api_key_hash);
     expect(bcrypt.compareSync('testpassword', user.password_hash)).toBe(true);
     expect(db.prepare('SELECT COUNT(*) AS n FROM pricing_tiers WHERE teacher_id = ?').get(user.id).n).toBe(5);
     expect(run(['reset-pw', '密'.repeat(25), String(user.id)]).status).toBe(1);

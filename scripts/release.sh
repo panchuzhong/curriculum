@@ -41,13 +41,17 @@ cp -r dist "$RELEASE_DIR/"
 cp -r server "$RELEASE_DIR/"
 rm -rf "$RELEASE_DIR/server/__tests__"
 cp -r scripts "$RELEASE_DIR/"
+cp -r deploy "$RELEASE_DIR/"
 cp package.json package-lock.json "$RELEASE_DIR/"
 cp .env.example "$RELEASE_DIR/.env"
+chmod 600 "$RELEASE_DIR/.env"
 cp README.md "$RELEASE_DIR/"
 
 # Create start script
 cat > "$RELEASE_DIR/start.sh" << 'EOF'
 #!/bin/bash
+set -e
+umask 077
 cd "$(dirname "$0")"
 
 echo "Starting 课表管理系统..."
@@ -81,6 +85,7 @@ Type=simple
 # pre-restore snapshots next to the database, so it needs to own them).
 User=curriculum
 Group=curriculum
+UMask=0077
 WorkingDirectory=/opt/curriculum-scheduler
 EnvironmentFile=/opt/curriculum-scheduler/.env
 ExecStart=/usr/bin/env node /opt/curriculum-scheduler/server/index.js

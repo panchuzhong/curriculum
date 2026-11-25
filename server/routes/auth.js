@@ -10,6 +10,7 @@ import { eq, and } from 'drizzle-orm';
 import { signToken, authMiddleware } from '../middleware/auth.js';
 import { seedPricingTiers } from '../db/seed.js';
 import { logAudit } from '../services/audit.js';
+import { hashApiKey, maskApiKey } from '../services/api-keys.js';
 import handle from '../validations/handle.js';
 import { validateRegister, validateLogin, validateChangePassword, validateUpdateSubjects } from '../validations/auth.js';
 
@@ -58,7 +59,8 @@ router.post('/register', authLimiter, validateRegister, handle, async (req, res)
   const subjects = JSON.stringify(DEFAULT_SUBJECTS);
   let result;
   try {
-    result = drizzleDb.insert(teachers).values({ username, passwordHash, name, apiKey, subjects }).run();
+    result = drizzleDb.insert(teachers).values({ username, passwordHash, name,
+      apiKeyHash: hashApiKey(apiKey), apiKeyHint: maskApiKey(apiKey), subjects }).run();
   } catch (e) {
     process.env.ALLOW_REGISTRATION = 'true';
     if (e.message?.includes('UNIQUE constraint')) {
@@ -98,7 +100,7 @@ router.get('/profile', authMiddleware, (req, res) => {
   if (!teacher) return res.status(404).json({ error: 'Not found' });
   let subjects = DEFAULT_SUBJECTS;
   if (teacher.subjects) { try { subjects = JSON.parse(teacher.subjects); } catch { subjects = DEFAULT_SUBJECTS; } }
-  const apiKey = teacher.apiKey ? teacher.apiKey.slice(0, 4) + '...' + teacher.apiKey.slice(-4) : null;
+  const apiKey = teacher.apiKeyHint || maskApiKey(teacher.apiKey);
   res.json({ id: teacher.id, username: teacher.username, name: teacher.name, apiKey, subjects });
 });
 
@@ -112,7 +114,8 @@ router.put('/subjects', authMiddleware, authLimiter, validateUpdateSubjects, han
 
 router.put('/api-key', authMiddleware, authLimiter, (req, res) => {
   const newKey = randomUUID();
-  drizzleDb.update(teachers).set({ apiKey: newKey }).where(eq(teachers.id, req.teacherId)).run();
+  drizzleDb.update(teachers).set({ apiKey: null, apiKeyHash: hashApiKey(newKey), apiKeyHint: maskApiKey(newKey) })
+    .where(eq(teachers.id, req.teacherId)).run();
   logAudit({ teacherId: req.teacherId, action: 'UPDATE', tableName: 'teachers', recordId: req.teacherId, after: { apiKeyRotated: true } });
   res.json({ apiKey: newKey });
 });

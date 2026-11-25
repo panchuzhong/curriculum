@@ -117,6 +117,10 @@ export default function ClassList() {
           <div key={cls.id} className="bg-gray-100 dark:bg-gray-800 rounded-lg overflow-hidden">
             {/* Collapsed header — no delete button, just chevron */}
             <div className="p-4 flex items-center justify-between cursor-pointer hover:bg-gray-200 dark:hover:bg-gray-700"
+              role="button" tabIndex={0} aria-expanded={expandedId === cls.id}
+              onKeyDown={e => {
+                if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleExpand(cls.id); }
+              }}
               onClick={() => toggleExpand(cls.id)}>
               <div className="flex items-center gap-3">
                 <div className="w-1 self-stretch rounded-full shrink-0" style={{ backgroundColor: getClassColor(cls, dark) }} />

@@ -61,12 +61,13 @@ function clearScheduleCache() {
 // 不清的话 B 的页面会在 TTL 内直接拿到 A 的课，连请求都不发。
 if (typeof window !== 'undefined') {
   window.addEventListener('storage', (e) => {
-    if (e.key === 'token') clearScheduleCache();
+    if (e.key === 'token' || e.key === null) clearScheduleCache();
   });
 }
 
 function scheduleCacheKey(start, end, classId) {
-  return `${start}|${end}|${classId || ''}`;
+  // localStorage changes before the storage event reaches this tab.
+  return `${getToken() || ''}|${start}|${end}|${classId || ''}`;
 }
 
 async function withScheduleInvalidation(promise) {
@@ -82,18 +83,22 @@ export function clearToken() {
 }
 
 async function request(method, path, body, { noAuth = false } = {}) {
+  const token = noAuth ? null : getToken();
   const opts = {
     method,
     headers: {
       'Content-Type': 'application/json',
-      ...(!noAuth && getToken() ? { Authorization: `Bearer ${getToken()}` } : {}),
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
     },
   };
   if (body) opts.body = JSON.stringify(body);
   const res = await fetch(`${API_BASE}${path}`, opts);
   if (!noAuth && res.status === 401) {
-    clearToken();
-    window.location.href = loginUrl();
+    // A password change or another tab may already have installed a new token.
+    if (getToken() === token) {
+      clearToken();
+      window.location.href = loginUrl();
+    }
     throw new Error('登录已过期,请重新登录');
   }
   const text = await res.text();
@@ -113,12 +118,15 @@ async function request(method, path, body, { noAuth = false } = {}) {
 }
 
 async function requestBlob(path) {
+  const token = getToken();
   const res = await fetch(`${API_BASE}${path}`, {
-    headers: { Authorization: `Bearer ${getToken()}` },
+    headers: { Authorization: `Bearer ${token}` },
   });
   if (res.status === 401) {
-    clearToken();
-    window.location.href = loginUrl();
+    if (getToken() === token) {
+      clearToken();
+      window.location.href = loginUrl();
+    }
     throw new Error('登录已过期,请重新登录');
   }
   if (!res.ok) {

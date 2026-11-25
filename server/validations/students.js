@@ -30,7 +30,7 @@ export const validateCreateStudent = [
   body('note').optional({ checkFalsy: true }).isString().withMessage('备注最多2000个字符').bail().isLength({ max: 2000 }).withMessage('备注最多2000个字符'),
   body('classIds').optional().isArray({ max: 500 }).withMessage('classIds 须为数组且最多500项'),
   // toInt: the route matches ids against a Set of numbers, so "3" would be dropped.
-  body('classIds.*').optional().isInt({ min: 1 }).toInt().withMessage('classIds 元素须为正整数'),
+  body('classIds.*').optional().isInt({ min: 1, max: Number.MAX_SAFE_INTEGER }).toInt().withMessage('classIds 元素须为正整数'),
 ];
 
 export const validateUpdateStudent = [
@@ -43,5 +43,5 @@ export const validateUpdateStudent = [
   body('note').optional({ checkFalsy: true }).isString().withMessage('备注最多2000个字符').bail().isLength({ max: 2000 }).withMessage('备注最多2000个字符'),
   body('classIds').optional().isArray({ max: 500 }).withMessage('classIds 须为数组且最多500项'),
   // toInt: the route matches ids against a Set of numbers, so "3" would be dropped.
-  body('classIds.*').optional().isInt({ min: 1 }).toInt().withMessage('classIds 元素须为正整数'),
+  body('classIds.*').optional().isInt({ min: 1, max: Number.MAX_SAFE_INTEGER }).toInt().withMessage('classIds 元素须为正整数'),
 ];

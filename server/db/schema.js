@@ -7,6 +7,8 @@ export const teachers = sqliteTable('teachers', {
   passwordHash: text('password_hash').notNull(),
   name: text('name').notNull(),
   apiKey: text('api_key').unique(),
+  apiKeyHash: text('api_key_hash').unique(),
+  apiKeyHint: text('api_key_hint'),
   subjects: text('subjects'), // JSON array of subject names
   // Incremented on password change; tokens carrying a stale version are rejected
   pwdVersion: integer('pwd_version').notNull().default(0),

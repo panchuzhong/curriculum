@@ -32,7 +32,7 @@ export default function ToastProvider({ children }) {
   return (
     <ToastContext.Provider value={showToast}>
       {children}
-      <div className="fixed bottom-4 right-4 z-50 flex flex-col gap-2 pointer-events-none">
+      <div aria-live="polite" aria-relevant="additions" className="fixed bottom-4 right-4 z-50 flex flex-col gap-2 pointer-events-none">
         {toasts.map(t => (
           <div key={t.id}
             className={`px-4 py-2 rounded-lg shadow-lg text-sm text-white pointer-events-auto animate-[fadeInUp_0.2s_ease-out] ${

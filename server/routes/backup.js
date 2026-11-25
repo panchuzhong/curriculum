@@ -201,7 +201,7 @@ router.post('/restore', express.json({ limit: '50mb' }), (req, res) => {
       // 先写 .tmp 再改名：进程在写到一半时被杀（OOM、容器重启）的话，直接写会留下一个
       // 名字合法、mtime 最新的残文件，它会占掉 5 份配额里的一个并挤掉真正的回滚点，
       // 而拿它撤销只会得到一句「快照文件无法读取」。.tmp 不匹配计数用的 .json 后缀，不占配额。
-      writeFileSync(snapshotTmpPath(tid, snapshotId), JSON.stringify(snapshot));
+      writeFileSync(snapshotTmpPath(tid, snapshotId), JSON.stringify(snapshot), { mode: 0o600, flag: 'wx' });
       renameSync(snapshotTmpPath(tid, snapshotId), snapshotPath(tid, snapshotId));
       // stat 失败不该把一次还没开始的还原报成 500；核不准就当不可撤销，
       // 宁可少应承诺一个撤销点。

@@ -24,17 +24,18 @@ const MAX_CANVAS_HEIGHT = 32000;
 // 纯计算，导出给单测：先量出各月 CSS 高度，再决定每月按多大倍率截图。
 // 24 个月若一律按 4 倍截再整体降到 0.27 倍，浏览器要渲染、编码、传输、
 // 解码大约 14 倍于交付图像的像素，然后扔掉其中 93%——既慢又费内存。
-// 这里把「最终一定会降采样」提前到截图那一步，交付尺寸完全一样。
+// 这里把降采样提前到截图那一步，月间距也必须按同一倍率缩放。
 export function planMonthlyCapture(cssHeights, { deviceScaleFactor = 4, monthGap = 24, maxCanvasHeight = MAX_CANVAS_HEIGHT } = {}) {
-  const gapPx = monthGap * deviceScaleFactor;
+  const extraGap = Math.max(0, monthGap - 20); // each document already has 10px top/bottom padding
   const fullHeight = cssHeights.reduce((h, x) => h + Math.ceil(x * deviceScaleFactor), 0)
-    + gapPx * Math.max(0, cssHeights.length - 1);
-  const outScale = fullHeight > maxCanvasHeight ? maxCanvasHeight / fullHeight : 1;
+    + extraGap * deviceScaleFactor * Math.max(0, cssHeights.length - 1);
+  // Reserve rounding room for each independently captured bitmap and gap.
+  const outScale = fullHeight > maxCanvasHeight ? (maxCanvasHeight - 2 * cssHeights.length) / fullHeight : 1;
   return {
     fullHeight,
     outScale,
     captureScale: deviceScaleFactor * outScale,
-    gapPx,
+    gapPx: monthGap * deviceScaleFactor * outScale,
   };
 }
 
@@ -59,7 +60,7 @@ export async function withStackedMonthPages(months, { bg, totalWidth, deviceScal
       cssHeights.push(await page.evaluate(() => Math.ceil(document.documentElement.getBoundingClientRect().height)));
     }
     const plan = planMonthlyCapture(cssHeights, { deviceScaleFactor, monthGap });
-    const { captureScale, outScale, gapPx } = plan;
+    const { captureScale, gapPx } = plan;
     // 每块图里已经带着上下各 10 CSS px 的 body padding，相邻两块之间本来就有
     // 20 CSS px；要凑到 monthGap，只补差额，不能整段再加一遍。
     const padGapPx = Math.max(0, gapPx - 20 * captureScale);
@@ -67,6 +68,8 @@ export async function withStackedMonthPages(months, { bg, totalWidth, deviceScal
     // 第二遍：逐月截图，base64 留在 Node 侧。此时浏览器里没有拼接用的 canvas，
     // 渲染进程只要扛得住「一个月」的表面。
     const chunks = [];
+    let canvasWidth = 0;
+    let capturedHeight = 0;
     for (let i = 0; i < months.length; i++) {
       await page.setContent(months[i].html, { waitUntil: 'load', timeout: 30000 });
       await page.setViewport({ width: totalWidth, height: 800, deviceScaleFactor: captureScale });
@@ -74,7 +77,10 @@ export async function withStackedMonthPages(months, { bg, totalWidth, deviceScal
         type: 'png', timeout: 30000,
         clip: { x: 0, y: 0, width: totalWidth, height: cssHeights[i] },
       });
-      chunks.push(`data:image/png;base64,${Buffer.from(buf).toString('base64')}`);
+      const png = Buffer.from(buf);
+      canvasWidth = Math.max(canvasWidth, png.readUInt32BE(16));
+      capturedHeight += png.readUInt32BE(20);
+      chunks.push(`data:image/png;base64,${png.toString('base64')}`);
     }
 
     // 第三遍才在同一个页面里拼。不能另开一个页面边截边拼：那样截图页的表面和
@@ -82,8 +88,8 @@ export async function withStackedMonthPages(months, { bg, totalWidth, deviceScal
     // （Page.captureScreenshot: Target closed）。这里任何时刻只有一份大表面，
     // 逐块 decode 再画，块本身随每次 evaluate 结束释放。
     await page.setContent('<!DOCTYPE html><html><body></body></html>', { waitUntil: 'load' });
-    const canvasWidth = Math.max(1, Math.round(totalWidth * captureScale));
-    const canvasHeight = Math.max(1, Math.round(plan.fullHeight * outScale));
+    // Use actual PNG dimensions: independent screenshot rounding must not clip a footer.
+    const canvasHeight = Math.max(1, Math.round(capturedHeight + padGapPx * Math.max(0, months.length - 1)));
     const stitched = await page.evaluate(async ({ urls, width, height, bg, padGapPx }) => {
       const canvas = document.createElement('canvas');
       canvas.width = width;

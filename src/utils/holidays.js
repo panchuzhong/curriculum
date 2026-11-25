@@ -35,6 +35,7 @@ export const HOLIDAY_NAMES = {
 // Cache for DB holidays
 let dbHolidays = null;
 let dbLoaded = false;
+let loadGeneration = 0;
 
 const listeners = new Set();
 
@@ -48,6 +49,7 @@ function notifyListeners() {
 }
 
 async function loadDbHolidays() {
+  const generation = ++loadGeneration;
   if (typeof window === 'undefined' || typeof localStorage === 'undefined') return;
   const token = getToken();
   try {
@@ -55,7 +57,7 @@ async function loadDbHolidays() {
     const holidays = await api.getHolidays();
     // Ignore a response belonging to a user who has since logged out or been
     // replaced by another session.
-    if (getToken() !== token) return;
+    if (getToken() !== token || generation !== loadGeneration) return;
     dbHolidays = holidays;
     dbLoaded = true;
     notifyListeners();
@@ -78,7 +80,7 @@ if (typeof window !== 'undefined') {
   // 不会跑，而模块级的 dbHolidays 是跨账号共享的——不一起清的话，B 的月视图
   // 会原样渲染 A 的自定义节假日名和调休标记，而且永远不会再去拉 B 的日历。
   window.addEventListener('storage', (e) => {
-    if (e.key === 'token') reset();
+    if (e.key === 'token' || e.key === null) reset();
   });
 }
 

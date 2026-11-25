@@ -3,8 +3,28 @@ import Database from 'better-sqlite3';
 import { mkdtempSync, rmSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
+import { hashApiKey, maskApiKey } from '../services/api-keys.js';
 
 let tmp;
+
+it('migrates plaintext API keys once without changing the caller credential', async () => {
+  tmp = mkdtempSync(join(tmpdir(), 'curr-key-mig-'));
+  process.env.DB_PATH = join(tmp, 'legacy.db');
+  seedLegacyDb(process.env.DB_PATH);
+  const legacy = new Database(process.env.DB_PATH);
+  legacy.prepare('UPDATE teachers SET api_key = ?').run('legacy-api-key-for-audit');
+  legacy.close();
+  vi.resetModules();
+  const { initDb, db } = await import('../db/index.js');
+  try {
+    initDb();
+    const read = () => db.prepare('SELECT api_key, api_key_hash, api_key_hint FROM teachers').get();
+    const expected = { api_key: null, api_key_hash: hashApiKey('legacy-api-key-for-audit'), api_key_hint: maskApiKey('legacy-api-key-for-audit') };
+    expect(read()).toEqual(expected);
+    initDb();
+    expect(read()).toEqual(expected);
+  } finally { db.close(); }
+});
 
 afterEach(() => {
   if (tmp) rmSync(tmp, { recursive: true, force: true });
@@ -53,7 +73,7 @@ describe('legacy database upgrade', () => {
 
       initDb();
       expect(db.prepare('SELECT pwd_version FROM teachers').get()).toEqual({ pwd_version: 0 });
-      expect(db.prepare('SELECT version FROM _migrations ORDER BY version').all().map(r => r.version)).toEqual([1, 2, 3, 4, 5]);
+      expect(db.prepare('SELECT version FROM _migrations ORDER BY version').all().map(r => r.version)).toEqual([1, 2, 3, 4, 5, 6]);
       expect(db.prepare('SELECT student_count, unit_price, effective_from FROM class_pricing WHERE class_id = 1').all())
         .toEqual([{ student_count: 3, unit_price: 150, effective_from: '2026-03-01' }]);
       if (!recorded) {
@@ -155,7 +175,7 @@ describe('legacy database upgrade', () => {
       expect(studentCols).toContain('birth_date');
       expect(studentCols).toContain('parent_name');
       expect(db.prepare('SELECT version FROM _migrations ORDER BY version').all().map(r => r.version))
-        .toEqual([1, 2, 3, 4, 5]);
+        .toEqual([1, 2, 3, 4, 5, 6]);
     } finally {
       db.close();
     }

@@ -60,4 +60,31 @@ describe('跨标签页换账号时课表缓存作废', () => {
     await api.getSchedules('2026-01-01', '2026-01-31');
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
+
+  it('does not share cached rows while another tab’s storage event is still pending', async () => {
+    const { api, setToken } = await freshApi();
+    setToken('account-a');
+    fetchMock.mockResolvedValueOnce({ ok: true, status: 200, text: async () => '[{"owner":"A"}]' });
+    await api.getSchedules('2026-01-01', '2026-01-31');
+    store.token = 'account-b';
+    fetchMock.mockResolvedValueOnce({ ok: true, status: 200, text: async () => '[{"owner":"B"}]' });
+    expect(await api.getSchedules('2026-01-01', '2026-01-31')).toEqual([{ owner: 'B' }]);
+  });
+});
+
+describe('late authentication failures', () => {
+  it.each(['json', 'blob'])('a stale %s request cannot log out a newer session', async kind => {
+    const { api, setToken, getToken } = await import('../../api.js');
+    fetchMock.mockReset();
+    window.location.href = '';
+    setToken('old-token');
+    let resolve;
+    fetchMock.mockImplementationOnce(() => new Promise(r => { resolve = r; }));
+    const pending = kind === 'json' ? api.getProfile() : api.exportYearlyImage(2026);
+    setToken('new-token');
+    resolve({ status: 401, ok: false, text: async () => '{}' });
+    await expect(pending).rejects.toThrow();
+    expect(getToken()).toBe('new-token');
+    expect(window.location.href).toBe('');
+  });
 });

@@ -1,7 +1,8 @@
 import jwt from 'jsonwebtoken';
 import { drizzleDb } from '../db/index.js';
 import { teachers } from '../db/schema.js';
-import { eq } from 'drizzle-orm';
+import { eq, or } from 'drizzle-orm';
+import { hashApiKey, maskApiKey } from '../services/api-keys.js';
 
 const JWT_SECRET = process.env.JWT_SECRET;
 if (!JWT_SECRET) {
@@ -23,8 +24,16 @@ export function authMiddleware(req, res, next) {
   // Try API key first
   const apiKey = req.headers['x-api-key'];
   if (apiKey) {
-    const teacher = drizzleDb.select().from(teachers).where(eq(teachers.apiKey, apiKey)).get();
+    if (typeof apiKey !== 'string') return res.status(401).json({ error: 'Invalid API key' });
+    const digest = hashApiKey(apiKey);
+    const teacher = drizzleDb.select().from(teachers)
+      .where(or(eq(teachers.apiKeyHash, digest), eq(teachers.apiKey, apiKey))).get();
     if (!teacher) return res.status(401).json({ error: 'Invalid API key' });
+    // Compatibility with keys created by an older management script after upgrade.
+    if (teacher.apiKey) {
+      drizzleDb.update(teachers).set({ apiKey: null, apiKeyHash: digest, apiKeyHint: maskApiKey(apiKey) })
+        .where(eq(teachers.id, teacher.id)).run();
+    }
     req.teacherId = teacher.id;
     return next();
   }

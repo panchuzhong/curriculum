@@ -40,11 +40,11 @@ describe('planMonthlyCapture', () => {
     expect(captured).toBeLessThanOrEqual(32000 + 24);
   });
 
-  it('月间距只有 24 CSS px：两块各带 10px padding，拼接只补 4px 差额', () => {
-    const plan = planMonthlyCapture([1053, 1053]);
+  it.each([2, 24])('%s 个月缩放后仍保持 24 CSS px 的总间距', count => {
+    const plan = planMonthlyCapture(Array(count).fill(1053));
     const padGapPx = Math.max(0, plan.gapPx - 20 * plan.captureScale);
     // 若把整段 24px 再加到两块的 padding 上，相邻月之间就变成 44px
-    expect(padGapPx / plan.captureScale).toBe(4);
-    expect(plan.gapPx / plan.captureScale).toBe(24);
+    expect(padGapPx / plan.captureScale).toBeCloseTo(4);
+    expect(plan.gapPx / plan.captureScale).toBeCloseTo(24);
   });
 });

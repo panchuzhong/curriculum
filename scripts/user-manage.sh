@@ -66,7 +66,7 @@ fi
 if [ "$CMD" = "info" ]; then
   TID="${2:-1}"
   validate_tid "$TID"
-  USER=$(sqlite3 "$DB" "SELECT id, username, name, api_key, subjects, created_at FROM teachers WHERE id = $TID;")
+  USER=$(sqlite3 "$DB" "SELECT id, username, name, COALESCE(api_key_hint, CASE WHEN api_key IS NOT NULL THEN substr(api_key,1,4) || '...' || substr(api_key,-4) END), subjects, created_at FROM teachers WHERE id = $TID;")
   if [ -z "$USER" ]; then
     echo "Error: Teacher id=$TID not found."
     exit 1
@@ -127,6 +127,8 @@ if [ "$CMD" = "register" ]; then
 
   HASH=$(cd "$PROJECT_ROOT" && node -e "const bcrypt=require('bcryptjs');if(bcrypt.truncates(process.argv[1])){console.error('Error: password must be at most 72 UTF-8 bytes.');process.exit(1)}bcrypt.hash(process.argv[1],12).then(h=>console.log(h))" "$PASS")
   API_KEY=$(node -e "console.log(require('node:crypto').randomUUID())")
+  API_KEY_HASH=$(printf '%s' "$API_KEY" | node --input-type=module -e 'import { createHash } from "node:crypto"; import { readFileSync } from "node:fs"; console.log(createHash("sha256").update(readFileSync(0)).digest("hex"));')
+  API_KEY_HINT="${API_KEY:0:4}...${API_KEY: -4}"
   SUBJECTS='["数学","物理","化学","英语","语文","生物","历史","地理","政治"]'
 
   # Registration and tier seeding must share one SQLite connection and one
@@ -135,8 +137,8 @@ if [ "$CMD" = "register" ]; then
   TID=$(sqlite3 -bail "$DB" <<SQL
 PRAGMA foreign_keys = ON;
 BEGIN IMMEDIATE;
-INSERT INTO teachers (username, password_hash, name, api_key, subjects)
-  VALUES ('${SQL_USER}', '$HASH', '${SQL_NAME}', '$API_KEY', '$SUBJECTS')
+INSERT INTO teachers (username, password_hash, name, api_key_hash, api_key_hint, subjects)
+  VALUES ('${SQL_USER}', '$HASH', '${SQL_NAME}', '$API_KEY_HASH', '$API_KEY_HINT', '$SUBJECTS')
   RETURNING id;
 INSERT INTO pricing_tiers (teacher_id, min_students, max_students, price_per_student_per_hour)
   SELECT id, 1, 1, 800 FROM teachers WHERE username = '${SQL_USER}'

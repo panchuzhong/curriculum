@@ -14,6 +14,8 @@ export function createTestDb() {
       password_hash TEXT NOT NULL,
       name TEXT NOT NULL,
       api_key TEXT UNIQUE,
+      api_key_hash TEXT UNIQUE,
+      api_key_hint TEXT,
       subjects TEXT,
       pwd_version INTEGER NOT NULL DEFAULT 0,
       created_at TEXT DEFAULT CURRENT_TIMESTAMP

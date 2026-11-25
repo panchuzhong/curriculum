@@ -138,6 +138,12 @@ API 仍位于同源的 `/api`；反向代理需同时转发 `/curriculum/` 和 `
 `proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;` 即可；不加的话
 所有请求共用一个限流桶，任何人连错 10 次密码就会把全部用户挡在门外 15 分钟。
 
+现有 TLS `server` 块可使用 [`deploy/nginx-locations.conf`](deploy/nginx-locations.conf)
+替换原有的 `location /` 配置（保留域名、监听端口和证书设置）。它只把备份恢复路径的
+请求体上限提高到 50 MB，与应用一致；其他路径仍为 1 MB。否则 Nginx 默认的
+[`client_max_body_size 1m`](https://nginx.org/en/docs/http/ngx_http_core_module.html#client_max_body_size)
+会在应用收到请求前拒绝较大的备份。上线前先检查 `nginx -t`。
+
 ### 测试
 
 ```bash
@@ -163,6 +169,11 @@ sudo apt-get install -y chromium-browser fonts-liberation libasound2 \
 PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium-browser
 ```
 
+图片导出默认启用 Chromium 沙箱，服务应以普通用户运行。若出现 `No usable sandbox`，
+按 [Puppeteer 沙箱说明](https://pptr.dev/troubleshooting#setting-up-chrome-linux-sandbox)
+检查内核、AppArmor 和 Chromium 安装。应用不会在启动失败时自动关闭沙箱。
+只有具备独立隔离措施的容器部署才应显式设置 `PUPPETEER_NO_SANDBOX=true`。
+
 ### 使用发布包
 
 ```bash
@@ -186,14 +197,24 @@ sudo cp -r curriculum-scheduler-v*/. /opt/curriculum-scheduler/
 sudo vim /opt/curriculum-scheduler/.env
 sudo npm ci --omit=dev --prefix /opt/curriculum-scheduler
 sudo chown -R curriculum:curriculum /opt/curriculum-scheduler
+sudo chmod 600 /opt/curriculum-scheduler/.env
+sudo install -d -m 700 -o curriculum -g curriculum /opt/curriculum-scheduler/data
+sudo find /opt/curriculum-scheduler/data -type f -exec chmod 600 {} +
 sudo cp /opt/curriculum-scheduler/curriculum-scheduler.service /etc/systemd/system/
 sudo systemctl daemon-reload
 sudo systemctl enable curriculum-scheduler
 sudo systemctl start curriculum-scheduler
 ```
 
-已经以 root 跑着的旧部署，升级时补上 `useradd` 和 `chown -R` 两步再
-`systemctl daemon-reload && systemctl restart`，否则服务会因为写不了 `data/` 而起不来。
+服务单元设置 `UMask=0077`，启动脚本也使用 `umask 077`，确保新建数据库、WAL 和
+恢复快照仅服务用户可读。旧文件的权限不会被 umask 追溯修改，需执行上面的权限收紧步骤。
+自定义 `DB_PATH` 时对实际数据目录做同样处理。手动启动 `node server/index.js` 前也应设置
+`umask 077`。
+
+已经以 root 跑着的旧部署需要在维护窗口内停服，确认已有备份，创建专用账号，调整安装目录
+与实际数据目录的归属及权限，并**替换已安装的服务单元**；仅 daemon-reload 不会修改旧单元。
+保留实际部署路径和环境设置，验证普通用户可以读配置、写数据且图片导出能启动沙箱，再
+daemon-reload 并启动服务。以上步骤需由部署操作者执行，仓库更新不会自动修改生产环境。
 
 ## API 文档
 
@@ -204,11 +225,21 @@ sudo systemctl start curriculum-scheduler
 - **JWT Token**：`POST /api/auth/login` 返回，通过 `Authorization: Bearer <token>` 传递
 - **API Key**：在设置页面获取，通过 `X-API-Key: <key>` 传递，适合 AI Agent 长期使用
 
+API Key 只保存 SHA-256 摘要与显示掩码，完整值仅在注册或轮换时返回，请当场保存。
+数据库迁移 v6 会将旧的明文 key 转成摘要，现有调用方无需换 key。管理脚本 `info`
+只显示掩码；升级后应先启动新版本完成数据库迁移，再使用新版管理脚本。
+旧数据库备份仍可能含明文凭据，应继续限制访问；回退到不支持摘要的旧程序会使 API Key
+认证不可用，回退需同时恢复对应旧数据库备份。
+
 ### 输入校验
 
 注册和修改密码要求至少 8 个字符，且不超过 72 个 UTF-8 字节（汉字通常占 3 字节）。现有密码的登录方式保持兼容；历史上超过此限制的密码应重新设置，以避免 bcrypt 忽略超出部分。
 
 所有写接口均使用 express-validator 校验输入，校验失败返回 `400 {error: "提示信息"}`。详细规则见 `GET /api/agent/help` 的 `validationRules` 字段。
+
+ID、人数和计费分钟数限制在 JavaScript 安全整数范围内，继续接受十进制整数字符串。
+报表遇到旧数据中的无效计费/定价或计算溢出时返回 `422 {error}`（JSON、CSV 一致），
+请修正相关记录后重试，不再把这些结果显示为 `null` 或零收入。
 
 ### 写接口返回体约定
 

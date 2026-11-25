@@ -9,8 +9,8 @@ test.describe('登录页', () => {
 
   test('显示登录表单', async ({ page }) => {
     await expect(page.getByRole('heading', { name: '欢迎回来' })).toBeVisible();
-    await expect(page.getByRole('textbox', { name: '请输入用户名' })).toBeVisible();
-    await expect(page.getByRole('textbox', { name: '请输入密码' })).toBeVisible();
+    await expect(page.getByLabel('用户名', { exact: true })).toBeVisible();
+    await expect(page.getByLabel('密码', { exact: true })).toBeVisible();
     await expect(page.getByRole('button', { name: '登录' })).toBeVisible();
   });
 
@@ -37,15 +37,15 @@ test.describe('登录页', () => {
   });
 
   test('错误密码时提示错误', async ({ page }) => {
-    await page.getByRole('textbox', { name: '请输入用户名' }).fill(TEST_USER.username);
-    await page.getByRole('textbox', { name: '请输入密码' }).fill('wrongpassword');
+    await page.getByLabel('用户名', { exact: true }).fill(TEST_USER.username);
+    await page.getByLabel('密码', { exact: true }).fill('wrongpassword');
     await page.getByRole('button', { name: '登录' }).click();
     await expect(page.getByText('Invalid credentials')).toBeVisible();
   });
 
   test('正确凭据登录后跳转到首页', async ({ page }) => {
-    await page.getByRole('textbox', { name: '请输入用户名' }).fill(TEST_USER.username);
-    await page.getByRole('textbox', { name: '请输入密码' }).fill(TEST_USER.password);
+    await page.getByLabel('用户名', { exact: true }).fill(TEST_USER.username);
+    await page.getByLabel('密码', { exact: true }).fill(TEST_USER.password);
     await page.getByRole('button', { name: '登录' }).click();
     await page.waitForURL('/');
     await expect(page.getByRole('link', { name: '周课表' })).toBeVisible();
