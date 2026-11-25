@@ -3,7 +3,7 @@ import { auditLog } from '../db/schema.js';
 
 export const MAX_AUDIT_ROWS = 10000;
 const CLEANUP_INTERVAL = 100;
-let insertCount = 0;
+const writesByTeacher = new Map();
 
 export function trimAuditLog({ teacherId, keep = MAX_AUDIT_ROWS }) {
   const keepCount = Math.max(0, Math.min(Number(keep) || 0, MAX_AUDIT_ROWS));
@@ -43,9 +43,13 @@ export function logAudit({ teacherId, action, tableName, recordId, before, after
         afterData: after != null ? JSON.stringify(after) : null,
       }).run();
 
-      insertCount++;
-      if (insertCount % CLEANUP_INTERVAL !== 0) return;
-      trimAuditLog({ teacherId });
+      const count = (writesByTeacher.get(teacherId) || 0) + 1;
+      if (count >= CLEANUP_INTERVAL) {
+        trimAuditLog({ teacherId });
+        writesByTeacher.delete(teacherId);
+      } else {
+        writesByTeacher.set(teacherId, count);
+      }
     })();
   } catch (err) {
     // Audit failures must never break the main request

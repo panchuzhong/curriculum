@@ -118,6 +118,18 @@ describe('POST /api/classes', () => {
 // 坐标溯源：经纬度各记「按哪个地点名填的」，改地点后靠它判断提示是否过期。
 // 逐字段持久化，只改一个坐标时另一个的来源不动（前端 staleCoordNames 据此继续提示）。
 describe('班级坐标溯源（defaultLocationLatFor/LngFor）', () => {
+  it('partial place changes preserve inferred coordinate sources and clear only known orphans', async () => {
+    const { body } = await request(app).post('/api/classes').set(auth(token)).send({
+      name: '周末班', grade: '高一', subject: '数学', studentCount: 1, defaultLocationName: '上海',
+      defaultLocationLat: 31.2, defaultLocationLng: 121.4, defaultLocationLngFor: '',
+    }).expect(200);
+    const path = `/api/classes/${body.id}`;
+    const renamed = await request(app).put(path).set(auth(token)).send({ defaultLocationName: '北京' }).expect(200);
+    expect(renamed.body).toMatchObject({ defaultLocationLatFor: '上海', defaultLocationLngFor: '' });
+    const cleared = await request(app).put(path).set(auth(token)).send({ defaultLocationName: '' }).expect(200);
+    expect(cleared.body).toMatchObject({ defaultLocationLat: null, defaultLocationLng: 121.4 });
+  });
+
   it('建班时存入并返回两个来源地点名', async () => {
     const res = await request(app).post('/api/classes').set(auth(token))
       .send({ name: '溯源班', grade: '高一', subject: '数学', studentCount: 1,

@@ -21,31 +21,27 @@ if (process.env.NODE_ENV !== 'test') {
   router.use(rateLimit({ windowMs: 60 * 1000, max: 10, standardHeaders: true, legacyHeaders: false }));
 }
 
-router.get('/', (req, res) => {
-  const tid = req.teacherId;
-  const teacherClasses = drizzleDb.select().from(classes).where(eq(classes.teacherId, tid)).all();
-  const classIds = teacherClasses.map(c => c.id);
+const teacherClassIds = tid => drizzleDb.select({ id: classes.id }).from(classes).where(eq(classes.teacherId, tid));
 
-  const data = {
+function readTeacherBackup(tid) {
+  const classIds = teacherClassIds(tid);
+  return {
     version: BACKUP_VERSION,
     timestamp: new Date().toISOString(),
-    classes: teacherClasses,
+    classes: drizzleDb.select().from(classes).where(eq(classes.teacherId, tid)).all(),
     pricingTiers: drizzleDb.select().from(pricingTiers).where(eq(pricingTiers.teacherId, tid)).all(),
     students: drizzleDb.select().from(students).where(eq(students.teacherId, tid)).all(),
-    classStudents: classIds.length > 0
-      ? drizzleDb.select().from(classStudents).where(inArray(classStudents.classId, classIds)).all()
-      : [],
-    schedules: classIds.length > 0
-      ? drizzleDb.select().from(schedules).where(inArray(schedules.classId, classIds)).all()
-      : [],
+    classStudents: drizzleDb.select().from(classStudents).where(inArray(classStudents.classId, classIds)).all(),
+    schedules: drizzleDb.select().from(schedules).where(inArray(schedules.classId, classIds)).all(),
     holidays: drizzleDb.select().from(holidays).where(eq(holidays.teacherId, tid)).all(),
     semesters: drizzleDb.select().from(semesters).where(eq(semesters.teacherId, tid)).all(),
-    classPricing: classIds.length > 0
-      ? drizzleDb.select().from(classPricing).where(inArray(classPricing.classId, classIds)).all()
-      : [],
+    classPricing: drizzleDb.select().from(classPricing).where(inArray(classPricing.classId, classIds)).all(),
     auditLog: drizzleDb.select().from(auditLog).where(eq(auditLog.teacherId, tid)).all(),
   };
+}
 
+router.get('/', (req, res) => {
+  const data = db.transaction(readTeacherBackup)(req.teacherId);
   const json = JSON.stringify(data);
   const sizeMB = Buffer.byteLength(json, 'utf8') / (1024 * 1024);
   if (sizeMB > 50) {
@@ -159,63 +155,10 @@ router.post('/restore', express.json({ limit: '50mb' }), (req, res) => {
     }
   }
 
-  // 撤销路径不写快照，所以也就没有新的回滚点可返回（见下面的响应）。
-  let snapshotId = null;
-  // 写快照不卡大小（卡了就是让数据多的人连还原都做不了），而撤销要把它整个读回内存，
-  // 那一侧有 50 MB 上限。两边不一致的话，数据超过 50 MB 的教师会拿到一个注定被 413
-  // 拒掉的 preRestoreSnapshot——而它本该保护的数据已经被覆盖了。发一个兑不了的
-  // 句柄，比直说「这次没有可用的撤销点」更坏。文件照写不误，运维手动还原得了。
-  let snapshotUndoable = false;
-
-  // 撤销不再存快照：它替掉的那个状态本就是用户刚还原的那份备份，东西在他手里；
-  // 而每次撤销都写一份的话，网关超时后重试几次就能把该教师剩下的回滚点全挤没——
-  // 而每一次重试写回的都是同一份内容，数据上是空操作。源快照留在磁盘上，重试幂等。
-  if (!restoringOwnSnapshot) {
-    snapshotId = randomUUID();
-    // Save pre-restore snapshot — abort if snapshot fails (data loss risk)
-    try {
-      const teacherClasses = drizzleDb.select().from(classes).where(eq(classes.teacherId, tid)).all();
-      const cids = teacherClasses.map(c => c.id);
-      const snapshot = {
-        version: BACKUP_VERSION,
-        timestamp: new Date().toISOString(),
-        // 拿这个 id POST 回 /restore 就是一次撤销（内容服务端自己读，见上面）。
-        teacherId: tid,
-        preRestoreSnapshot: snapshotId,
-        classes: teacherClasses,
-        pricingTiers: drizzleDb.select().from(pricingTiers).where(eq(pricingTiers.teacherId, tid)).all(),
-        students: drizzleDb.select().from(students).where(eq(students.teacherId, tid)).all(),
-        classStudents: cids.length > 0
-          ? drizzleDb.select().from(classStudents).where(inArray(classStudents.classId, cids)).all()
-          : [],
-        schedules: cids.length > 0
-          ? drizzleDb.select().from(schedules).where(inArray(schedules.classId, cids)).all()
-          : [],
-        holidays: drizzleDb.select().from(holidays).where(eq(holidays.teacherId, tid)).all(),
-        semesters: drizzleDb.select().from(semesters).where(eq(semesters.teacherId, tid)).all(),
-        classPricing: cids.length > 0
-          ? drizzleDb.select().from(classPricing).where(inArray(classPricing.classId, cids)).all()
-          : [],
-        auditLog: drizzleDb.select().from(auditLog).where(eq(auditLog.teacherId, tid)).all(),
-      };
-      // 先写 .tmp 再改名：进程在写到一半时被杀（OOM、容器重启）的话，直接写会留下一个
-      // 名字合法、mtime 最新的残文件，它会占掉 5 份配额里的一个并挤掉真正的回滚点，
-      // 而拿它撤销只会得到一句「快照文件无法读取」。.tmp 不匹配计数用的 .json 后缀，不占配额。
-      writeFileSync(snapshotTmpPath(tid, snapshotId), JSON.stringify(snapshot), { mode: 0o600, flag: 'wx' });
-      renameSync(snapshotTmpPath(tid, snapshotId), snapshotPath(tid, snapshotId));
-      // stat 失败不该把一次还没开始的还原报成 500；核不准就当不可撤销，
-      // 宁可少应承诺一个撤销点。
-      try {
-        snapshotUndoable = statSync(snapshotPath(tid, snapshotId)).size <= MAX_SNAPSHOT_BYTES;
-      } catch (e2) { snapshotUndoable = false; }
-    } catch (e) {
-      console.error('Backup snapshot failed:', e);
-      // 写到一半失败（ENOSPC、配额）会留下一个名字合法、内容残缺的文件。它的 mtime
-      // 是新的，下一次清理时会排在前面，把一个真正的回滚点挤掉——而它自己根本读不出来。
-      try { unlinkSync(snapshotTmpPath(tid, snapshotId)); } catch (e2) { /* best effort */ }
-      return res.status(500).json({ error: '还原前备份快照失败' });
-    }
-  }
+  // Undo reuses its snapshot. A content restore records the state it replaces.
+  const snapshotId = restoringOwnSnapshot ? null : randomUUID();
+  let snapshotCreated = false;
+  let snapshotWarning;
 
   // Force all teacher-scoped records to belong to the authenticated teacher
   const forceOwner = arr => (arr || []).map(r => ({ ...r, teacherId: tid }));
@@ -332,6 +275,22 @@ router.post('/restore', express.json({ limit: '50mb' }), (req, res) => {
 
   try {
     db.transaction(() => {
+      // Hold the writer lock from the snapshot through the replacement. A second
+      // process's committed edit must be included in the rollback point.
+      if (snapshotId) {
+        const snapshot = { ...readTeacherBackup(tid), teacherId: tid, preRestoreSnapshot: snapshotId };
+        writeFileSync(snapshotTmpPath(tid, snapshotId), JSON.stringify(snapshot), { mode: 0o600, flag: 'wx' });
+        renameSync(snapshotTmpPath(tid, snapshotId), snapshotPath(tid, snapshotId));
+        snapshotCreated = true;
+        // A large snapshot is still available to an operator on disk.
+        try {
+          if (statSync(snapshotPath(tid, snapshotId)).size > MAX_SNAPSHOT_BYTES) {
+            snapshotWarning = `还原前快照已写入磁盘，但超过 ${MAX_SNAPSHOT_BYTES / 1024 / 1024} MB，无法通过接口撤销`;
+          }
+        } catch {
+          snapshotWarning = '还原前快照已写入磁盘，但无法核实文件大小，无法通过接口撤销';
+        }
+      }
       // A missing column means the dump is damaged. Check the original rows
       // before replacing data, even if orphan or date filtering omitted one.
       if (data.schedules.some(s => s.classId === undefined)
@@ -339,16 +298,10 @@ router.post('/restore', express.json({ limit: '50mb' }), (req, res) => {
         || data.classStudents?.some(l => l.classId === undefined || l.studentId === undefined)) {
         throw new Error('备份缺少班级或学生关联列');
       }
-      const existingClassIds = drizzleDb.select({ id: classes.id })
-        .from(classes).where(eq(classes.teacherId, tid)).all().map(c => c.id);
-
-      if (existingClassIds.length > 0) {
-        drizzleDb.delete(schedules).where(inArray(schedules.classId, existingClassIds)).run();
-        drizzleDb.delete(classStudents).where(inArray(classStudents.classId, existingClassIds)).run();
-        // class_pricing has an immediate foreign key to classes, so it must be
-        // removed before its parent classes.
-        drizzleDb.delete(classPricing).where(inArray(classPricing.classId, existingClassIds)).run();
-      }
+      const existingClassIds = teacherClassIds(tid);
+      drizzleDb.delete(schedules).where(inArray(schedules.classId, existingClassIds)).run();
+      drizzleDb.delete(classStudents).where(inArray(classStudents.classId, existingClassIds)).run();
+      drizzleDb.delete(classPricing).where(inArray(classPricing.classId, existingClassIds)).run();
       drizzleDb.delete(classes).where(eq(classes.teacherId, tid)).run();
       drizzleDb.delete(students).where(eq(students.teacherId, tid)).run();
       drizzleDb.delete(pricingTiers).where(eq(pricingTiers.teacherId, tid)).run();
@@ -407,8 +360,13 @@ router.post('/restore', express.json({ limit: '50mb' }), (req, res) => {
       counts.classPricing = restoreData.classPricing.length;
       counts.pricingTiers = restoreData.pricingTiers.length;
       counts.auditLog = restoreData.auditLog.length;
-    })();
+    }).immediate();
   } catch (err) {
+    if (snapshotId && !snapshotCreated) {
+      console.error('Backup snapshot failed:', err);
+      try { unlinkSync(snapshotTmpPath(tid, snapshotId)); } catch { /* best effort */ }
+      return res.status(500).json({ error: '还原前备份快照失败' });
+    }
     console.error('Backup restore failed:', err);
     // 事务回滚了，库跟写快照时一模一样：这份快照是多余的。留着的话，拿一份坏备份
     // 重试几次就能把真正的回滚点全挤没，而每一次都没改动过数据。
@@ -421,7 +379,7 @@ router.post('/restore', express.json({ limit: '50mb' }), (req, res) => {
   // 事务已经提交了，清理再怎么出错也不能把这次成功的还原报成 500——那会让调用方
   // 以为失败而重发一遍，而且拿不到本次的快照 id（它只在这个响应里出现一次）。
   try {
-    prunePreRestoreSnapshots(tid);
+    prunePreRestoreSnapshots(tid, snapshotId ?? req.body.undoSnapshot);
   } catch (e) {
     console.error('Snapshot prune failed:', e);
   }
@@ -434,10 +392,8 @@ router.post('/restore', express.json({ limit: '50mb' }), (req, res) => {
     // 除了去服务器上翻目录根本无从得知这个 id。
     // 撤销自身不写快照，所以那一次不带这个字段——带一个磁盘上根本不存在的 id
     // 回去，调用方拿它再撤销只会得到 404。
-    ...(snapshotId && snapshotUndoable ? { preRestoreSnapshot: snapshotId } : {}),
-    ...(snapshotId && !snapshotUndoable
-      ? { preRestoreSnapshotUnavailable: `还原前快照已写入磁盘，但超过 ${MAX_SNAPSHOT_BYTES / 1024 / 1024} MB，无法通过接口撤销` }
-      : {}),
+    ...(snapshotId && !snapshotWarning && { preRestoreSnapshot: snapshotId }),
+    ...(snapshotWarning && { preRestoreSnapshotUnavailable: snapshotWarning }),
     restored: counts,
     ...(Object.keys(skipped).length > 0 ? { skipped } : {}),
     ...(Object.keys(cleared).length > 0 ? { cleared } : {}),
@@ -453,7 +409,7 @@ router.post('/restore', express.json({ limit: '50mb' }), (req, res) => {
 // 改名之前写下的快照叫 .backup_pre_restore_<uuid>.json，没有教师段，所以这里不碰它们。
 // 它们最多就旧版本留下的那几份（旧上限也是 5），不会再增长；删掉反而会把升级前
 // 最后一个回滚点一并扒了。它们的内容仍可以当普通备份 POST 回来还原。
-function prunePreRestoreSnapshots(tid) {
+function prunePreRestoreSnapshots(tid, preserveId) {
   // 一次列目录，两轮都用它；每个 unlink 各自容错，否则一个被外部删掉的文件一抛 ENOENT，
   // 剩下的清理全停了（调用处只会把它记个日志，配额就静静地不再生效）。
   const prefix = `.backup_pre_restore_${tid}_`;
@@ -463,8 +419,11 @@ function prunePreRestoreSnapshots(tid) {
     try { unlinkSync(join(dbDir, name)); } catch (e) { /* best effort */ }
   };
 
+  // The handle just returned (or used for undo) must survive even if mtimes tie.
+  const preserved = prefix + preserveId + '.json';
+  const keepOthers = MAX_PRE_RESTORE_SNAPSHOTS - Number(entries.includes(preserved));
   const files = entries
-    .filter(f => f.endsWith('.json'))
+    .filter(f => f.endsWith('.json') && f !== preserved)
     // stat 也在同一个竞态里：文件在列目录和 stat 之间消失的话，抛出去会把整个
     // 清理连同下面的 .tmp 清理一起停掉，而调用处只会记一条日志。
     .map(f => {
@@ -473,7 +432,7 @@ function prunePreRestoreSnapshots(tid) {
     })
     .filter(Boolean)
     .sort((a, b) => b.mtime - a.mtime);
-  for (const { name } of files.slice(MAX_PRE_RESTORE_SNAPSHOTS)) drop(name);
+  for (const { name } of files.slice(keepOthers)) drop(name);
 
   // 被杀在 rename 之前的话会留下 .tmp：它不计数也不影响回滚，但也没必要淤积。
   // 这一扫不分教师：否则一个以后再也不还原的教师留下的 .tmp 永远没人收。

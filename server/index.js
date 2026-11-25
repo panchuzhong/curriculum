@@ -55,14 +55,15 @@ app.use((req, res, next) => {
 // CORS: restrict to same origin
 app.use((req, res, next) => {
   const origin = req.headers.origin;
-  if (origin) {
+  res.vary('Origin');
+  if (origin && ['http', 'https'].includes(req.protocol) && req.get('host')) {
     try {
-      const { host } = new URL(origin);
-      if (host === req.headers.host) {
+      const expected = new URL(`${req.protocol}://${req.get('host')}`).origin;
+      if (origin === expected) {
         res.setHeader('Access-Control-Allow-Origin', origin);
         res.setHeader('Access-Control-Allow-Credentials', 'true');
       }
-    } catch { /* malformed Origin (e.g. "null") — ignore */ }
+    } catch { /* Invalid request host. */ }
   }
   next();
 });

@@ -15,6 +15,8 @@ import handle from '../validations/handle.js';
 import { validateRegister, validateLogin, validateChangePassword, validateUpdateSubjects } from '../validations/auth.js';
 
 const router = Router();
+// Same bcrypt cost as registration, used only for comparisons with absent accounts.
+const DUMMY_PASSWORD_HASH = '$2b$12$BtqG34MhcBzpTVVIgRns0uK/aprh.mEFIKktX8DGX1w2.k5e9HXaW';
 
 export const DEFAULT_SUBJECTS = ['数学', '物理', '化学', '英语', '语文', '生物', '历史', '地理', '政治'];
 
@@ -77,7 +79,8 @@ router.post('/register', authLimiter, validateRegister, handle, async (req, res)
 router.post('/login', loginLimiter, validateLogin, handle, async (req, res) => {
   const { username, password } = req.body;
   const teacher = drizzleDb.select().from(teachers).where(eq(teachers.username, username)).get();
-  if (!teacher || !(await bcrypt.compare(password, teacher.passwordHash))) {
+  const matches = await bcrypt.compare(password, teacher?.passwordHash ?? DUMMY_PASSWORD_HASH);
+  if (!teacher || !matches) {
     return res.status(401).json({ error: 'Invalid credentials' });
   }
   res.json({ token: signToken(teacher.id, teacher.pwdVersion ?? 0) });

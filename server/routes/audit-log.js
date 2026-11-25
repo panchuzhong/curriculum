@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { drizzleDb } from '../db/index.js';
+import { db, drizzleDb } from '../db/index.js';
 import { auditLog } from '../db/schema.js';
 import { eq, desc, and } from 'drizzle-orm';
 import { authMiddleware } from '../middleware/auth.js';
@@ -48,7 +48,7 @@ router.delete('/cleanup', (req, res) => {
   if (keep === null) {
     return res.status(400).json({ error: 'keep 须为非负整数' });
   }
-  res.json(trimAuditLog({ teacherId: req.teacherId, keep }));
+  res.json(db.transaction(() => trimAuditLog({ teacherId: req.teacherId, keep })).immediate());
 });
 
 export default router;

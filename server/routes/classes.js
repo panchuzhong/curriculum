@@ -102,7 +102,20 @@ router.put('/:id', validateUpdateClass, handle, (req, res) => {
   // 改了坐标却没带它的来源（API 客户端常见）：原来的来源说的是旧坐标，留着的话表单一打开
   // 就会说这对新坐标是按旧地点填的。置 NULL，由表单按当时的地点名推定（src/utils/locationCoords.js）。
   for (const field of ['defaultLocationLat', 'defaultLocationLng']) {
-    if (field in safeUpdates && !(`${field}For` in safeUpdates)) safeUpdates[`${field}For`] = null;
+    const source = `${field}For`;
+    if (source in safeUpdates) continue;
+    if (field in safeUpdates) {
+      safeUpdates[source] = null;
+    } else if ('defaultLocationName' in safeUpdates && safeUpdates.defaultLocationName !== existing.defaultLocationName
+      && existing[field] != null) {
+      const formerPlace = existing[source] ?? existing.defaultLocationName ?? '';
+      if (!safeUpdates.defaultLocationName?.trim() && formerPlace.trim()) {
+        safeUpdates[field] = null;
+        safeUpdates[source] = '';
+      } else if (existing[source] == null) {
+        safeUpdates[source] = formerPlace;
+      }
+    }
   }
   drizzleDb.update(classes).set(safeUpdates).where(eq(classes.id, +id)).run();
   const updated = drizzleDb.select().from(classes).where(eq(classes.id, +id)).get();

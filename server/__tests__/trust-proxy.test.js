@@ -30,9 +30,18 @@ afterAll(() => {
 });
 
 describe('trust proxy', () => {
+  it('matches the complete public origin behind the TLS proxy', async () => {
+    const check = origin => request(app).get('/api/health').set('Host', 'school.example:9443')
+      .set('X-Forwarded-Proto', 'https').set('Origin', origin);
+    const allowed = await check('https://school.example:9443');
+    expect(allowed.headers['access-control-allow-origin']).toBe('https://school.example:9443');
+    expect(allowed.headers.vary).toContain('Origin');
+    for (const origin of ['http://school.example:9443', 'https://school.example', 'null']) {
+      expect((await check(origin)).headers['access-control-allow-origin']).toBeUndefined();
+    }
+  });
+
   it('rate-limits per forwarded client, not per proxy connection', async () => {
-    // An unknown username short-circuits before bcrypt, so the limiter is what
-    // the 11th response measures — not a slow hash.
     const attempt = (ip) => request(app).post('/api/auth/login')
       .set('X-Forwarded-For', ip)
       .send({ username: 'no-such-user', password: 'password123' });
@@ -45,5 +54,5 @@ describe('trust proxy', () => {
     // And a different client is unaffected. Without `trust proxy` both are
     // ::ffff:127.0.0.1, so this one is 429 too and the test fails.
     expect((await attempt('198.51.100.7')).status).toBe(401);
-  });
+  }, 30_000);
 });

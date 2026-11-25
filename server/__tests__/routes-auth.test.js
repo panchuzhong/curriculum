@@ -156,9 +156,12 @@ describe('POST /api/auth/login', () => {
   });
 
   it('rejects non-existent user', async () => {
-    const res = await request(app).post('/api/auth/login')
-      .send({ username: 'nobody', password: 'test1234' });
-    expect(res.status).toBe(401);
+    const compare = vi.spyOn(bcrypt, 'compare').mockResolvedValueOnce(true);
+    try {
+      await request(app).post('/api/auth/login').send({ username: 'nobody', password: 'test1234' }).expect(401);
+      expect(compare).toHaveBeenCalledOnce();
+      expect(bcrypt.getRounds(compare.mock.calls[0][1])).toBe(12);
+    } finally { compare.mockRestore(); }
   });
 });
 

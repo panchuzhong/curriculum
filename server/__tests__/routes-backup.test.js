@@ -413,6 +413,31 @@ describe('POST /api/backup/restore', () => {
 });
 
 describe('pre-restore snapshot retention', () => {
+  it('reports an unverified snapshot separately from one that exceeds the size limit', async () => {
+    fsMocks.statSync.mockImplementationOnce(() => { throw new Error('stat failed'); });
+    const res = await request(app).post('/api/backup/restore').set(auth(token))
+      .send({ version: 1, classes: [], students: [], schedules: [] }).expect(200);
+    expect(res.body.preRestoreSnapshotUnavailable).toContain('无法核实文件大小');
+    expect(res.body.preRestoreSnapshot).toBeUndefined();
+  });
+
+  it('takes the rollback point inside the restore transaction and retains it when file mtimes tie', async () => {
+    const { db } = await import('../db/index.js');
+    let inTransaction, newFile;
+    fsMocks.writeFileSync.mockImplementationOnce((path) => {
+      inTransaction = db.inTransaction;
+      newFile = path.split('/').at(-1).replace(/\.tmp$/, '');
+    });
+    const oldFiles = Array.from({ length: 5 }, (_, i) => `.backup_pre_restore_${teacherId}_${i}.json`);
+    fsMocks.readdirSync.mockImplementationOnce(() => [...oldFiles, newFile]);
+    const res = await request(app).post('/api/backup/restore').set(auth(token))
+      .send({ version: 1, classes: [], students: [], schedules: [] }).expect(200);
+    expect(inTransaction).toBe(true);
+    expect(newFile).toContain(res.body.preRestoreSnapshot);
+    expect(fsMocks.unlinkSync.mock.calls).toHaveLength(1);
+    expect(fsMocks.unlinkSync.mock.calls[0][0]).not.toContain(newFile);
+  });
+
   it('keeps only the 5 newest snapshots and unlinks the rest', async () => {
     // Seven existing snapshots with descending mtimes: snap-0 newest ... snap-6 oldest.
     // 文件名带教师 id：数量限制是每人一份，别人连着还原不能把你的回滚点挤没。

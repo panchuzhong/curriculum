@@ -30,6 +30,23 @@ beforeEach(async () => {
 const rows = () => container.drizzleDb.select().from(auditLog).all();
 
 describe('logAudit 每 100 条自动清理一次', () => {
+  it('每位教师写满一个周期都清理，包括两人交替写入的情况', () => {
+    const otherId = Number(container.drizzleDb.insert(teachers).values({
+      username: 'other', passwordHash: 'x', name: 'other', apiKey: 'key-other',
+    }).run().lastInsertRowid);
+    const insert = container.db.prepare('INSERT INTO audit_log (teacher_id, timestamp, action, table_name) VALUES (?, ?, ?, ?)');
+    container.db.transaction(() => {
+      for (const id of [teacherId, otherId]) {
+        for (let i = 0; i < MAX_AUDIT_ROWS; i++) insert.run(id, '2026-01-01', 'CREATE', 'classes');
+      }
+    })();
+    for (let i = 0; i < 100; i++) {
+      for (const id of [teacherId, otherId]) logAudit({ teacherId: id, action: 'UPDATE', tableName: 'classes' });
+    }
+    const counts = container.db.prepare('SELECT COUNT(*) AS n FROM audit_log GROUP BY teacher_id').all();
+    expect(counts).toEqual([{ n: MAX_AUDIT_ROWS }, { n: MAX_AUDIT_ROWS }]);
+  });
+
   it('写满 100 条后会把超出上限的旧行删掉', async () => {
     // 直接灌 MAX_AUDIT_ROWS 条太慢，改用 trimAuditLog 的 keep 参数验证同一条路：
     // 先塞够行，再让第 100 次插入触发自动清理。
