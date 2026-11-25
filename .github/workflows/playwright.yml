@@ -9,6 +9,9 @@ jobs:
   test:
     timeout-minutes: 60
     runs-on: ubuntu-latest
+    env:
+      # Ubuntu's AppArmor profile grants user namespaces to the installed Chrome.
+      PUPPETEER_EXECUTABLE_PATH: /opt/google/chrome/chrome
     steps:
     - uses: actions/checkout@v4
     - uses: actions/setup-node@v4
