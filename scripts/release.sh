@@ -8,10 +8,7 @@ cd "$PROJECT_DIR"
 echo "=== 课表管理系统 构建打包 ==="
 echo ""
 
-# The template ships as the starting .env; the old fallback copied the
-# developer's real .env — live JWT_SECRET and AMAP_KEY — into the tarball.
-# Check before anything destructive: below, rm -rf release destroys the
-# previous tarball and npm ci/build burn minutes before this used to fire.
+# Package the template under its own name so extracting an upgrade preserves .env.
 if [ ! -f .env.example ]; then
   echo "ERROR: .env.example is missing; refusing to build a release." >&2
   exit 1
@@ -23,7 +20,7 @@ rm -rf dist
 
 # Install dependencies
 echo "[2/4] 安装依赖..."
-npm ci
+npm ci --include=dev
 
 # Build frontend
 echo "[3/4] 构建前端..."
@@ -32,8 +29,11 @@ npm run build
 # Create release package
 echo "[4/4] 打包..."
 VERSION=$(node -e "import fs from 'fs'; console.log(JSON.parse(fs.readFileSync('./package.json','utf8')).version)")
-RELEASE_DIR="release/curriculum-scheduler-v${VERSION}"
-rm -rf release
+PACKAGE="curriculum-scheduler-v${VERSION}"
+mkdir -p release
+STAGING_DIR=$(mktemp -d release/.build-XXXXXX)
+trap 'rm -rf "$STAGING_DIR"' EXIT
+RELEASE_DIR="$STAGING_DIR/$PACKAGE"
 mkdir -p "$RELEASE_DIR"
 
 # Copy files
@@ -43,8 +43,7 @@ rm -rf "$RELEASE_DIR/server/__tests__"
 cp -r scripts "$RELEASE_DIR/"
 cp -r deploy "$RELEASE_DIR/"
 cp package.json package-lock.json "$RELEASE_DIR/"
-cp .env.example "$RELEASE_DIR/.env"
-chmod 600 "$RELEASE_DIR/.env"
+cp .env.example "$RELEASE_DIR/.env.example"
 cp README.md "$RELEASE_DIR/"
 
 # Create start script
@@ -68,8 +67,6 @@ fi
 node server/index.js
 EOF
 chmod +x "$RELEASE_DIR/start.sh"
-
-cp .env.example "$RELEASE_DIR/.env.example"
 
 # Create systemd service file
 cat > "$RELEASE_DIR/curriculum-scheduler.service" << EOF
@@ -96,9 +93,10 @@ WantedBy=multi-user.target
 EOF
 
 # Create tarball
-cd release
-tar -czf "curriculum-scheduler-v${VERSION}.tar.gz" "curriculum-scheduler-v${VERSION}"
-cd ..
+tar -czf "$STAGING_DIR/$PACKAGE.tar.gz" -C "$STAGING_DIR" "$PACKAGE"
+mv -f "$STAGING_DIR/$PACKAGE.tar.gz" "release/$PACKAGE.tar.gz"
+rm -rf "release/$PACKAGE"
+mv "$RELEASE_DIR" "release/$PACKAGE"
 
 echo ""
 echo "=== 构建完成 ==="
@@ -106,13 +104,14 @@ echo "发布包: release/curriculum-scheduler-v${VERSION}.tar.gz"
 echo ""
 echo "部署方式:"
 echo "  1. 解压到目标服务器"
-echo "  2. 编辑 .env 文件（修改 JWT_SECRET）"
+echo "  2. 首次安装执行 install -m 600 .env.example .env，再编辑 JWT_SECRET"
 echo "  3. 运行 ./start.sh"
 echo ""
 echo "或使用 systemd:"
 echo "  sudo useradd --system --no-create-home --shell /usr/sbin/nologin curriculum"
 echo "  sudo mkdir -p /opt/curriculum-scheduler"
-echo "  sudo cp -r curriculum-scheduler-v${VERSION}/. /opt/curriculum-scheduler/"
+echo "  sudo tar -xzf release/$PACKAGE.tar.gz --strip-components=1 -C /opt/curriculum-scheduler/"
+echo "  sudo test -e /opt/curriculum-scheduler/.env || sudo install -m 600 /opt/curriculum-scheduler/{.env.example,.env}"
 echo "  sudo vim /opt/curriculum-scheduler/.env"
 echo "  sudo npm ci --omit=dev --prefix /opt/curriculum-scheduler"
 echo "  sudo chown -R curriculum:curriculum /opt/curriculum-scheduler"

@@ -177,23 +177,26 @@ PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium-browser
 ### 使用发布包
 
 ```bash
-chmod +x scripts/release.sh
-./scripts/release.sh
-tar -xzf release/curriculum-scheduler-v*.tar.gz
-cd curriculum-scheduler-v*/
+bash scripts/release.sh
+package="curriculum-scheduler-v$(node -p "require('./package.json').version")"
+tar -xzf "release/$package.tar.gz"
+cd "$package"
+test -e .env || install -m 600 .env.example .env
 vim .env        # 修改 JWT_SECRET
 ./start.sh
 ```
 
 ### systemd 服务
 
-服务单元里写的是 `User=curriculum`，所以要先建好这个账号并把安装目录交给它
-（服务端要在 `data/` 下写数据库和还原前快照）：
+以下命令从项目根目录运行。服务单元使用 `curriculum` 账号，数据库和还原前快照写入安装目录的 `data/`。
+发布包内提供 `.env.example`。把新版本解压到已有安装目录时，会保留实际配置和数据库。
 
 ```bash
 sudo useradd --system --no-create-home --shell /usr/sbin/nologin curriculum
 sudo mkdir -p /opt/curriculum-scheduler
-sudo cp -r curriculum-scheduler-v*/. /opt/curriculum-scheduler/
+package="curriculum-scheduler-v$(node -p "require('./package.json').version")"
+sudo tar -xzf "release/$package.tar.gz" --strip-components=1 -C /opt/curriculum-scheduler/
+sudo test -e /opt/curriculum-scheduler/.env || sudo install -m 600 /opt/curriculum-scheduler/{.env.example,.env}
 sudo vim /opt/curriculum-scheduler/.env
 sudo npm ci --omit=dev --prefix /opt/curriculum-scheduler
 sudo chown -R curriculum:curriculum /opt/curriculum-scheduler
@@ -395,6 +398,8 @@ POST /api/schedules/batch
 两种模式均支持可选参数：`durationBilling` 手动指定计费时长（分钟，默认为 endTime-startTime），`preview: true` 仅返回 `{count, dates}` 预览不实际创建。学期模式仅对有节假日数据的年份跳过节假日；若排课日期落在没有实际生效节假日的年份（既无内置数据，或库里只有这一年的调休——库里有这一年的记录时内置数据整年不用），响应会附加 `holidayDataMissing`（年份数组）与 `hint`，提示先导入该年份的节假日。开始时间使用 `00:00-23:59`；结束时间推荐使用普通钟表时间 `00:00-23:59`，`endTime < startTime` 表示跨午夜。接口兼容 `24:00-47:59` 形式的结束时间，保存时会归一为普通钟表时间。排课时长须大于 0 且小于 24 小时（开始时间等于结束时间、或跨度满 24 小时会被拒绝，返回 400 `排课时长须大于 0 且小于 24 小时`）。日期模式下若日期跨越学期边界（部分在学期内、部分在学期外）默认返回 400，可传 `crossSemester: true` 绕过。
 
 ### 批量删课
+
+每个请求选择一种删除方式。混用 ID、起始日期或日期区间的选择条件会返回 400，已有排课保持原样。按日期区间删除时可以同时提供班级筛选。
 
 **按 ID 数组**：
 ```json
